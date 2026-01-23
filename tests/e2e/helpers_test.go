@@ -82,8 +82,10 @@ func waitForSpriteReady(t *testing.T, client *sprites.Client, name string, timeo
 		lastErr = nil
 
 		// Check if sprite is ready
-		// Accept "running" or "ready" as ready states
-		if sprite.State == "running" || sprite.State == "ready" {
+		// "cold" = just created, warms up on first request (100-500ms)
+		// "warm" = hibernated but ready
+		// "running" = actively running
+		if sprite.State == "running" || sprite.State == "warm" || sprite.State == "cold" {
 			t.Logf("sprite %s is ready (state: %s)", name, sprite.State)
 			return sprite
 		}
