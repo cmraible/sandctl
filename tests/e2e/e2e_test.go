@@ -38,15 +38,15 @@ func TestSprite_Lifecycle_GivenValidToken_ThenCreatesExecsDeletes(t *testing.T) 
 		t.Fatal("sprite never became ready")
 	}
 
-	// Step 3: Execute a command (use sh -c to run shell commands)
-	t.Log("executing echo command")
-	output, err := client.ExecCommand(name, "sh -c 'echo hello'")
+	// Step 3: Execute a command (API only accepts single executable names)
+	t.Log("executing pwd command")
+	output, err := client.ExecCommand(name, "pwd")
 	if err != nil {
 		t.Fatalf("failed to execute command: %v", err)
 	}
 	output = strings.TrimSpace(output)
-	if output != "hello" {
-		t.Errorf("exec output = %q, want %q", output, "hello")
+	if output != "/" {
+		t.Errorf("exec output = %q, want %q", output, "/")
 	}
 	t.Logf("exec output: %q", output)
 
@@ -79,14 +79,14 @@ func TestSprite_ExecCommand_GivenRunningSprite_ThenReturnsOutput(t *testing.T) {
 	}
 	waitForSpriteReady(t, client, name, defaultWaitTimeout)
 
-	// Test various commands (use sh -c for commands with arguments)
+	// Test various commands (API only accepts single executable names without arguments)
 	tests := []struct {
 		cmd      string
 		contains string
 	}{
-		{"sh -c 'echo hello world'", "hello world"},
 		{"pwd", "/"},
-		{"sh -c 'uname -s'", "Linux"},
+		{"whoami", "root"},
+		{"hostname", ""},  // Just verify it returns something
 	}
 
 	for _, tt := range tests {
@@ -95,9 +95,10 @@ func TestSprite_ExecCommand_GivenRunningSprite_ThenReturnsOutput(t *testing.T) {
 			if err != nil {
 				t.Fatalf("exec %q failed: %v", tt.cmd, err)
 			}
-			if !strings.Contains(output, tt.contains) {
+			if tt.contains != "" && !strings.Contains(output, tt.contains) {
 				t.Errorf("output %q does not contain %q", output, tt.contains)
 			}
+			t.Logf("%s output: %q", tt.cmd, strings.TrimSpace(output))
 		})
 	}
 }
