@@ -1,4 +1,4 @@
-.PHONY: build test lint install clean help
+.PHONY: build test test-unit test-integration test-e2e lint install clean help
 
 # Build variables
 BINARY_NAME=sandctl
@@ -38,6 +38,9 @@ test-unit: ## Run unit tests only
 
 test-integration: ## Run integration tests only
 	$(GOTEST) -v -race ./tests/integration/...
+
+test-e2e: ## Run E2E tests (requires SPRITES_API_TOKEN)
+	$(GOTEST) -v -tags=e2e -timeout 5m ./tests/e2e/...
 
 lint: ## Run linters
 	golangci-lint run ./...
