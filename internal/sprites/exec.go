@@ -80,7 +80,7 @@ func (c *Client) ExecWebSocket(ctx context.Context, spriteName string, opts Exec
 		return nil, fmt.Errorf("failed to connect: %w", err)
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
+	_, cancel := context.WithCancel(ctx)
 	session := &ExecSession{
 		conn:   conn,
 		opts:   opts,
@@ -117,7 +117,7 @@ func (s *ExecSession) Run() error {
 					// Skip control messages (session_info, exit, port_notification, etc.)
 					// Clear the line if this was the first message to reset cursor position
 					if firstMessage && s.opts.Stdout != nil {
-						s.opts.Stdout.Write([]byte("\r\033[K"))
+						_, _ = s.opts.Stdout.Write([]byte("\r\033[K"))
 					}
 					firstMessage = false
 					continue

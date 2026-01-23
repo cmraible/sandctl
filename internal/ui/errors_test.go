@@ -27,7 +27,7 @@ func TestFormatError_GivenNil_ThenReturnsSuccess(t *testing.T) {
 // TestFormatError_GivenConfigNotFoundError_ThenReturnsConfigError tests config not found.
 func TestFormatError_GivenConfigNotFoundError_ThenReturnsConfigError(t *testing.T) {
 	var buf bytes.Buffer
-	err := &config.ConfigNotFoundError{Path: "/path/to/config"}
+	err := &config.NotFoundError{Path: "/path/to/config"}
 
 	code := FormatError(&buf, err)
 
@@ -91,10 +91,10 @@ func TestFormatError_GivenValidationError_ThenReturnsConfigError(t *testing.T) {
 	}
 }
 
-// TestFormatError_GivenSessionNotFoundError_ThenReturnsSessionNotFound tests session not found.
-func TestFormatError_GivenSessionNotFoundError_ThenReturnsSessionNotFound(t *testing.T) {
+// TestFormatError_GivenNotFoundError_ThenReturnsSessionNotFound tests session not found.
+func TestFormatError_GivenNotFoundError_ThenReturnsSessionNotFound(t *testing.T) {
 	var buf bytes.Buffer
-	err := &session.SessionNotFoundError{ID: "sandctl-test1234"}
+	err := &session.NotFoundError{ID: "sandctl-test1234"}
 
 	code := FormatError(&buf, err)
 
