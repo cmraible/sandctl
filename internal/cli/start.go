@@ -186,10 +186,12 @@ func provisionSprite(client *sprites.Client, name string, agent config.AgentType
 		Env:  env,
 	}
 
-	_, err := client.CreateSprite(req)
+	sprite, err := client.CreateSprite(req)
 	if err != nil {
 		return fmt.Errorf("failed to provision VM: %w", err)
 	}
+
+	verboseLog("Sprite created: name=%s, state=%s", sprite.Name, sprite.State)
 
 	// Wait for sprite to be ready
 	return waitForSpriteReady(client, name)
@@ -201,10 +203,13 @@ func waitForSpriteReady(client *sprites.Client, name string) error {
 	for i := 0; i < maxAttempts; i++ {
 		sprite, err := client.GetSprite(name)
 		if err != nil {
+			verboseLog("GetSprite error (attempt %d/%d): %v", i+1, maxAttempts, err)
 			return err
 		}
 
-		if sprite.State == "running" {
+		verboseLog("Sprite state (attempt %d/%d): %s", i+1, maxAttempts, sprite.State)
+
+		if sprite.State == "running" || sprite.State == "warm" {
 			return nil
 		}
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	neturl "net/url"
 	"time"
 )
 
@@ -48,7 +49,7 @@ func (c *Client) WithTimeout(timeout time.Duration) *Client {
 // Sprite represents a Sprites VM instance.
 type Sprite struct {
 	Name      string    `json:"name"`
-	State     string    `json:"state"`
+	State     string    `json:"status"`
 	CreatedAt time.Time `json:"created_at"`
 	Region    string    `json:"region,omitempty"`
 }
@@ -198,23 +199,32 @@ func (c *Client) GetSprite(name string) (*Sprite, error) {
 
 // ExecCommand executes a command inside a sprite and returns the output.
 func (c *Client) ExecCommand(name string, command string) (string, error) {
-	reqBody := struct {
-		Command string `json:"cmd"`
-	}{Command: command}
+	// Build URL with query parameter (URL-encoded)
+	url := fmt.Sprintf("%s/v1/sprites/%s/exec?cmd=%s", c.baseURL, name, neturl.QueryEscape(command))
 
-	resp, err := c.do(http.MethodPost, "/v1/sprites/"+name+"/exec", reqBody)
+	req, err := http.NewRequest(http.MethodPost, url, nil)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	result, err := parseResponse[struct {
-		Output string `json:"output"`
-	}](resp)
+	req.Header.Set("Authorization", "Bearer "+c.token)
+
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
 	}
 
-	return result.Output, nil
+	if resp.StatusCode >= 400 {
+		return "", parseAPIError(resp.StatusCode, body)
+	}
+
+	return string(body), nil
 }
 
 // ListSprites returns all sprites for the account.

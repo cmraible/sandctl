@@ -38,12 +38,14 @@ It provisions isolated VM environments using Fly.io Sprites where AI coding
 agents (Claude, OpenCode, Codex) can work on development tasks safely.
 
 Commands:
+  init     Initialize or update sandctl configuration
   start    Provision a new sandboxed agent session
   list     List active sessions
   exec     Connect to a running session
   destroy  Terminate and remove a session
 
 Get started:
+  sandctl init
   sandctl start --prompt "Create a React todo app"`,
 	SilenceUsage:  true,
 	SilenceErrors: true,

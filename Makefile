@@ -47,7 +47,8 @@ fmt: ## Format code
 	goimports -w -local github.com/sandctl/sandctl .
 
 install: build ## Install binary to GOPATH/bin
-	cp $(BUILD_DIR)/$(BINARY_NAME) $(GOPATH)/bin/$(BINARY_NAME)
+	@mkdir -p $(shell go env GOPATH)/bin
+	cp $(BUILD_DIR)/$(BINARY_NAME) $(shell go env GOPATH)/bin/$(BINARY_NAME)
 
 install-local: build ## Install binary to /usr/local/bin
 	sudo cp $(BUILD_DIR)/$(BINARY_NAME) /usr/local/bin/$(BINARY_NAME)
