@@ -1,36 +1,22 @@
 package session
 
 import (
-	"crypto/rand"
-	"encoding/hex"
-	"fmt"
-	"io"
 	"regexp"
 )
 
-const (
-	// IDPrefix is the prefix for all session IDs.
-	IDPrefix = "sandctl-"
-	// IDRandomLength is the length of the random part of the ID.
-	IDRandomLength = 8
-)
+// idPattern validates human-readable session names.
+// Names must be 2-15 lowercase letters only.
+var idPattern = regexp.MustCompile(`^[a-z]{2,15}$`)
 
-var idPattern = regexp.MustCompile(`^sandctl-[a-z0-9]{8}$`)
-
-// randReader is the source of random bytes for ID generation.
-// It can be replaced in tests for deterministic output.
-var randReader io.Reader = rand.Reader
-
-// GenerateID creates a new unique session ID.
-func GenerateID() (string, error) {
-	bytes := make([]byte, IDRandomLength/2)
-	if _, err := randReader.Read(bytes); err != nil {
-		return "", fmt.Errorf("failed to generate random ID: %w", err)
-	}
-	return IDPrefix + hex.EncodeToString(bytes), nil
+// GenerateID creates a new unique session ID by selecting a random human name.
+// The usedNames parameter should contain all currently active session names
+// to avoid collisions.
+func GenerateID(usedNames []string) (string, error) {
+	return GetRandomName(usedNames)
 }
 
 // ValidateID checks if a session ID has the correct format.
+// Valid IDs are 2-15 lowercase letters (human first names).
 func ValidateID(id string) bool {
-	return idPattern.MatchString(id)
+	return idPattern.MatchString(NormalizeName(id))
 }

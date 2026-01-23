@@ -23,8 +23,8 @@ var (
 	verbose bool
 
 	// Shared resources (initialized on demand).
-	cfg          *config.Config
-	sessionStore *session.Store
+	cfg           *config.Config
+	sessionStore  *session.Store
 	spritesClient *sprites.Client
 )
 

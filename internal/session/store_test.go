@@ -423,6 +423,216 @@ func TestSessionNotFoundError_Error_GivenID_ThenReturnsFormattedMessage(t *testi
 	}
 }
 
+// TestNormalizeName_GivenVariousCases_ThenReturnsLowercase tests name normalization.
+func TestNormalizeName_GivenVariousCases_ThenReturnsLowercase(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"alice", "alice"},
+		{"Alice", "alice"},
+		{"ALICE", "alice"},
+		{"AlIcE", "alice"},
+		{"  alice  ", "alice"},
+		{" Alice ", "alice"},
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := NormalizeName(tt.input)
+			if got != tt.expected {
+				t.Errorf("NormalizeName(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestStore_GetUsedNames_GivenEmptyStore_ThenReturnsEmptySlice tests empty store.
+func TestStore_GetUsedNames_GivenEmptyStore_ThenReturnsEmptySlice(t *testing.T) {
+	tmpDir := t.TempDir()
+	storePath := filepath.Join(tmpDir, "sessions.json")
+	store := NewStore(storePath)
+
+	names, err := store.GetUsedNames()
+
+	if err != nil {
+		t.Fatalf("GetUsedNames() error = %v", err)
+	}
+
+	if len(names) != 0 {
+		t.Errorf("expected 0 names, got %d", len(names))
+	}
+}
+
+// TestStore_Get_GivenCaseInsensitiveID_ThenFindsSession tests case-insensitive lookup.
+func TestStore_Get_GivenCaseInsensitiveID_ThenFindsSession(t *testing.T) {
+	tmpDir := t.TempDir()
+	storePath := filepath.Join(tmpDir, "sessions.json")
+	store := NewStore(storePath)
+
+	session := Session{
+		ID:     "alice",
+		Agent:  config.AgentClaude,
+		Prompt: "Test prompt",
+		Status: StatusRunning,
+	}
+
+	if err := store.Add(session); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+
+	// Test various case variants
+	variants := []string{"alice", "Alice", "ALICE", "AlIcE"}
+	for _, variant := range variants {
+		t.Run(variant, func(t *testing.T) {
+			got, err := store.Get(variant)
+			if err != nil {
+				t.Fatalf("Get(%q) error = %v", variant, err)
+			}
+			if got.ID != "alice" {
+				t.Errorf("Get(%q) returned ID %q, want %q", variant, got.ID, "alice")
+			}
+		})
+	}
+}
+
+// TestStore_Update_GivenCaseInsensitiveID_ThenUpdatesSession tests case-insensitive update.
+func TestStore_Update_GivenCaseInsensitiveID_ThenUpdatesSession(t *testing.T) {
+	tmpDir := t.TempDir()
+	storePath := filepath.Join(tmpDir, "sessions.json")
+	store := NewStore(storePath)
+
+	session := Session{
+		ID:     "bob",
+		Agent:  config.AgentClaude,
+		Prompt: "Test prompt",
+		Status: StatusRunning,
+	}
+
+	if err := store.Add(session); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+
+	// Update using different case
+	if err := store.Update("BOB", StatusStopped); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+
+	// Verify update
+	got, err := store.Get("bob")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if got.Status != StatusStopped {
+		t.Errorf("Status = %q, want %q", got.Status, StatusStopped)
+	}
+}
+
+// TestStore_Remove_GivenCaseInsensitiveID_ThenRemovesSession tests case-insensitive removal.
+func TestStore_Remove_GivenCaseInsensitiveID_ThenRemovesSession(t *testing.T) {
+	tmpDir := t.TempDir()
+	storePath := filepath.Join(tmpDir, "sessions.json")
+	store := NewStore(storePath)
+
+	session := Session{
+		ID:     "charlie",
+		Agent:  config.AgentClaude,
+		Prompt: "Test prompt",
+		Status: StatusRunning,
+	}
+
+	if err := store.Add(session); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+
+	// Remove using different case
+	if err := store.Remove("CHARLIE"); err != nil {
+		t.Fatalf("Remove() error = %v", err)
+	}
+
+	// Verify removal
+	sessions, err := store.List()
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(sessions) != 0 {
+		t.Errorf("expected 0 sessions after removal, got %d", len(sessions))
+	}
+}
+
+// TestStore_Add_GivenCaseVariantDuplicate_ThenReturnsError tests case-insensitive duplicate detection.
+func TestStore_Add_GivenCaseVariantDuplicate_ThenReturnsError(t *testing.T) {
+	tmpDir := t.TempDir()
+	storePath := filepath.Join(tmpDir, "sessions.json")
+	store := NewStore(storePath)
+
+	session1 := Session{
+		ID:     "diana",
+		Agent:  config.AgentClaude,
+		Prompt: "Test prompt 1",
+		Status: StatusRunning,
+	}
+
+	if err := store.Add(session1); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+
+	// Try to add with different case
+	session2 := Session{
+		ID:     "DIANA",
+		Agent:  config.AgentOpencode,
+		Prompt: "Test prompt 2",
+		Status: StatusRunning,
+	}
+
+	err := store.Add(session2)
+	if err == nil {
+		t.Error("expected error when adding case-variant duplicate")
+	}
+}
+
+// TestStore_GetUsedNames_GivenSessions_ThenReturnsAllIDs tests returning IDs.
+func TestStore_GetUsedNames_GivenSessions_ThenReturnsAllIDs(t *testing.T) {
+	tmpDir := t.TempDir()
+	storePath := filepath.Join(tmpDir, "sessions.json")
+	store := NewStore(storePath)
+
+	sessions := []Session{
+		{ID: "alice", Agent: config.AgentClaude, Prompt: "p1", Status: StatusRunning},
+		{ID: "bob", Agent: config.AgentOpencode, Prompt: "p2", Status: StatusStopped},
+		{ID: "charlie", Agent: config.AgentCodex, Prompt: "p3", Status: StatusFailed},
+	}
+
+	for _, s := range sessions {
+		if err := store.Add(s); err != nil {
+			t.Fatalf("Add() error = %v", err)
+		}
+	}
+
+	names, err := store.GetUsedNames()
+
+	if err != nil {
+		t.Fatalf("GetUsedNames() error = %v", err)
+	}
+
+	if len(names) != 3 {
+		t.Errorf("expected 3 names, got %d", len(names))
+	}
+
+	// Verify all session IDs are present
+	nameSet := make(map[string]bool)
+	for _, n := range names {
+		nameSet[n] = true
+	}
+
+	for _, s := range sessions {
+		if !nameSet[s.ID] {
+			t.Errorf("missing session ID %q in GetUsedNames result", s.ID)
+		}
+	}
+}
+
 // TestStore_CreatesDirectoryIfNotExists tests directory creation.
 func TestStore_CreatesDirectoryIfNotExists(t *testing.T) {
 	tmpDir := t.TempDir()

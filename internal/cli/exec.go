@@ -18,20 +18,21 @@ import (
 var execCommand string
 
 var execCmd = &cobra.Command{
-	Use:   "exec <session-id>",
+	Use:   "exec <name>",
 	Short: "Connect to a running session",
 	Long: `Open an interactive shell session inside a running VM.
 
 By default, opens an interactive shell. Use --command to run a single
 command and return the output.`,
-	Example: `  # Interactive shell
-  sandctl exec sandctl-a1b2c3d4
+	Example: `  # Interactive shell (case-insensitive)
+  sandctl exec alice
+  sandctl exec Alice
 
   # Run a single command
-  sandctl exec sandctl-a1b2c3d4 -c "ls -la"
+  sandctl exec alice -c "ls -la"
 
   # Check agent logs
-  sandctl exec sandctl-a1b2c3d4 -c "cat /var/log/agent.log"`,
+  sandctl exec alice -c "cat /var/log/agent.log"`,
 	Args: cobra.ExactArgs(1),
 	RunE: runExec,
 }
@@ -43,11 +44,12 @@ func init() {
 }
 
 func runExec(cmd *cobra.Command, args []string) error {
-	sessionID := args[0]
+	// Normalize the session name (case-insensitive)
+	sessionName := session.NormalizeName(args[0])
 
-	// Validate session ID format
-	if !session.ValidateID(sessionID) {
-		return fmt.Errorf("invalid session ID format: %s", sessionID)
+	// Validate session name format
+	if !session.ValidateID(sessionName) {
+		return fmt.Errorf("invalid session name format: %s", args[0])
 	}
 
 	// Get Sprites client
@@ -57,7 +59,7 @@ func runExec(cmd *cobra.Command, args []string) error {
 	}
 
 	// Verify sprite exists and is ready (running or warm)
-	sprite, err := client.GetSprite(sessionID)
+	sprite, err := client.GetSprite(sessionName)
 	if err != nil {
 		return fmt.Errorf("failed to verify session: %w", err)
 	}
@@ -68,21 +70,21 @@ func runExec(cmd *cobra.Command, args []string) error {
 	if sprite.State != "running" && sprite.State != "warm" {
 		// Update local store with current status
 		newStatus := mapSpriteStateToSession(sprite.State)
-		_ = store.Update(sessionID, newStatus)
-		ui.FormatSessionNotRunning(os.Stderr, sessionID, newStatus)
+		_ = store.Update(sessionName, newStatus)
+		ui.FormatSessionNotRunning(os.Stderr, sessionName, newStatus)
 		return nil
 	}
 
 	// Update local store to running
-	_ = store.Update(sessionID, session.StatusRunning)
+	_ = store.Update(sessionName, session.StatusRunning)
 
 	// Single command mode
 	if execCommand != "" {
-		return runSingleCommand(client, sessionID, execCommand)
+		return runSingleCommand(client, sessionName, execCommand)
 	}
 
 	// Interactive mode
-	return runInteractiveSession(client, sessionID)
+	return runInteractiveSession(client, sessionName)
 }
 
 // runSingleCommand executes a single command and prints the output.

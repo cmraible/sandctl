@@ -5,8 +5,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
+
+// NormalizeName converts a name to lowercase and trims whitespace.
+// This ensures case-insensitive matching for session names.
+func NormalizeName(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
+}
 
 // Store manages local session storage.
 type Store struct {
@@ -88,10 +95,13 @@ func (s *Store) Add(session Session) error {
 		return err
 	}
 
-	// Check for duplicate ID
+	// Normalize the session ID for storage
+	session.ID = NormalizeName(session.ID)
+
+	// Check for duplicate ID (case-insensitive)
 	for _, existing := range data.Sessions {
-		if existing.ID == session.ID {
-			return fmt.Errorf("session with ID %s already exists", session.ID)
+		if NormalizeName(existing.ID) == session.ID {
+			return fmt.Errorf("session with name '%s' already exists", session.ID)
 		}
 	}
 
@@ -109,9 +119,12 @@ func (s *Store) Update(id string, status Status) error {
 		return err
 	}
 
+	// Normalize input for case-insensitive lookup
+	normalizedID := NormalizeName(id)
+
 	found := false
 	for i, session := range data.Sessions {
-		if session.ID == id {
+		if NormalizeName(session.ID) == normalizedID {
 			data.Sessions[i].Status = status
 			found = true
 			break
@@ -135,10 +148,13 @@ func (s *Store) Remove(id string) error {
 		return err
 	}
 
+	// Normalize input for case-insensitive lookup
+	normalizedID := NormalizeName(id)
+
 	newSessions := make([]Session, 0, len(data.Sessions))
 	found := false
 	for _, session := range data.Sessions {
-		if session.ID == id {
+		if NormalizeName(session.ID) == normalizedID {
 			found = true
 			continue
 		}
@@ -193,13 +209,35 @@ func (s *Store) Get(id string) (*Session, error) {
 		return nil, err
 	}
 
+	// Normalize input for case-insensitive lookup
+	normalizedID := NormalizeName(id)
+
 	for _, session := range data.Sessions {
-		if session.ID == id {
+		if NormalizeName(session.ID) == normalizedID {
 			return &session, nil
 		}
 	}
 
 	return nil, &SessionNotFoundError{ID: id}
+}
+
+// GetUsedNames returns a list of all session IDs (names) currently in the store.
+// This is used to check for name availability when generating new session names.
+func (s *Store) GetUsedNames() ([]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	data, err := s.load()
+	if err != nil {
+		return nil, err
+	}
+
+	names := make([]string, len(data.Sessions))
+	for i, session := range data.Sessions {
+		names[i] = session.ID
+	}
+
+	return names, nil
 }
 
 // SessionNotFoundError is returned when a session doesn't exist.

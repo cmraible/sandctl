@@ -91,10 +91,17 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("prompt exceeds maximum length of 10000 characters")
 	}
 
-	// Generate session ID
-	sessionID, err := session.GenerateID()
+	// Get used names from store to avoid collisions
+	store := getSessionStore()
+	usedNames, err := store.GetUsedNames()
 	if err != nil {
-		return fmt.Errorf("failed to generate session ID: %w", err)
+		return fmt.Errorf("failed to get existing sessions: %w", err)
+	}
+
+	// Generate session ID (human-readable name)
+	sessionID, err := session.GenerateID(usedNames)
+	if err != nil {
+		return fmt.Errorf("failed to generate session name: %w", err)
 	}
 
 	verboseLog("Generated session ID: %s", sessionID)
@@ -117,7 +124,6 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 
 	// Add to local store immediately
-	store := getSessionStore()
 	if err := store.Add(sess); err != nil {
 		return fmt.Errorf("failed to save session: %w", err)
 	}

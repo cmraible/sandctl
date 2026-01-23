@@ -1,39 +1,54 @@
 package session
 
 import (
-	"crypto/rand"
-	"errors"
-	"io"
-	"strings"
+	"regexp"
 	"testing"
 )
 
-// TestGenerateID_GivenCall_ThenReturnsValidFormat tests ID format.
-func TestGenerateID_GivenCall_ThenReturnsValidFormat(t *testing.T) {
-	id, err := GenerateID()
+// TestGenerateID_GivenEmptyUsedNames_ThenReturnsValidHumanName tests ID format.
+func TestGenerateID_GivenEmptyUsedNames_ThenReturnsValidHumanName(t *testing.T) {
+	id, err := GenerateID(nil)
 
 	if err != nil {
 		t.Fatalf("GenerateID() error = %v", err)
 	}
 
-	if !strings.HasPrefix(id, IDPrefix) {
-		t.Errorf("ID should start with %q, got %q", IDPrefix, id)
+	if id == "" {
+		t.Error("expected non-empty ID")
 	}
 
-	// Total length: "sandctl-" (8) + 8 hex chars = 16
-	expectedLen := len(IDPrefix) + IDRandomLength
-	if len(id) != expectedLen {
-		t.Errorf("ID length = %d, want %d", len(id), expectedLen)
+	// Verify ID is a human name (2-15 lowercase letters)
+	pattern := regexp.MustCompile(`^[a-z]{2,15}$`)
+	if !pattern.MatchString(id) {
+		t.Errorf("ID %q does not match human name pattern ^[a-z]{2,15}$", id)
+	}
+}
+
+// TestGenerateID_GivenUsedNames_ThenAvoidsCollision tests collision avoidance.
+func TestGenerateID_GivenUsedNames_ThenAvoidsCollision(t *testing.T) {
+	usedNames := []string{"alice", "bob", "charlie"}
+
+	for i := 0; i < 20; i++ {
+		id, err := GenerateID(usedNames)
+		if err != nil {
+			t.Fatalf("GenerateID() error = %v", err)
+		}
+
+		for _, used := range usedNames {
+			if id == used {
+				t.Errorf("GenerateID() returned used name %q", id)
+			}
+		}
 	}
 }
 
 // TestGenerateID_GivenMultipleCalls_ThenReturnsUniqueIDs tests uniqueness.
 func TestGenerateID_GivenMultipleCalls_ThenReturnsUniqueIDs(t *testing.T) {
 	ids := make(map[string]bool)
-	iterations := 100
+	usedNames := []string{}
 
-	for i := 0; i < iterations; i++ {
-		id, err := GenerateID()
+	for i := 0; i < 20; i++ {
+		id, err := GenerateID(usedNames)
 		if err != nil {
 			t.Fatalf("GenerateID() error = %v", err)
 		}
@@ -42,13 +57,14 @@ func TestGenerateID_GivenMultipleCalls_ThenReturnsUniqueIDs(t *testing.T) {
 			t.Errorf("duplicate ID generated: %s", id)
 		}
 		ids[id] = true
+		usedNames = append(usedNames, id)
 	}
 }
 
 // TestGenerateID_GivenValidID_ThenPassesValidation tests generated IDs are valid.
 func TestGenerateID_GivenValidID_ThenPassesValidation(t *testing.T) {
 	for i := 0; i < 10; i++ {
-		id, err := GenerateID()
+		id, err := GenerateID(nil)
 		if err != nil {
 			t.Fatalf("GenerateID() error = %v", err)
 		}
@@ -59,53 +75,18 @@ func TestGenerateID_GivenValidID_ThenPassesValidation(t *testing.T) {
 	}
 }
 
-// TestGenerateID_GivenRandomReaderError_ThenReturnsError tests error handling.
-func TestGenerateID_GivenRandomReaderError_ThenReturnsError(t *testing.T) {
-	// Save original randReader
-	originalReader := randReader
-	defer func() { randReader = originalReader }()
-
-	// Replace with failing reader
-	randReader = &failingReader{err: errors.New("random source unavailable")}
-
-	_, err := GenerateID()
-
-	if err == nil {
-		t.Error("expected error when random reader fails")
-	}
-	if !strings.Contains(err.Error(), "failed to generate random ID") {
-		t.Errorf("error should mention failure, got: %v", err)
-	}
-}
-
-// TestGenerateID_GivenDeterministicReader_ThenReturnsDeterministicID tests injectable reader.
-func TestGenerateID_GivenDeterministicReader_ThenReturnsDeterministicID(t *testing.T) {
-	// Save original randReader
-	originalReader := randReader
-	defer func() { randReader = originalReader }()
-
-	// Replace with deterministic reader
-	randReader = &deterministicReader{data: []byte{0xab, 0xcd, 0xef, 0x12}}
-
-	id, err := GenerateID()
-
-	if err != nil {
-		t.Fatalf("GenerateID() error = %v", err)
-	}
-
-	expected := "sandctl-abcdef12"
-	if id != expected {
-		t.Errorf("ID = %q, want %q", id, expected)
-	}
-}
-
-// TestValidateID_GivenValidIDs_ThenReturnsTrue tests valid ID patterns.
-func TestValidateID_GivenValidIDs_ThenReturnsTrue(t *testing.T) {
+// TestValidateID_GivenValidHumanNames_ThenReturnsTrue tests valid human names.
+func TestValidateID_GivenValidHumanNames_ThenReturnsTrue(t *testing.T) {
 	validIDs := []string{
-		"sandctl-abc12345",
-		"sandctl-00000000",
-		"sandctl-ffffffff",
-		"sandctl-a1b2c3d4",
+		"alice",
+		"bob",
+		"charlie",
+		"diana",
+		"emma",
+		"marcus",
+		"sofia",
+		"christopher", // 11 chars
+		"ab",          // minimum 2 chars
 	}
 
 	for _, id := range validIDs {
@@ -117,20 +98,38 @@ func TestValidateID_GivenValidIDs_ThenReturnsTrue(t *testing.T) {
 	}
 }
 
+// TestValidateID_GivenCaseVariants_ThenReturnsTrue tests case insensitivity.
+func TestValidateID_GivenCaseVariants_ThenReturnsTrue(t *testing.T) {
+	caseVariants := []string{
+		"Alice",
+		"ALICE",
+		"AlIcE",
+		"BOB",
+		"Marcus",
+	}
+
+	for _, id := range caseVariants {
+		t.Run(id, func(t *testing.T) {
+			if !ValidateID(id) {
+				t.Errorf("expected %q to be valid (case-insensitive)", id)
+			}
+		})
+	}
+}
+
 // TestValidateID_GivenInvalidIDs_ThenReturnsFalse tests invalid ID patterns.
 func TestValidateID_GivenInvalidIDs_ThenReturnsFalse(t *testing.T) {
 	invalidIDs := []string{
-		"",                   // empty
-		"sandctl-",           // no random part
-		"sandctl-abc1234",    // too short (7 chars)
-		"sandctl-abc123456",  // too long (9 chars)
-		"sandctl-ABCDEF12",   // uppercase (pattern requires lowercase)
-		"sandctl-abc-1234",   // contains hyphen in random part
-		"sandctl_abc12345",   // underscore instead of hyphen
-		"other-abc12345",     // wrong prefix
-		"abc12345",           // no prefix
-		"sandctl-abc!@#$%",   // special characters
-		"SANDCTL-abc12345",   // uppercase prefix
+		"",                 // empty
+		"a",                // too short (1 char)
+		"abcdefghijklmnop", // too long (16 chars)
+		"alice123",         // contains numbers
+		"alice-bob",        // contains hyphen
+		"alice_bob",        // contains underscore
+		"alice bob",        // contains space
+		"sandctl-abc12345", // old format
+		"alice!",           // special character
+		"123",              // all numbers
 	}
 
 	for _, id := range invalidIDs {
@@ -140,45 +139,4 @@ func TestValidateID_GivenInvalidIDs_ThenReturnsFalse(t *testing.T) {
 			}
 		})
 	}
-}
-
-// TestIDConstants_GivenValues_ThenMatchExpected tests constant values.
-func TestIDConstants_GivenValues_ThenMatchExpected(t *testing.T) {
-	if IDPrefix != "sandctl-" {
-		t.Errorf("IDPrefix = %q, want %q", IDPrefix, "sandctl-")
-	}
-
-	if IDRandomLength != 8 {
-		t.Errorf("IDRandomLength = %d, want %d", IDRandomLength, 8)
-	}
-}
-
-// failingReader is a test reader that always returns an error.
-type failingReader struct {
-	err error
-}
-
-func (r *failingReader) Read(p []byte) (n int, err error) {
-	return 0, r.err
-}
-
-// deterministicReader is a test reader that returns predetermined bytes.
-type deterministicReader struct {
-	data []byte
-	pos  int
-}
-
-func (r *deterministicReader) Read(p []byte) (n int, err error) {
-	if r.pos >= len(r.data) {
-		return 0, io.EOF
-	}
-	n = copy(p, r.data[r.pos:])
-	r.pos += n
-	return n, nil
-}
-
-// Ensure original randReader uses crypto/rand
-func init() {
-	// Verify randReader is using crypto/rand by default
-	_ = rand.Reader
 }
