@@ -8,8 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
+	"unicode"
 
 	"github.com/sandctl/sandctl/internal/sprites"
 )
@@ -24,6 +26,17 @@ const (
 	// pollInterval is how often to check sprite status while waiting.
 	pollInterval = 2 * time.Second
 )
+
+// stripControlChars removes control characters from API output.
+// The Sprites API returns output with TTY control characters.
+func stripControlChars(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) && r != '\n' && r != '\t' {
+			return -1
+		}
+		return r
+	}, strings.TrimSpace(s))
+}
 
 // requireToken fails the test if SPRITES_API_TOKEN is not set.
 // This ensures E2E test runs exit with code 1 when not properly configured.

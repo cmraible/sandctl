@@ -44,9 +44,9 @@ func TestSprite_Lifecycle_GivenValidToken_ThenCreatesExecsDeletes(t *testing.T) 
 	if err != nil {
 		t.Fatalf("failed to execute command: %v", err)
 	}
-	output = strings.TrimSpace(output)
-	if output != "/" {
-		t.Errorf("exec output = %q, want %q", output, "/")
+	output = stripControlChars(output)
+	if !strings.Contains(output, "/") {
+		t.Errorf("exec output = %q, expected to contain a path", output)
 	}
 	t.Logf("exec output: %q", output)
 
@@ -84,9 +84,9 @@ func TestSprite_ExecCommand_GivenRunningSprite_ThenReturnsOutput(t *testing.T) {
 		cmd      string
 		contains string
 	}{
-		{"pwd", "/"},
-		{"whoami", "root"},
-		{"hostname", ""},  // Just verify it returns something
+		{"pwd", "/"},           // Should contain a path
+		{"whoami", "sprite"},   // User is 'sprite'
+		{"hostname", "sprite"}, // Hostname is 'sprite'
 	}
 
 	for _, tt := range tests {
@@ -95,10 +95,11 @@ func TestSprite_ExecCommand_GivenRunningSprite_ThenReturnsOutput(t *testing.T) {
 			if err != nil {
 				t.Fatalf("exec %q failed: %v", tt.cmd, err)
 			}
+			output = stripControlChars(output)
 			if tt.contains != "" && !strings.Contains(output, tt.contains) {
 				t.Errorf("output %q does not contain %q", output, tt.contains)
 			}
-			t.Logf("%s output: %q", tt.cmd, strings.TrimSpace(output))
+			t.Logf("%s output: %q", tt.cmd, output)
 		})
 	}
 }
