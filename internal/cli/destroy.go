@@ -87,8 +87,15 @@ func runDestroy(cmd *cobra.Command, args []string) error {
 		if apiErr, ok := err.(*sprites.APIError); ok && apiErr.IsNotFound() {
 			verboseLog("Sprite not found on Fly.io, removing from local store only")
 		} else {
-			spin.Fail("Destroying session")
-			return fmt.Errorf("failed to destroy session: %w", err)
+			// API might return error but still delete - verify it's actually gone
+			_, verifyErr := client.GetSprite(sessionID)
+			if verifyErr == nil {
+				// Sprite still exists, deletion actually failed
+				spin.Fail("Destroying session")
+				return fmt.Errorf("failed to destroy session: %w", err)
+			}
+			// Sprite is gone, treat as success despite the error
+			verboseLog("API returned error but sprite was deleted: %v", err)
 		}
 	}
 
