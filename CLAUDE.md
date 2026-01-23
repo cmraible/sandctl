@@ -7,6 +7,8 @@ Auto-generated from all feature plans. Last updated: 2026-01-22
 - YAML file at `~/.sandctl/config` (002-init-command)
 - Go 1.22 + Cobra (CLI), gopkg.in/yaml.v3 (config), golang.org/x/term (003-human-readable-names)
 - Local JSON file at `~/.sandctl/sessions.json` (003-human-readable-names)
+- Go 1.22+ (existing project), YAML (GitHub Actions workflows) + GitHub Actions (ubuntu-latest runner), Go toolchain (004-github-actions-ci)
+- N/A (CI/CD configuration only) (004-github-actions-ci)
 
 - Go 1.22+ + Cobra (CLI framework), Viper (config), Fly.io Sprites SDK (001-sandbox-cli)
 
@@ -26,10 +28,10 @@ tests/
 Go 1.22+: Follow standard conventions
 
 ## Recent Changes
+- 004-github-actions-ci: Added Go 1.22+ (existing project), YAML (GitHub Actions workflows) + GitHub Actions (ubuntu-latest runner), Go toolchain
 - 003-human-readable-names: Added Go 1.22 + Cobra (CLI), gopkg.in/yaml.v3 (config), golang.org/x/term
 - 002-init-command: Added Go 1.22+ + Cobra (CLI framework), gopkg.in/yaml.v3 (config serialization), golang.org/x/term (secure input)
 
-- 001-sandbox-cli: Added Go 1.22+ + Cobra (CLI framework), Viper (config), Fly.io Sprites SDK
 
 <!-- MANUAL ADDITIONS START -->
 <!-- MANUAL ADDITIONS END -->

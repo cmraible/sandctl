@@ -233,7 +233,16 @@ func (c *Client) ExecCommandWithEnv(name string, command string, env map[string]
 		return "", parseAPIError(resp.StatusCode, body)
 	}
 
-	return string(body), nil
+	// Parse JSON response to extract output field
+	var execResp struct {
+		Output string `json:"output"`
+	}
+	if err := json.Unmarshal(body, &execResp); err != nil {
+		// If not JSON, return raw body (fallback for plain text responses)
+		return string(body), nil
+	}
+
+	return execResp.Output, nil
 }
 
 // ListSprites returns all sprites for the account.
