@@ -85,7 +85,7 @@ func runList(cmd *cobra.Command, args []string) error {
 }
 
 // syncWithSpritesAPI updates local session statuses from the Sprites API.
-func syncWithSpritesAPI(sessions []session.Session, token string, store *session.Store) []session.Session {
+func syncWithSpritesAPI(sessions []session.Session, _ string, store *session.Store) []session.Session {
 	client, err := getSpritesClient()
 	if err != nil {
 		verboseLog("Failed to create Sprites client for sync: %v", err)

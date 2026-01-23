@@ -27,7 +27,7 @@ func FormatError(writer io.Writer, err error) int {
 	}
 
 	// Check for specific error types and provide helpful messages
-	var configNotFound *config.ConfigNotFoundError
+	var configNotFound *config.NotFoundError
 	if errors.As(err, &configNotFound) {
 		PrintError(writer, "Configuration file not found")
 		fmt.Fprintln(writer)
@@ -54,7 +54,7 @@ func FormatError(writer io.Writer, err error) int {
 		return ExitConfigError
 	}
 
-	var sessionNotFound *session.SessionNotFoundError
+	var sessionNotFound *session.NotFoundError
 	if errors.As(err, &sessionNotFound) {
 		PrintError(writer, "session '%s' not found", sessionNotFound.ID)
 		fmt.Fprintln(writer)

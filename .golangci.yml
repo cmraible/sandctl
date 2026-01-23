@@ -22,9 +22,11 @@ linters:
 linters-settings:
   errcheck:
     check-type-assertions: true
-    check-blank: true
+    check-blank: false  # Allow intentional error ignores with _
   govet:
     enable-all: true
+    disable:
+      - fieldalignment  # Micro-optimization that reduces readability
   gofmt:
     simplify: true
   goimports:

@@ -148,9 +148,9 @@ func TestStore_Update_GivenNonExistentID_ThenReturnsError(t *testing.T) {
 		t.Error("expected error for non-existent ID")
 	}
 
-	snf, ok := err.(*SessionNotFoundError)
+	snf, ok := err.(*NotFoundError)
 	if !ok {
-		t.Fatalf("expected SessionNotFoundError, got %T: %v", err, err)
+		t.Fatalf("expected NotFoundError, got %T: %v", err, err)
 	}
 	if snf.ID != "sandctl-notfound" {
 		t.Errorf("ID = %q, want %q", snf.ID, "sandctl-notfound")
@@ -201,9 +201,9 @@ func TestStore_Remove_GivenNonExistentID_ThenReturnsError(t *testing.T) {
 		t.Error("expected error for non-existent ID")
 	}
 
-	_, ok := err.(*SessionNotFoundError)
+	_, ok := err.(*NotFoundError)
 	if !ok {
-		t.Fatalf("expected SessionNotFoundError, got %T: %v", err, err)
+		t.Fatalf("expected NotFoundError, got %T: %v", err, err)
 	}
 }
 
@@ -334,9 +334,9 @@ func TestStore_Get_GivenNonExistentID_ThenReturnsError(t *testing.T) {
 		t.Error("expected error for non-existent ID")
 	}
 
-	_, ok := err.(*SessionNotFoundError)
+	_, ok := err.(*NotFoundError)
 	if !ok {
-		t.Fatalf("expected SessionNotFoundError, got %T: %v", err, err)
+		t.Fatalf("expected NotFoundError, got %T: %v", err, err)
 	}
 }
 
@@ -384,12 +384,8 @@ func TestStore_ConcurrentOperations_GivenParallelAccess_ThenNoRaceConditions(t *
 				Prompt: "Concurrent",
 				Status: StatusRunning,
 			}
-			if err := store.Add(session); err != nil {
-				// Duplicates are expected in concurrent adds
-				if _, ok := err.(*SessionNotFoundError); !ok {
-					// Only report unexpected errors
-				}
-			}
+			// Duplicates are expected in concurrent adds, ignore errors
+			_ = store.Add(session)
 		}(i)
 	}
 
@@ -411,9 +407,9 @@ func TestStore_ConcurrentOperations_GivenParallelAccess_ThenNoRaceConditions(t *
 	}
 }
 
-// TestSessionNotFoundError_Error_GivenID_ThenReturnsFormattedMessage tests error message.
-func TestSessionNotFoundError_Error_GivenID_ThenReturnsFormattedMessage(t *testing.T) {
-	err := &SessionNotFoundError{ID: "sandctl-test1234"}
+// TestNotFoundError_Error_GivenID_ThenReturnsFormattedMessage tests error message.
+func TestNotFoundError_Error_GivenID_ThenReturnsFormattedMessage(t *testing.T) {
+	err := &NotFoundError{ID: "sandctl-test1234"}
 
 	msg := err.Error()
 

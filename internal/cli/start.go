@@ -76,9 +76,9 @@ func runStart(cmd *cobra.Command, args []string) error {
 	// Parse timeout if provided
 	var timeout *session.Duration
 	if startTimeout != "" {
-		d, err := time.ParseDuration(startTimeout)
-		if err != nil {
-			return fmt.Errorf("invalid timeout format: %w", err)
+		d, parseErr := time.ParseDuration(startTimeout)
+		if parseErr != nil {
+			return fmt.Errorf("invalid timeout format: %w", parseErr)
 		}
 		timeout = &session.Duration{Duration: d}
 	}
@@ -177,7 +177,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 }
 
 // provisionSprite creates a new sprite instance.
-func provisionSprite(client *sprites.Client, name string, agent config.AgentType, apiKey string) error {
+func provisionSprite(client *sprites.Client, name string, _ config.AgentType, _ string) error {
 	req := sprites.CreateSpriteRequest{
 		Name: name,
 	}

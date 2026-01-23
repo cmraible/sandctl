@@ -58,7 +58,7 @@ func Load(path string) (*Config, error) {
 	// Check if file exists
 	info, err := os.Stat(path)
 	if os.IsNotExist(err) {
-		return nil, &ConfigNotFoundError{Path: path}
+		return nil, &NotFoundError{Path: path}
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat config file: %w", err)
@@ -125,12 +125,12 @@ func (c *Config) GetAPIKey(agent AgentType) (string, bool) {
 	return key, ok && key != ""
 }
 
-// ConfigNotFoundError is returned when the config file doesn't exist.
-type ConfigNotFoundError struct {
+// NotFoundError is returned when the config file doesn't exist.
+type NotFoundError struct {
 	Path string
 }
 
-func (e *ConfigNotFoundError) Error() string {
+func (e *NotFoundError) Error() string {
 	return fmt.Sprintf("config file not found: %s", e.Path)
 }
 

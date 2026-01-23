@@ -1,4 +1,4 @@
-.PHONY: build test test-unit test-integration test-e2e lint install clean help
+.PHONY: build test test-unit test-integration test-e2e lint fmt check-fmt install install-hooks install-tools clean help
 
 # Build variables
 BINARY_NAME=sandctl
@@ -48,6 +48,22 @@ lint: ## Run linters
 fmt: ## Format code
 	$(GOFMT) -s -w .
 	goimports -w -local github.com/sandctl/sandctl .
+
+check-fmt: ## Check code formatting (CI use)
+	@if [ -n "$$($(GOFMT) -l .)" ]; then \
+		echo "The following files are not formatted:"; \
+		$(GOFMT) -l .; \
+		echo ""; \
+		echo "Run 'make fmt' to fix formatting"; \
+		exit 1; \
+	fi
+
+install-hooks: ## Install git pre-commit hooks
+	@./scripts/install-hooks.sh
+
+install-tools: ## Install development tools (golangci-lint)
+	@echo "Installing development tools..."
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint
 
 install: build ## Install binary to GOPATH/bin
 	@mkdir -p $(shell go env GOPATH)/bin

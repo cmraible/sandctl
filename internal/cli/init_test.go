@@ -24,7 +24,7 @@ func TestInitCommand_GivenNoExistingConfig_ThenCreatesConfig(t *testing.T) {
 	}
 
 	// Verify config file was created
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+	if _, statErr := os.Stat(configPath); os.IsNotExist(statErr) {
 		t.Error("config file was not created")
 	}
 

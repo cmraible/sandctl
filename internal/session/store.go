@@ -132,7 +132,7 @@ func (s *Store) Update(id string, status Status) error {
 	}
 
 	if !found {
-		return &SessionNotFoundError{ID: id}
+		return &NotFoundError{ID: id}
 	}
 
 	return s.save(data)
@@ -162,7 +162,7 @@ func (s *Store) Remove(id string) error {
 	}
 
 	if !found {
-		return &SessionNotFoundError{ID: id}
+		return &NotFoundError{ID: id}
 	}
 
 	data.Sessions = newSessions
@@ -218,7 +218,7 @@ func (s *Store) Get(id string) (*Session, error) {
 		}
 	}
 
-	return nil, &SessionNotFoundError{ID: id}
+	return nil, &NotFoundError{ID: id}
 }
 
 // GetUsedNames returns a list of all session IDs (names) currently in the store.
@@ -240,11 +240,11 @@ func (s *Store) GetUsedNames() ([]string, error) {
 	return names, nil
 }
 
-// SessionNotFoundError is returned when a session doesn't exist.
-type SessionNotFoundError struct {
+// NotFoundError is returned when a session doesn't exist.
+type NotFoundError struct {
 	ID string
 }
 
-func (e *SessionNotFoundError) Error() string {
+func (e *NotFoundError) Error() string {
 	return fmt.Sprintf("session '%s' not found", e.ID)
 }

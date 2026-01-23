@@ -50,7 +50,7 @@ func runDestroy(cmd *cobra.Command, args []string) error {
 	_, err := store.Get(sessionName)
 	if err != nil {
 		// Check if it's a not found error
-		if _, ok := err.(*session.SessionNotFoundError); ok {
+		if _, ok := err.(*session.NotFoundError); ok {
 			ui.PrintError(os.Stderr, "session '%s' not found", sessionName)
 			fmt.Fprintln(os.Stderr)
 			fmt.Fprintln(os.Stderr, "Use 'sandctl list' to see active sessions.")
@@ -61,13 +61,13 @@ func runDestroy(cmd *cobra.Command, args []string) error {
 
 	// Confirm unless --force
 	if !destroyForce {
-		confirmed, err := ui.Confirm(os.Stdin, os.Stdout,
+		confirmed, confirmErr := ui.Confirm(os.Stdin, os.Stdout,
 			fmt.Sprintf("Destroy session '%s'? This cannot be undone.", sessionName))
-		if err != nil {
-			return fmt.Errorf("failed to read confirmation: %w", err)
+		if confirmErr != nil {
+			return fmt.Errorf("failed to read confirmation: %w", confirmErr)
 		}
 		if !confirmed {
-			fmt.Println("Cancelled.")
+			fmt.Println("Canceled.")
 			return nil
 		}
 	}

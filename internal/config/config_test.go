@@ -111,17 +111,17 @@ agent_api_keys:
 	}
 }
 
-// TestLoad_GivenMissingFile_ThenReturnsConfigNotFoundError tests missing file error.
-func TestLoad_GivenMissingFile_ThenReturnsConfigNotFoundError(t *testing.T) {
+// TestLoad_GivenMissingFile_ThenReturnsNotFoundError tests missing file error.
+func TestLoad_GivenMissingFile_ThenReturnsNotFoundError(t *testing.T) {
 	_, err := Load("/nonexistent/path/config")
 
 	if err == nil {
 		t.Fatal("expected error for missing file")
 	}
 
-	cnf, ok := err.(*ConfigNotFoundError)
+	cnf, ok := err.(*NotFoundError)
 	if !ok {
-		t.Fatalf("expected ConfigNotFoundError, got %T: %v", err, err)
+		t.Fatalf("expected NotFoundError, got %T: %v", err, err)
 	}
 
 	if cnf.Path != "/nonexistent/path/config" {
@@ -183,8 +183,8 @@ func TestLoad_GivenEmptyPath_ThenUsesDefaultPath(t *testing.T) {
 		return
 	}
 
-	// Should be ConfigNotFoundError pointing to default path
-	cnf, ok := err.(*ConfigNotFoundError)
+	// Should be NotFoundError pointing to default path
+	cnf, ok := err.(*NotFoundError)
 	if !ok {
 		// Could be other error if config exists but has issues
 		return
@@ -318,9 +318,9 @@ func TestGetAPIKey_GivenEmptyKey_ThenReturnsFalse(t *testing.T) {
 	}
 }
 
-// TestConfigNotFoundError_Error_GivenPath_ThenReturnsFormattedMessage tests error message.
-func TestConfigNotFoundError_Error_GivenPath_ThenReturnsFormattedMessage(t *testing.T) {
-	err := &ConfigNotFoundError{Path: "/some/path/config"}
+// TestNotFoundError_Error_GivenPath_ThenReturnsFormattedMessage tests error message.
+func TestNotFoundError_Error_GivenPath_ThenReturnsFormattedMessage(t *testing.T) {
+	err := &NotFoundError{Path: "/some/path/config"}
 
 	msg := err.Error()
 
