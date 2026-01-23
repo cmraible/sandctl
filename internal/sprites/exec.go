@@ -2,14 +2,21 @@ package sprites
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/gorilla/websocket"
 )
+
+// wsMessage represents a WebSocket message from the Sprites API.
+type wsMessage struct {
+	Type string `json:"type"`
+}
 
 // ExecOptions configures an exec session.
 type ExecOptions struct {
@@ -22,10 +29,11 @@ type ExecOptions struct {
 
 // ExecSession represents an active exec session.
 type ExecSession struct {
-	conn   *websocket.Conn
-	opts   ExecOptions
-	done   chan struct{}
-	cancel context.CancelFunc
+	conn      *websocket.Conn
+	opts      ExecOptions
+	done      chan struct{}
+	cancel    context.CancelFunc
+	closeOnce sync.Once
 }
 
 // ExecWebSocket opens a WebSocket connection for command execution.
@@ -43,9 +51,16 @@ func (c *Client) ExecWebSocket(ctx context.Context, spriteName string, opts Exec
 	q := wsURL.Query()
 	if opts.Command != "" {
 		q.Set("cmd", opts.Command)
+	} else if opts.Interactive {
+		// Default to bash for interactive sessions
+		q.Set("cmd", "bash")
 	}
 	if opts.Interactive {
+		q.Set("tty", "true")
 		q.Set("stdin", "true")
+		// Set default terminal size
+		q.Set("cols", "120")
+		q.Set("rows", "40")
 	}
 	wsURL.RawQuery = q.Encode()
 
@@ -84,6 +99,7 @@ func (s *ExecSession) Run() error {
 
 	// Read from WebSocket and write to stdout
 	go func() {
+		firstMessage := true
 		for {
 			_, message, err := s.conn.ReadMessage()
 			if err != nil {
@@ -94,6 +110,20 @@ func (s *ExecSession) Run() error {
 				errChan <- err
 				return
 			}
+			// Check if this is a JSON control message
+			if len(message) > 0 && message[0] == '{' {
+				var msg wsMessage
+				if json.Unmarshal(message, &msg) == nil && msg.Type != "" {
+					// Skip control messages (session_info, exit, port_notification, etc.)
+					// Clear the line if this was the first message to reset cursor position
+					if firstMessage && s.opts.Stdout != nil {
+						s.opts.Stdout.Write([]byte("\r\033[K"))
+					}
+					firstMessage = false
+					continue
+				}
+			}
+			firstMessage = false
 			if s.opts.Stdout != nil {
 				_, _ = s.opts.Stdout.Write(message)
 			}
@@ -117,7 +147,7 @@ func (s *ExecSession) Run() error {
 					errChan <- err
 					return
 				}
-				if err := s.conn.WriteMessage(websocket.TextMessage, buf[:n]); err != nil {
+				if err := s.conn.WriteMessage(websocket.BinaryMessage, buf[:n]); err != nil {
 					errChan <- err
 					return
 				}
@@ -136,7 +166,11 @@ func (s *ExecSession) Run() error {
 
 // Close closes the exec session.
 func (s *ExecSession) Close() error {
-	s.cancel()
-	close(s.done)
-	return s.conn.Close()
+	var err error
+	s.closeOnce.Do(func() {
+		s.cancel()
+		close(s.done)
+		err = s.conn.Close()
+	})
+	return err
 }

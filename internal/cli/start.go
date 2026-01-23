@@ -140,7 +140,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 		{
 			Message: "Starting agent",
 			Action: func() error {
-				return startAgentInSprite(client, sessionID, agentType, startPrompt)
+				return startAgentInSprite(client, sessionID, agentType, apiKey, startPrompt)
 			},
 		},
 	}
@@ -172,18 +172,8 @@ func runStart(cmd *cobra.Command, args []string) error {
 
 // provisionSprite creates a new sprite instance.
 func provisionSprite(client *sprites.Client, name string, agent config.AgentType, apiKey string) error {
-	// Set up environment variables for the agent
-	env := map[string]string{}
-	switch agent {
-	case config.AgentClaude, config.AgentOpencode:
-		env["ANTHROPIC_API_KEY"] = apiKey
-	case config.AgentCodex:
-		env["OPENAI_API_KEY"] = apiKey
-	}
-
 	req := sprites.CreateSpriteRequest{
 		Name: name,
-		Env:  env,
 	}
 
 	sprite, err := client.CreateSprite(req)
@@ -209,7 +199,10 @@ func waitForSpriteReady(client *sprites.Client, name string) error {
 
 		verboseLog("Sprite state (attempt %d/%d): %s", i+1, maxAttempts, sprite.State)
 
-		if sprite.State == "running" || sprite.State == "warm" {
+		// "cold" = just created, warms up on first request (100-500ms)
+		// "warm" = hibernated but ready
+		// "running" = actively running
+		if sprite.State == "running" || sprite.State == "warm" || sprite.State == "cold" {
 			return nil
 		}
 
@@ -235,16 +228,17 @@ func installDevTools(client *sprites.Client, name string) error {
 }
 
 // startAgentInSprite starts the AI agent with the given prompt.
-func startAgentInSprite(client *sprites.Client, name string, agent config.AgentType, prompt string) error {
+func startAgentInSprite(client *sprites.Client, name string, agent config.AgentType, apiKey, prompt string) error {
 	var cmd string
+
 	switch agent {
 	case config.AgentClaude:
-		// Claude is pre-installed on Sprites
-		cmd = fmt.Sprintf("nohup claude --prompt %q > /var/log/agent.log 2>&1 &", prompt)
+		// Export API key inline and start Claude
+		cmd = fmt.Sprintf("export ANTHROPIC_API_KEY=%q && nohup claude --prompt %q > /var/log/agent.log 2>&1 &", apiKey, prompt)
 	case config.AgentOpencode:
-		cmd = fmt.Sprintf("nohup opencode --prompt %q > /var/log/agent.log 2>&1 &", prompt)
+		cmd = fmt.Sprintf("export ANTHROPIC_API_KEY=%q && nohup opencode --prompt %q > /var/log/agent.log 2>&1 &", apiKey, prompt)
 	case config.AgentCodex:
-		cmd = fmt.Sprintf("nohup codex --prompt %q > /var/log/agent.log 2>&1 &", prompt)
+		cmd = fmt.Sprintf("export OPENAI_API_KEY=%q && nohup codex --prompt %q > /var/log/agent.log 2>&1 &", apiKey, prompt)
 	default:
 		return fmt.Errorf("unsupported agent type: %s", agent)
 	}

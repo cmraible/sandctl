@@ -56,9 +56,8 @@ type Sprite struct {
 
 // CreateSpriteRequest represents a request to create a new sprite.
 type CreateSpriteRequest struct {
-	Name   string            `json:"name"`
-	Env    map[string]string `json:"env,omitempty"`
-	Region string            `json:"region,omitempty"`
+	Name   string `json:"name"`
+	Region string `json:"region,omitempty"`
 }
 
 // CreateSpriteResponse represents the response from creating a sprite.
@@ -199,10 +198,20 @@ func (c *Client) GetSprite(name string) (*Sprite, error) {
 
 // ExecCommand executes a command inside a sprite and returns the output.
 func (c *Client) ExecCommand(name string, command string) (string, error) {
-	// Build URL with query parameter (URL-encoded)
-	url := fmt.Sprintf("%s/v1/sprites/%s/exec?cmd=%s", c.baseURL, name, neturl.QueryEscape(command))
+	return c.ExecCommandWithEnv(name, command, nil)
+}
 
-	req, err := http.NewRequest(http.MethodPost, url, nil)
+// ExecCommandWithEnv executes a command with environment variables.
+func (c *Client) ExecCommandWithEnv(name string, command string, env map[string]string) (string, error) {
+	// Build URL with query parameters
+	reqURL := fmt.Sprintf("%s/v1/sprites/%s/exec?cmd=%s", c.baseURL, name, neturl.QueryEscape(command))
+
+	// Add environment variables
+	for k, v := range env {
+		reqURL += "&env=" + neturl.QueryEscape(k+"="+v)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, reqURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}

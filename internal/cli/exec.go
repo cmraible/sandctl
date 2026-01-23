@@ -50,38 +50,31 @@ func runExec(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid session ID format: %s", sessionID)
 	}
 
-	// Get session from store
-	store := getSessionStore()
-	sess, err := store.Get(sessionID)
-	if err != nil {
-		return err
-	}
-
-	// Check session status
-	if !sess.CanConnect() {
-		ui.FormatSessionNotRunning(os.Stderr, sessionID, sess.Status)
-		return nil
-	}
-
 	// Get Sprites client
 	client, err := getSpritesClient()
 	if err != nil {
 		return err
 	}
 
-	// Verify sprite still exists and is running
+	// Verify sprite exists and is ready (running or warm)
 	sprite, err := client.GetSprite(sessionID)
 	if err != nil {
 		return fmt.Errorf("failed to verify session: %w", err)
 	}
 
-	if sprite.State != "running" {
-		// Update local store
+	store := getSessionStore()
+
+	// "warm" = hibernated but ready, "running" = active
+	if sprite.State != "running" && sprite.State != "warm" {
+		// Update local store with current status
 		newStatus := mapSpriteStateToSession(sprite.State)
 		_ = store.Update(sessionID, newStatus)
 		ui.FormatSessionNotRunning(os.Stderr, sessionID, newStatus)
 		return nil
 	}
+
+	// Update local store to running
+	_ = store.Update(sessionID, session.StatusRunning)
 
 	// Single command mode
 	if execCommand != "" {
@@ -156,7 +149,7 @@ func runInteractiveSession(client *sprites.Client, sessionID string) error {
 // mapSpriteStateToSession converts Sprites API state to session status.
 func mapSpriteStateToSession(state string) session.Status {
 	switch state {
-	case "running":
+	case "running", "warm":
 		return session.StatusRunning
 	case "stopped", "destroyed":
 		return session.StatusStopped
