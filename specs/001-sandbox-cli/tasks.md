@@ -26,10 +26,10 @@ Based on plan.md structure:
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Create project directory structure per plan.md in cmd/, internal/, tests/
-- [ ] T002 Initialize Go module with `go mod init` and add dependencies (cobra, viper) in go.mod
-- [ ] T003 [P] Configure golangci-lint with .golangci.yml at repository root
-- [ ] T004 [P] Create Makefile with build, test, lint, and install targets at repository root
+- [x] T001 Create project directory structure per plan.md in cmd/, internal/, tests/
+- [x] T002 Initialize Go module with `go mod init` and add dependencies (cobra, viper) in go.mod
+- [x] T003 [P] Configure golangci-lint with .golangci.yml at repository root
+- [x] T004 [P] Create Makefile with build, test, lint, and install targets at repository root
 
 **Checkpoint**: Project structure ready for development
 
@@ -41,14 +41,14 @@ Based on plan.md structure:
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T005 Implement Config struct and loader in internal/config/config.go (load ~/.sandctl/config, validate permissions)
-- [ ] T006 [P] Implement Session and related types (AgentType, Status) in internal/session/types.go
-- [ ] T007 [P] Implement SessionStore with Add/Update/Remove/List/Get in internal/session/store.go
-- [ ] T008 Implement Sprites API client with auth handling in internal/sprites/client.go
-- [ ] T009 [P] Implement progress spinner and output helpers in internal/ui/progress.go
-- [ ] T010 [P] Implement error types and user-friendly formatting in internal/ui/errors.go
-- [ ] T011 Create root command with global flags (--config, --verbose, --version) in internal/cli/root.go
-- [ ] T012 Create main.go entry point that executes root command in cmd/sandctl/main.go
+- [x] T005 Implement Config struct and loader in internal/config/config.go (load ~/.sandctl/config, validate permissions)
+- [x] T006 [P] Implement Session and related types (AgentType, Status) in internal/session/types.go
+- [x] T007 [P] Implement SessionStore with Add/Update/Remove/List/Get in internal/session/store.go
+- [x] T008 Implement Sprites API client with auth handling in internal/sprites/client.go
+- [x] T009 [P] Implement progress spinner and output helpers in internal/ui/progress.go
+- [x] T010 [P] Implement error types and user-friendly formatting in internal/ui/errors.go
+- [x] T011 Create root command with global flags (--config, --verbose, --version) in internal/cli/root.go
+- [x] T012 Create main.go entry point that executes root command in cmd/sandctl/main.go
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 
@@ -62,15 +62,15 @@ Based on plan.md structure:
 
 ### Implementation for User Story 1
 
-- [ ] T013 [US1] Add CreateSprite method to Sprites client in internal/sprites/client.go
-- [ ] T014 [US1] Add GetSprite method to Sprites client for status polling in internal/sprites/client.go
-- [ ] T015 [US1] Implement session ID generator (sandctl-{random8}) in internal/session/id.go
-- [ ] T016 [US1] Implement start command with --prompt, --agent, --timeout flags in internal/cli/start.go
-- [ ] T017 [US1] Add provisioning workflow: create sprite → inject API keys → start agent in internal/cli/start.go
-- [ ] T018 [US1] Add progress display during provisioning (3 steps) in internal/cli/start.go
-- [ ] T019 [US1] Add session to local store after successful start in internal/cli/start.go
-- [ ] T020 [US1] Implement cleanup on provisioning failure in internal/cli/start.go
-- [ ] T021 [US1] Add first-run config setup prompt when config missing in internal/cli/start.go
+- [x] T013 [US1] Add CreateSprite method to Sprites client in internal/sprites/client.go
+- [x] T014 [US1] Add GetSprite method to Sprites client for status polling in internal/sprites/client.go
+- [x] T015 [US1] Implement session ID generator (sandctl-{random8}) in internal/session/id.go
+- [x] T016 [US1] Implement start command with --prompt, --agent, --timeout flags in internal/cli/start.go
+- [x] T017 [US1] Add provisioning workflow: create sprite → inject API keys → start agent in internal/cli/start.go
+- [x] T018 [US1] Add progress display during provisioning (3 steps) in internal/cli/start.go
+- [x] T019 [US1] Add session to local store after successful start in internal/cli/start.go
+- [x] T020 [US1] Implement cleanup on provisioning failure in internal/cli/start.go
+- [x] T021 [US1] Add first-run config setup prompt when config missing in internal/cli/start.go
 
 **Checkpoint**: User Story 1 complete - users can start sandboxed agent sessions
 
@@ -84,12 +84,12 @@ Based on plan.md structure:
 
 ### Implementation for User Story 2
 
-- [ ] T022 [US2] Add ListSprites method to Sprites client in internal/sprites/client.go
-- [ ] T023 [US2] Implement list command with --format (table/json) and --all flags in internal/cli/list.go
-- [ ] T024 [US2] Implement table formatter for session output in internal/ui/table.go
-- [ ] T025 [US2] Implement JSON formatter for session output in internal/cli/list.go
-- [ ] T026 [US2] Sync local session store with Sprites API state in internal/cli/list.go
-- [ ] T027 [US2] Handle empty state with helpful message in internal/cli/list.go
+- [x] T022 [US2] Add ListSprites method to Sprites client in internal/sprites/client.go
+- [x] T023 [US2] Implement list command with --format (table/json) and --all flags in internal/cli/list.go
+- [x] T024 [US2] Implement table formatter for session output in internal/ui/table.go
+- [x] T025 [US2] Implement JSON formatter for session output in internal/cli/list.go
+- [x] T026 [US2] Sync local session store with Sprites API state in internal/cli/list.go
+- [x] T027 [US2] Handle empty state with helpful message in internal/cli/list.go
 
 **Checkpoint**: User Story 2 complete - users can list and monitor sessions
 
@@ -103,13 +103,13 @@ Based on plan.md structure:
 
 ### Implementation for User Story 3
 
-- [ ] T028 [US3] Add ExecWebSocket method to Sprites client in internal/sprites/client.go
-- [ ] T029 [US3] Implement WebSocket connection handling for interactive shell in internal/sprites/exec.go
-- [ ] T030 [US3] Implement exec command with session-id argument and --command flag in internal/cli/exec.go
-- [ ] T031 [US3] Add terminal raw mode handling for interactive sessions in internal/cli/exec.go
-- [ ] T032 [US3] Add single command execution mode (-c flag) in internal/cli/exec.go
-- [ ] T033 [US3] Add session validation (exists, is running) before connect in internal/cli/exec.go
-- [ ] T034 [US3] Handle connection errors and session not found gracefully in internal/cli/exec.go
+- [x] T028 [US3] Add ExecWebSocket method to Sprites client in internal/sprites/client.go
+- [x] T029 [US3] Implement WebSocket connection handling for interactive shell in internal/sprites/exec.go
+- [x] T030 [US3] Implement exec command with session-id argument and --command flag in internal/cli/exec.go
+- [x] T031 [US3] Add terminal raw mode handling for interactive sessions in internal/cli/exec.go
+- [x] T032 [US3] Add single command execution mode (-c flag) in internal/cli/exec.go
+- [x] T033 [US3] Add session validation (exists, is running) before connect in internal/cli/exec.go
+- [x] T034 [US3] Handle connection errors and session not found gracefully in internal/cli/exec.go
 
 **Checkpoint**: User Story 3 complete - users can shell into running sessions
 
@@ -123,11 +123,11 @@ Based on plan.md structure:
 
 ### Implementation for User Story 4
 
-- [ ] T035 [US4] Add DeleteSprite method to Sprites client in internal/sprites/client.go
-- [ ] T036 [US4] Implement destroy command with session-id argument and --force flag in internal/cli/destroy.go
-- [ ] T037 [US4] Add confirmation prompt (unless --force) in internal/cli/destroy.go
-- [ ] T038 [US4] Remove session from local store after successful destroy in internal/cli/destroy.go
-- [ ] T039 [US4] Handle session not found error with helpful message in internal/cli/destroy.go
+- [x] T035 [US4] Add DeleteSprite method to Sprites client in internal/sprites/client.go
+- [x] T036 [US4] Implement destroy command with session-id argument and --force flag in internal/cli/destroy.go
+- [x] T037 [US4] Add confirmation prompt (unless --force) in internal/cli/destroy.go
+- [x] T038 [US4] Remove session from local store after successful destroy in internal/cli/destroy.go
+- [x] T039 [US4] Handle session not found error with helpful message in internal/cli/destroy.go
 
 **Checkpoint**: User Story 4 complete - users can clean up sessions
 
@@ -137,13 +137,13 @@ Based on plan.md structure:
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T040 [P] Add --help examples for all commands in internal/cli/*.go
-- [ ] T041 [P] Add version command showing build info in internal/cli/root.go
-- [ ] T042 Verify all exit codes match CLI contract in internal/cli/*.go
-- [ ] T043 [P] Add verbose logging when --verbose flag is set in internal/cli/root.go
-- [ ] T044 Run govulncheck and address any dependency vulnerabilities
+- [x] T040 [P] Add --help examples for all commands in internal/cli/*.go
+- [x] T041 [P] Add version command showing build info in internal/cli/root.go
+- [x] T042 Verify all exit codes match CLI contract in internal/cli/*.go
+- [x] T043 [P] Add verbose logging when --verbose flag is set in internal/cli/root.go
+- [x] T044 Run govulncheck and address any dependency vulnerabilities
 - [ ] T045 Validate quickstart.md scenarios work end-to-end
-- [ ] T046 [P] Create release build configuration in Makefile
+- [x] T046 [P] Create release build configuration in Makefile
 
 ---
 

@@ -1,0 +1,168 @@
+package cli
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/spf13/cobra"
+	"golang.org/x/term"
+
+	"github.com/sandctl/sandctl/internal/session"
+	"github.com/sandctl/sandctl/internal/sprites"
+	"github.com/sandctl/sandctl/internal/ui"
+)
+
+var execCommand string
+
+var execCmd = &cobra.Command{
+	Use:   "exec <session-id>",
+	Short: "Connect to a running session",
+	Long: `Open an interactive shell session inside a running VM.
+
+By default, opens an interactive shell. Use --command to run a single
+command and return the output.`,
+	Example: `  # Interactive shell
+  sandctl exec sandctl-a1b2c3d4
+
+  # Run a single command
+  sandctl exec sandctl-a1b2c3d4 -c "ls -la"
+
+  # Check agent logs
+  sandctl exec sandctl-a1b2c3d4 -c "cat /var/log/agent.log"`,
+	Args: cobra.ExactArgs(1),
+	RunE: runExec,
+}
+
+func init() {
+	execCmd.Flags().StringVarP(&execCommand, "command", "c", "", "run a single command instead of interactive shell")
+
+	rootCmd.AddCommand(execCmd)
+}
+
+func runExec(cmd *cobra.Command, args []string) error {
+	sessionID := args[0]
+
+	// Validate session ID format
+	if !session.ValidateID(sessionID) {
+		return fmt.Errorf("invalid session ID format: %s", sessionID)
+	}
+
+	// Get session from store
+	store := getSessionStore()
+	sess, err := store.Get(sessionID)
+	if err != nil {
+		return err
+	}
+
+	// Check session status
+	if !sess.CanConnect() {
+		ui.FormatSessionNotRunning(os.Stderr, sessionID, sess.Status)
+		return nil
+	}
+
+	// Get Sprites client
+	client, err := getSpritesClient()
+	if err != nil {
+		return err
+	}
+
+	// Verify sprite still exists and is running
+	sprite, err := client.GetSprite(sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to verify session: %w", err)
+	}
+
+	if sprite.State != "running" {
+		// Update local store
+		newStatus := mapSpriteStateToSession(sprite.State)
+		_ = store.Update(sessionID, newStatus)
+		ui.FormatSessionNotRunning(os.Stderr, sessionID, newStatus)
+		return nil
+	}
+
+	// Single command mode
+	if execCommand != "" {
+		return runSingleCommand(client, sessionID, execCommand)
+	}
+
+	// Interactive mode
+	return runInteractiveSession(client, sessionID)
+}
+
+// runSingleCommand executes a single command and prints the output.
+func runSingleCommand(client *sprites.Client, sessionID, command string) error {
+	verboseLog("Executing command: %s", command)
+
+	output, err := client.ExecCommand(sessionID, command)
+	if err != nil {
+		return fmt.Errorf("command execution failed: %w", err)
+	}
+
+	fmt.Print(output)
+	return nil
+}
+
+// runInteractiveSession opens an interactive shell session.
+func runInteractiveSession(client *sprites.Client, sessionID string) error {
+	fmt.Printf("Connecting to %s...\n", sessionID)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Handle interrupt signals
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		cancel()
+	}()
+
+	// Set terminal to raw mode for interactive session
+	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+	if err != nil {
+		verboseLog("Warning: failed to set raw mode: %v", err)
+		// Continue anyway, might work in some terminals
+	} else {
+		defer func() {
+			_ = term.Restore(int(os.Stdin.Fd()), oldState)
+			fmt.Println() // New line after session ends
+		}()
+	}
+
+	fmt.Println("Connected. Press Ctrl+D to exit.")
+
+	// Open WebSocket exec session
+	execSession, err := client.ExecWebSocket(ctx, sessionID, sprites.ExecOptions{
+		Interactive: true,
+		Stdin:       os.Stdin,
+		Stdout:      os.Stdout,
+		Stderr:      os.Stderr,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+
+	// Run the session
+	if err := execSession.Run(); err != nil {
+		return fmt.Errorf("session error: %w", err)
+	}
+
+	return nil
+}
+
+// mapSpriteStateToSession converts Sprites API state to session status.
+func mapSpriteStateToSession(state string) session.Status {
+	switch state {
+	case "running":
+		return session.StatusRunning
+	case "stopped", "destroyed":
+		return session.StatusStopped
+	case "failed":
+		return session.StatusFailed
+	default:
+		return session.StatusProvisioning
+	}
+}
