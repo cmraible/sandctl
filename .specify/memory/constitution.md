@@ -2,18 +2,27 @@
   ============================================================================
   SYNC IMPACT REPORT
   ============================================================================
-  Version change: 1.0.0 → 1.0.1 (patch)
+  Version change: 1.1.0 → 2.0.0 (major)
+
+  Removed sections:
+  - Principle II: Behavior Driven Development (entire principle removed)
 
   Modified sections:
-  - Quality Gates: Removed coverage requirement from Unit Tests gate
+  - All principles renumbered (III→II, IV→III, V→IV, VI→V)
+  - Quality Gates: Removed "BDD Scenarios" gate
+  - Development Workflow: Removed BDD reference from step 1
+
+  Added sections: None
 
   Templates requiring updates:
-  - .specify/templates/plan-template.md: ✅ Compatible
-  - .specify/templates/spec-template.md: ✅ Compatible
+  - .specify/templates/plan-template.md: ⚠️ Review - may contain BDD references
+  - .specify/templates/spec-template.md: ⚠️ Review - contains Given/When/Then format
   - .specify/templates/tasks-template.md: ✅ Compatible
   - .specify/templates/checklist-template.md: ✅ Compatible
 
-  Follow-up TODOs: None
+  Follow-up TODOs:
+  - Review spec-template.md for BDD terminology (Given/When/Then scenarios)
+  - Review plan-template.md for BDD references
   ============================================================================
 -->
 
@@ -37,23 +46,7 @@ All code MUST meet rigorous quality standards before merge:
 **Rationale**: Quality code reduces maintenance burden, prevents bugs, and enables confident
 refactoring. Technical debt compounds—addressing it early costs less than fixing it later.
 
-### II. Behavior Driven Development
-
-All features MUST be specified and tested using behavior-driven practices:
-
-- **Specification First**: Before implementation, user-facing behavior MUST be captured as
-  Given/When/Then scenarios in the feature specification.
-- **Testable Scenarios**: Every acceptance scenario MUST be translatable to an automated test.
-  Scenarios that cannot be tested automatically require documented manual test procedures.
-- **Living Documentation**: BDD specifications serve as the source of truth for system behavior.
-  If code and specification diverge, the code is wrong.
-- **User Story Independence**: Each user story MUST be independently testable and deliverable
-  as a standalone increment of value.
-
-**Rationale**: BDD ensures shared understanding between stakeholders and developers. Executable
-specifications catch requirements drift early and provide regression protection.
-
-### III. Performance
+### II. Performance
 
 Performance MUST be a first-class concern throughout development:
 
@@ -70,7 +63,7 @@ Performance MUST be a first-class concern throughout development:
 **Rationale**: Performance problems discovered in production are expensive to diagnose and fix.
 Proactive performance engineering prevents user-facing degradation and infrastructure costs.
 
-### IV. Security
+### III. Security
 
 Security MUST be integrated into every phase of development:
 
@@ -89,7 +82,7 @@ Security MUST be integrated into every phase of development:
 **Rationale**: Security breaches destroy user trust and incur legal, financial, and reputational
 costs. Secure-by-default practices are far cheaper than incident response.
 
-### V. User Privacy
+### IV. User Privacy
 
 User data MUST be treated as a sacred trust:
 
@@ -108,6 +101,28 @@ User data MUST be treated as a sacred trust:
 **Rationale**: Privacy is a fundamental right. Building privacy-respecting systems from the
 start avoids costly retrofits and maintains the trust users place in our software.
 
+### V. End-to-End Testing Philosophy
+
+E2E tests MUST exercise the product as a real user would:
+
+- **User-Centric Invocation**: E2E tests MUST invoke CLI commands exactly as a user would type
+  them. Tests interact with the application through its public interface, not internal APIs or
+  test harnesses.
+- **Black-Box Testing**: E2E tests MUST treat the application as an opaque system. Tests verify
+  observable behavior and outputs, not internal state or implementation details.
+- **Implementation Independence**: E2E tests MUST remain stable across significant
+  implementation changes. If internal refactoring breaks E2E tests, the tests are incorrectly
+  coupled to implementation.
+- **Decoupling Enforcement**: E2E tests MUST NOT import application code, access internal data
+  structures, mock internal components, or depend on implementation-specific file paths or
+  formats.
+- **Behavioral Contracts**: E2E tests MUST verify the contract between the user and the system.
+  Tests assert what the user sees and experiences, not how the system achieves it.
+
+**Rationale**: E2E tests that couple to implementation become maintenance burdens that resist
+change. True black-box tests validate user value and provide confidence during refactoring,
+enabling rapid iteration without test suite churn.
+
 ## Quality Gates
 
 All code changes MUST pass these gates before merge:
@@ -117,7 +132,7 @@ All code changes MUST pass these gates before merge:
 | Lint & Format | Zero warnings/errors | CI automated |
 | Type Check | Full type coverage, no escape hatches without comment | CI automated |
 | Unit Tests | All pass | CI automated |
-| BDD Scenarios | All acceptance tests pass | CI automated |
+| E2E Tests | All pass without implementation coupling | CI automated |
 | Performance | No regressions > 10% vs baseline | CI automated where possible |
 | Security Scan | No critical/high vulnerabilities | CI automated |
 | Code Review | At least one approval from qualified reviewer | Manual |
@@ -126,21 +141,32 @@ All code changes MUST pass these gates before merge:
 
 ### Feature Development Sequence
 
-1. **Specify**: Write BDD scenarios capturing expected behavior (Principle II)
-2. **Design**: Plan implementation considering performance and security (Principles III, IV)
+1. **Specify**: Document expected user-facing behavior and acceptance criteria
+2. **Design**: Plan implementation considering performance and security (Principles II, III)
 3. **Implement**: Write quality code meeting all standards (Principle I)
-4. **Test**: Verify all scenarios pass, measure performance baselines
-5. **Review**: Peer review for quality, security, and privacy concerns
-6. **Merge**: Only after all quality gates pass
+4. **Test**: Verify all acceptance criteria pass, measure performance baselines
+5. **E2E Validate**: Run black-box E2E tests through public CLI interface (Principle V)
+6. **Review**: Peer review for quality, security, and privacy concerns
+7. **Merge**: Only after all quality gates pass
 
 ### Privacy Impact Assessment
 
 For any feature that collects, processes, or stores user data:
 
-1. Document what data is collected and why (Principle V)
+1. Document what data is collected and why (Principle IV)
 2. Identify data retention requirements
 3. Verify user control mechanisms exist
 4. Review with privacy-focused team member
+
+### E2E Test Design Guidelines
+
+When creating or modifying E2E tests:
+
+1. Invoke commands as a user would (`sandctl <command> <args>`)
+2. Assert only on user-visible output and exit codes
+3. Avoid reading internal files or databases directly
+4. Use separate test fixtures that do not depend on implementation structure
+5. If a test requires internal knowledge to write, reconsider the test design
 
 ## Governance
 
@@ -168,4 +194,4 @@ principles.
 - Technical debt violating these principles MUST be documented and scheduled for remediation
 - Periodic audits SHOULD verify ongoing compliance
 
-**Version**: 1.0.1 | **Ratified**: 2026-01-22 | **Last Amended**: 2026-01-22
+**Version**: 2.0.0 | **Ratified**: 2026-01-22 | **Last Amended**: 2026-01-24
