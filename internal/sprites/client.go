@@ -204,7 +204,9 @@ func (c *Client) ExecCommand(name string, command string) (string, error) {
 // ExecCommandWithEnv executes a command with environment variables.
 func (c *Client) ExecCommandWithEnv(name string, command string, env map[string]string) (string, error) {
 	// Build URL with query parameters
-	reqURL := fmt.Sprintf("%s/v1/sprites/%s/exec?cmd=%s", c.baseURL, name, neturl.QueryEscape(command))
+	// Use bash -c to run the command as a shell command, supporting pipes, redirects, etc.
+	reqURL := fmt.Sprintf("%s/v1/sprites/%s/exec?cmd=bash&cmd=-c&cmd=%s",
+		c.baseURL, name, neturl.QueryEscape(command))
 
 	// Add environment variables
 	for k, v := range env {

@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
-
-	"github.com/sandctl/sandctl/internal/config"
 )
 
 // Status represents the current state of a session.
@@ -68,12 +66,11 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 
 // Session represents a sandboxed VM instance managed by sandctl.
 type Session struct {
-	ID        string           `json:"id"`
-	Agent     config.AgentType `json:"agent"`
-	Prompt    string           `json:"prompt"`
-	Status    Status           `json:"status"`
-	CreatedAt time.Time        `json:"created_at"`
-	Timeout   *Duration        `json:"timeout,omitempty"`
+	ID        string    `json:"id"`
+	Prompt    string    `json:"prompt"`
+	Status    Status    `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
+	Timeout   *Duration `json:"timeout,omitempty"`
 }
 
 // IsRunning returns true if the session is in running state.
@@ -108,9 +105,6 @@ func (s *Session) Age() time.Duration {
 func (s *Session) Validate() error {
 	if s.ID == "" {
 		return fmt.Errorf("session ID is required")
-	}
-	if !s.Agent.IsValid() {
-		return fmt.Errorf("invalid agent type: %s", s.Agent)
 	}
 	if s.Prompt == "" {
 		return fmt.Errorf("prompt is required")

@@ -7,7 +7,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/sandctl/sandctl/internal/config"
 	"github.com/sandctl/sandctl/internal/session"
 	"github.com/sandctl/sandctl/internal/sprites"
 	"github.com/sandctl/sandctl/internal/ui"
@@ -15,7 +14,6 @@ import (
 
 var (
 	startPrompt  string
-	startAgent   string
 	startTimeout string
 )
 
@@ -25,12 +23,10 @@ var startCmd = &cobra.Command{
 	Long: `Provision a new sandboxed VM and start an AI agent with the given prompt.
 
 The system provisions a Fly.io Sprite, installs development tools, and starts
-the specified AI coding agent with your prompt.`,
-	Example: `  # Start with default agent (claude)
+OpenCode with your prompt. OpenCode is automatically authenticated using your
+configured Zen key.`,
+	Example: `  # Start a new session
   sandctl start --prompt "Create a React todo app"
-
-  # Start with a specific agent
-  sandctl start --prompt "Build a REST API" --agent opencode
 
   # Start with auto-destroy timeout
   sandctl start --prompt "Experiment with new feature" --timeout 2h`,
@@ -39,7 +35,6 @@ the specified AI coding agent with your prompt.`,
 
 func init() {
 	startCmd.Flags().StringVarP(&startPrompt, "prompt", "p", "", "task prompt for the agent (required)")
-	startCmd.Flags().StringVarP(&startAgent, "agent", "a", "", "agent type: claude, opencode, codex (default: from config or claude)")
 	startCmd.Flags().StringVarP(&startTimeout, "timeout", "t", "", "auto-destroy after duration (e.g., 1h, 30m)")
 
 	_ = startCmd.MarkFlagRequired("prompt")
@@ -52,25 +47,6 @@ func runStart(cmd *cobra.Command, args []string) error {
 	cfg, err := loadConfig()
 	if err != nil {
 		return err
-	}
-
-	// Determine agent type
-	agentType := config.AgentType(startAgent)
-	if agentType == "" {
-		agentType = cfg.DefaultAgent
-	}
-	if agentType == "" {
-		agentType = config.AgentClaude
-	}
-
-	if !agentType.IsValid() {
-		return fmt.Errorf("invalid agent type: %s (valid types: %v)", agentType, config.ValidAgentTypes())
-	}
-
-	// Check for API key
-	apiKey, hasKey := cfg.GetAPIKey(agentType)
-	if !hasKey {
-		return fmt.Errorf("no API key configured for agent '%s'. Add it to your config file", agentType)
 	}
 
 	// Parse timeout if provided
@@ -105,18 +81,16 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 
 	verboseLog("Generated session ID: %s", sessionID)
-	verboseLog("Agent type: %s", agentType)
 	verboseLog("Timeout: %v", timeout)
 
 	// Create sprites client
 	client := sprites.NewClient(cfg.SpritesToken)
 
-	fmt.Printf("Starting session with %s agent...\n", agentType)
+	fmt.Println("Starting session with OpenCode agent...")
 
 	// Create session record (provisioning state)
 	sess := session.Session{
 		ID:        sessionID,
-		Agent:     agentType,
 		Prompt:    startPrompt,
 		Status:    session.StatusProvisioning,
 		CreatedAt: time.Now().UTC(),
@@ -134,7 +108,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 		{
 			Message: "Provisioning VM",
 			Action: func() error {
-				return provisionSprite(client, sessionID, agentType, apiKey)
+				return provisionSprite(client, sessionID)
 			},
 		},
 		{
@@ -144,9 +118,21 @@ func runStart(cmd *cobra.Command, args []string) error {
 			},
 		},
 		{
+			Message: "Installing OpenCode",
+			Action: func() error {
+				return installOpenCode(client, sessionID)
+			},
+		},
+		{
+			Message: "Setting up OpenCode authentication",
+			Action: func() error {
+				return setupOpenCodeAuth(client, sessionID, cfg.OpencodeZenKey)
+			},
+		},
+		{
 			Message: "Starting agent",
 			Action: func() error {
-				return startAgentInSprite(client, sessionID, agentType, apiKey, startPrompt)
+				return startAgentInSprite(client, sessionID, startPrompt)
 			},
 		},
 	}
@@ -167,7 +153,6 @@ func runStart(cmd *cobra.Command, args []string) error {
 	// Print success message
 	fmt.Println()
 	fmt.Printf("Session started: %s\n", sessionID)
-	fmt.Printf("Agent: %s\n", agentType)
 	fmt.Printf("Prompt: %s\n", truncateString(startPrompt, 80))
 	fmt.Println()
 	fmt.Printf("Use 'sandctl exec %s' to connect.\n", sessionID)
@@ -177,7 +162,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 }
 
 // provisionSprite creates a new sprite instance.
-func provisionSprite(client *sprites.Client, name string, _ config.AgentType, _ string) error {
+func provisionSprite(client *sprites.Client, name string) error {
 	req := sprites.CreateSpriteRequest{
 		Name: name,
 	}
@@ -224,7 +209,7 @@ func waitForSpriteReady(client *sprites.Client, name string) error {
 
 // installDevTools installs development tools in the sprite.
 func installDevTools(client *sprites.Client, name string) error {
-	// Sprites come with Claude pre-installed and basic dev tools
+	// Sprites come with basic dev tools pre-installed
 	// This step verifies the environment is ready
 	_, err := client.ExecCommand(name, "which git && which node && which python3")
 	if err != nil {
@@ -233,26 +218,70 @@ func installDevTools(client *sprites.Client, name string) error {
 	return nil
 }
 
-// startAgentInSprite starts the AI agent with the given prompt.
-func startAgentInSprite(client *sprites.Client, name string, agent config.AgentType, apiKey, prompt string) error {
-	var cmd string
-
-	switch agent {
-	case config.AgentClaude:
-		// Export API key inline and start Claude
-		cmd = fmt.Sprintf("export ANTHROPIC_API_KEY=%q && nohup claude --prompt %q > /var/log/agent.log 2>&1 &", apiKey, prompt)
-	case config.AgentOpencode:
-		cmd = fmt.Sprintf("export ANTHROPIC_API_KEY=%q && nohup opencode --prompt %q > /var/log/agent.log 2>&1 &", apiKey, prompt)
-	case config.AgentCodex:
-		cmd = fmt.Sprintf("export OPENAI_API_KEY=%q && nohup codex --prompt %q > /var/log/agent.log 2>&1 &", apiKey, prompt)
-	default:
-		return fmt.Errorf("unsupported agent type: %s", agent)
+// installOpenCode installs the OpenCode CLI in the sprite.
+func installOpenCode(client *sprites.Client, name string) error {
+	// Install OpenCode using the official install script
+	// This is the most reliable method as it handles all setup
+	installCmd := "curl -fsSL https://opencode.ai/install | bash"
+	output, err := client.ExecCommand(name, installCmd)
+	verboseLog("opencode install output: %s", output)
+	if err != nil {
+		return fmt.Errorf("failed to install OpenCode: %w\nOutput: %s", err, output)
 	}
 
-	_, err := client.ExecCommand(name, cmd)
+	// The install script puts opencode in ~/.opencode/bin/opencode
+	// Verify installation
+	verifyOutput, err := client.ExecCommand(name, "~/.opencode/bin/opencode --version 2>&1")
+	verboseLog("verify output: %q", verifyOutput)
+	if err != nil {
+		return fmt.Errorf("OpenCode installation verification failed: %w\nOutput: %s", err, verifyOutput)
+	}
+
+	return nil
+}
+
+// setupOpenCodeAuth creates the OpenCode authentication file in the sprite.
+// This writes the auth.json file that OpenCode uses to authenticate.
+func setupOpenCodeAuth(client *sprites.Client, name string, zenKey string) error {
+	// Create the OpenCode config directory
+	mkdirCmd := "mkdir -p ~/.local/share/opencode"
+	if _, err := client.ExecCommand(name, mkdirCmd); err != nil {
+		// Log warning but don't fail - OpenCode might still work
+		verboseLog("Warning: failed to create opencode directory: %v", err)
+		fmt.Println("\n  Warning: Could not create OpenCode config directory. You may need to authenticate manually.")
+		return nil
+	}
+
+	// Write the auth file with the Zen key
+	// The JSON structure is: {"opencode": {"type": "api", "key": "<KEY>"}}
+	authJSON := fmt.Sprintf(`{"opencode":{"type":"api","key":"%s"}}`, zenKey)
+	writeCmd := fmt.Sprintf("echo '%s' > ~/.local/share/opencode/auth.json", authJSON)
+	if _, err := client.ExecCommand(name, writeCmd); err != nil {
+		// Log warning but don't fail - OpenCode might still work
+		verboseLog("Warning: failed to write opencode auth file: %v", err)
+		fmt.Println("\n  Warning: Could not write OpenCode auth file. You may need to authenticate manually.")
+		return nil
+	}
+
+	return nil
+}
+
+// startAgentInSprite starts the AI agent with the given prompt.
+func startAgentInSprite(client *sprites.Client, name string, prompt string) error {
+	// Start OpenCode with the prompt
+	// The install script puts opencode in ~/.opencode/bin/opencode
+	cmd := fmt.Sprintf("nohup ~/.opencode/bin/opencode --prompt %q > /var/log/agent.log 2>&1 &", prompt)
+	verboseLog("Starting agent with command: %s", cmd)
+
+	output, err := client.ExecCommand(name, cmd)
+	verboseLog("Start agent output: %s", output)
 	if err != nil {
 		return fmt.Errorf("failed to start agent: %w", err)
 	}
+
+	// Check if agent process is running
+	psOutput, psErr := client.ExecCommand(name, "ps aux | grep opencode | grep -v grep")
+	verboseLog("Process check output: %s, err: %v", psOutput, psErr)
 
 	return nil
 }

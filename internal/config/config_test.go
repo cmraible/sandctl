@@ -6,62 +6,6 @@ import (
 	"testing"
 )
 
-// TestAgentType_IsValid_GivenValidAgent_ThenReturnsTrue tests valid agent types.
-func TestAgentType_IsValid_GivenValidAgent_ThenReturnsTrue(t *testing.T) {
-	tests := []struct {
-		name  string
-		agent AgentType
-	}{
-		{"claude", AgentClaude},
-		{"opencode", AgentOpencode},
-		{"codex", AgentCodex},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if !tt.agent.IsValid() {
-				t.Errorf("expected %q to be valid", tt.agent)
-			}
-		})
-	}
-}
-
-// TestAgentType_IsValid_GivenInvalidAgent_ThenReturnsFalse tests invalid agent types.
-func TestAgentType_IsValid_GivenInvalidAgent_ThenReturnsFalse(t *testing.T) {
-	invalidAgents := []AgentType{"invalid", "gpt4", "", "CLAUDE"}
-
-	for _, agent := range invalidAgents {
-		t.Run(string(agent), func(t *testing.T) {
-			if agent.IsValid() {
-				t.Errorf("expected %q to be invalid", agent)
-			}
-		})
-	}
-}
-
-// TestValidAgentTypes_GivenCall_ThenReturnsAllAgents verifies all agent types are returned.
-func TestValidAgentTypes_GivenCall_ThenReturnsAllAgents(t *testing.T) {
-	agents := ValidAgentTypes()
-
-	if len(agents) != 3 {
-		t.Errorf("expected 3 agents, got %d", len(agents))
-	}
-
-	expected := map[AgentType]bool{AgentClaude: false, AgentOpencode: false, AgentCodex: false}
-	for _, agent := range agents {
-		if _, ok := expected[agent]; !ok {
-			t.Errorf("unexpected agent type: %q", agent)
-		}
-		expected[agent] = true
-	}
-
-	for agent, found := range expected {
-		if !found {
-			t.Errorf("missing agent type: %q", agent)
-		}
-	}
-}
-
 // TestDefaultConfigPath_GivenHomeDir_ThenReturnsExpectedPath verifies the default path.
 func TestDefaultConfigPath_GivenHomeDir_ThenReturnsExpectedPath(t *testing.T) {
 	path := DefaultConfigPath()
@@ -87,9 +31,7 @@ func TestLoad_GivenValidConfig_ThenReturnsConfig(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "config")
 
 	content := `sprites_token: "test-token-123"
-default_agent: claude
-agent_api_keys:
-  claude: "anthropic-key"
+opencode_zen_key: "zen-key-456"
 `
 	if err := os.WriteFile(configPath, []byte(content), 0600); err != nil {
 		t.Fatalf("failed to write config: %v", err)
@@ -103,11 +45,8 @@ agent_api_keys:
 	if cfg.SpritesToken != "test-token-123" {
 		t.Errorf("SpritesToken = %q, want %q", cfg.SpritesToken, "test-token-123")
 	}
-	if cfg.DefaultAgent != AgentClaude {
-		t.Errorf("DefaultAgent = %q, want %q", cfg.DefaultAgent, AgentClaude)
-	}
-	if key, ok := cfg.AgentAPIKeys["claude"]; !ok || key != "anthropic-key" {
-		t.Errorf("AgentAPIKeys[claude] = %q, want %q", key, "anthropic-key")
+	if cfg.OpencodeZenKey != "zen-key-456" {
+		t.Errorf("OpencodeZenKey = %q, want %q", cfg.OpencodeZenKey, "zen-key-456")
 	}
 }
 
@@ -134,7 +73,9 @@ func TestLoad_GivenInsecurePermissions_ThenReturnsInsecurePermissionsError(t *te
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config")
 
-	content := `sprites_token: "token"`
+	content := `sprites_token: "token"
+opencode_zen_key: "key"
+`
 	// Write with world-readable permissions
 	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
 		t.Fatalf("failed to write config: %v", err)
@@ -198,7 +139,8 @@ func TestLoad_GivenEmptyPath_ThenUsesDefaultPath(t *testing.T) {
 // TestValidate_GivenMissingToken_ThenReturnsValidationError tests token requirement.
 func TestValidate_GivenMissingToken_ThenReturnsValidationError(t *testing.T) {
 	cfg := &Config{
-		SpritesToken: "",
+		SpritesToken:   "",
+		OpencodeZenKey: "zen-key",
 	}
 
 	err := cfg.Validate()
@@ -217,17 +159,17 @@ func TestValidate_GivenMissingToken_ThenReturnsValidationError(t *testing.T) {
 	}
 }
 
-// TestValidate_GivenInvalidAgent_ThenReturnsValidationError tests agent validation.
-func TestValidate_GivenInvalidAgent_ThenReturnsValidationError(t *testing.T) {
+// TestValidate_GivenMissingZenKey_ThenReturnsValidationError tests zen key requirement.
+func TestValidate_GivenMissingZenKey_ThenReturnsValidationError(t *testing.T) {
 	cfg := &Config{
-		SpritesToken: "token",
-		DefaultAgent: "invalid-agent",
+		SpritesToken:   "token",
+		OpencodeZenKey: "",
 	}
 
 	err := cfg.Validate()
 
 	if err == nil {
-		t.Fatal("expected error for invalid agent")
+		t.Fatal("expected error for missing zen key")
 	}
 
 	ve, ok := err.(*ValidationError)
@@ -235,86 +177,22 @@ func TestValidate_GivenInvalidAgent_ThenReturnsValidationError(t *testing.T) {
 		t.Fatalf("expected ValidationError, got %T: %v", err, err)
 	}
 
-	if ve.Field != "default_agent" {
-		t.Errorf("Field = %q, want %q", ve.Field, "default_agent")
+	if ve.Field != "opencode_zen_key" {
+		t.Errorf("Field = %q, want %q", ve.Field, "opencode_zen_key")
 	}
 }
 
-// TestValidate_GivenEmptyAgent_ThenSetsDefault tests default agent assignment.
-func TestValidate_GivenEmptyAgent_ThenSetsDefault(t *testing.T) {
+// TestValidate_GivenValidConfig_ThenReturnsNoError tests valid config validation.
+func TestValidate_GivenValidConfig_ThenReturnsNoError(t *testing.T) {
 	cfg := &Config{
-		SpritesToken: "token",
-		DefaultAgent: "",
+		SpritesToken:   "token",
+		OpencodeZenKey: "zen-key",
 	}
 
-	if err := cfg.Validate(); err != nil {
+	err := cfg.Validate()
+
+	if err != nil {
 		t.Fatalf("Validate() error = %v", err)
-	}
-
-	if cfg.DefaultAgent != AgentClaude {
-		t.Errorf("DefaultAgent = %q, want %q", cfg.DefaultAgent, AgentClaude)
-	}
-}
-
-// TestValidate_GivenNilAPIKeys_ThenInitializesMap tests API keys initialization.
-func TestValidate_GivenNilAPIKeys_ThenInitializesMap(t *testing.T) {
-	cfg := &Config{
-		SpritesToken: "token",
-		AgentAPIKeys: nil,
-	}
-
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("Validate() error = %v", err)
-	}
-
-	if cfg.AgentAPIKeys == nil {
-		t.Error("expected AgentAPIKeys to be initialized")
-	}
-}
-
-// TestGetAPIKey_GivenExistingKey_ThenReturnsKey tests retrieving existing keys.
-func TestGetAPIKey_GivenExistingKey_ThenReturnsKey(t *testing.T) {
-	cfg := &Config{
-		AgentAPIKeys: map[string]string{
-			"claude": "anthropic-key-123",
-		},
-	}
-
-	key, ok := cfg.GetAPIKey(AgentClaude)
-
-	if !ok {
-		t.Error("expected key to exist")
-	}
-	if key != "anthropic-key-123" {
-		t.Errorf("key = %q, want %q", key, "anthropic-key-123")
-	}
-}
-
-// TestGetAPIKey_GivenMissingKey_ThenReturnsFalse tests missing key handling.
-func TestGetAPIKey_GivenMissingKey_ThenReturnsFalse(t *testing.T) {
-	cfg := &Config{
-		AgentAPIKeys: map[string]string{},
-	}
-
-	_, ok := cfg.GetAPIKey(AgentClaude)
-
-	if ok {
-		t.Error("expected key to not exist")
-	}
-}
-
-// TestGetAPIKey_GivenEmptyKey_ThenReturnsFalse tests empty key handling.
-func TestGetAPIKey_GivenEmptyKey_ThenReturnsFalse(t *testing.T) {
-	cfg := &Config{
-		AgentAPIKeys: map[string]string{
-			"claude": "",
-		},
-	}
-
-	_, ok := cfg.GetAPIKey(AgentClaude)
-
-	if ok {
-		t.Error("expected empty key to return false")
 	}
 }
 
@@ -371,6 +249,9 @@ func TestSetupInstructions_GivenCall_ThenReturnsInstructions(t *testing.T) {
 	// Should contain key elements
 	if !contains(instructions, "sprites_token") {
 		t.Error("instructions should mention sprites_token")
+	}
+	if !contains(instructions, "opencode_zen_key") {
+		t.Error("instructions should mention opencode_zen_key")
 	}
 	if !contains(instructions, "chmod 600") {
 		t.Error("instructions should mention chmod")

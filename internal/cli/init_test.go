@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/sandctl/sandctl/internal/config"
 )
 
 // TestInitCommand_GivenNoExistingConfig_ThenCreatesConfig tests that init creates config file.
@@ -15,8 +13,8 @@ func TestInitCommand_GivenNoExistingConfig_ThenCreatesConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config")
 
-	// Simulate user input: token, agent selection (1=claude), API key
-	input := "test-sprites-token\n1\ntest-api-key\n"
+	// Simulate user input: sprites token, zen key
+	input := "test-sprites-token\ntest-zen-key\n"
 
 	err := runInitWithInput(configPath, input)
 	if err != nil {
@@ -37,21 +35,18 @@ func TestInitCommand_GivenNoExistingConfig_ThenCreatesConfig(t *testing.T) {
 	if cfg.SpritesToken != "test-sprites-token" {
 		t.Errorf("SpritesToken = %q, want %q", cfg.SpritesToken, "test-sprites-token")
 	}
-	if cfg.DefaultAgent != config.AgentClaude {
-		t.Errorf("DefaultAgent = %q, want %q", cfg.DefaultAgent, config.AgentClaude)
-	}
-	if key, ok := cfg.AgentAPIKeys["claude"]; !ok || key != "test-api-key" {
-		t.Errorf("API key for claude = %q, want %q", key, "test-api-key")
+	if cfg.OpencodeZenKey != "test-zen-key" {
+		t.Errorf("OpencodeZenKey = %q, want %q", cfg.OpencodeZenKey, "test-zen-key")
 	}
 }
 
-// TestInitCommand_GivenInteractiveMode_ThenPromptsForAllValues tests prompts.
-func TestInitCommand_GivenInteractiveMode_ThenPromptsForAllValues(t *testing.T) {
+// TestInitCommand_GivenInteractiveMode_ThenPromptsForTwoValues tests prompts.
+func TestInitCommand_GivenInteractiveMode_ThenPromptsForTwoValues(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config")
 
 	var outputBuf bytes.Buffer
-	input := "my-token\n2\nmy-api-key\n"
+	input := "my-token\nmy-zen-key\n"
 
 	err := runInitWithIO(configPath, strings.NewReader(input), &outputBuf)
 	if err != nil {
@@ -65,14 +60,14 @@ func TestInitCommand_GivenInteractiveMode_ThenPromptsForAllValues(t *testing.T) 
 		t.Error("should prompt for Sprites token")
 	}
 
-	// Should prompt for agent selection
-	if !strings.Contains(output, "agent") || !strings.Contains(output, "claude") {
-		t.Error("should prompt for agent selection with options")
+	// Should prompt for Opencode Zen key
+	if !strings.Contains(output, "Opencode") || !strings.Contains(output, "Zen") {
+		t.Error("should prompt for Opencode Zen key")
 	}
 
-	// Should prompt for API key
-	if !strings.Contains(output, "API") || !strings.Contains(output, "key") {
-		t.Error("should prompt for API key")
+	// Should NOT prompt for agent selection (removed)
+	if strings.Contains(output, "claude") || strings.Contains(output, "codex") {
+		t.Error("should NOT prompt for agent selection")
 	}
 }
 
@@ -81,7 +76,7 @@ func TestInitCommand_GivenValidInput_ThenCreatesFileWithSecurePermissions(t *tes
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config")
 
-	input := "test-token\n1\ntest-key\n"
+	input := "test-token\ntest-key\n"
 
 	err := runInitWithInput(configPath, input)
 	if err != nil {
@@ -100,62 +95,22 @@ func TestInitCommand_GivenValidInput_ThenCreatesFileWithSecurePermissions(t *tes
 	}
 }
 
-// TestInitCommand_GivenAgentSelection_ThenSetsCorrectAgent tests agent selection.
-func TestInitCommand_GivenAgentSelection_ThenSetsCorrectAgent(t *testing.T) {
-	tests := []struct {
-		name     string
-		choice   string
-		expected config.AgentType
-	}{
-		{"claude", "1\n", config.AgentClaude},
-		{"opencode", "2\n", config.AgentOpencode},
-		{"codex", "3\n", config.AgentCodex},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tmpDir := t.TempDir()
-			configPath := filepath.Join(tmpDir, "config")
-
-			input := "token\n" + tt.choice + "api-key\n"
-
-			err := runInitWithInput(configPath, input)
-			if err != nil {
-				t.Fatalf("init command error = %v", err)
-			}
-
-			cfg, err := loadConfigIgnorePerms(configPath)
-			if err != nil {
-				t.Fatalf("failed to load config: %v", err)
-			}
-
-			if cfg.DefaultAgent != tt.expected {
-				t.Errorf("DefaultAgent = %q, want %q", cfg.DefaultAgent, tt.expected)
-			}
-		})
-	}
-}
-
 // TestInitCommand_GivenExistingConfig_ThenLoadsAsDefaults tests loading existing config.
 func TestInitCommand_GivenExistingConfig_ThenLoadsAsDefaults(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config")
 
 	// Create existing config
-	existingCfg := &config.Config{
-		SpritesToken: "existing-token",
-		DefaultAgent: config.AgentOpencode,
-		AgentAPIKeys: map[string]string{
-			"opencode": "existing-key",
-		},
-	}
-	if err := config.Save(configPath, existingCfg); err != nil {
+	existingContent := `sprites_token: "existing-token"
+opencode_zen_key: "existing-key"
+`
+	if err := os.WriteFile(configPath, []byte(existingContent), 0600); err != nil {
 		t.Fatalf("failed to create existing config: %v", err)
 	}
 
 	// Run init with empty inputs (press Enter to keep defaults)
 	var outputBuf bytes.Buffer
-	input := "\n\n\n"
+	input := "\n\n"
 
 	err := runInitWithIO(configPath, strings.NewReader(input), &outputBuf)
 	if err != nil {
@@ -171,8 +126,8 @@ func TestInitCommand_GivenExistingConfig_ThenLoadsAsDefaults(t *testing.T) {
 	if cfg.SpritesToken != "existing-token" {
 		t.Errorf("SpritesToken = %q, want %q (preserved)", cfg.SpritesToken, "existing-token")
 	}
-	if cfg.DefaultAgent != config.AgentOpencode {
-		t.Errorf("DefaultAgent = %q, want %q (preserved)", cfg.DefaultAgent, config.AgentOpencode)
+	if cfg.OpencodeZenKey != "existing-key" {
+		t.Errorf("OpencodeZenKey = %q, want %q (preserved)", cfg.OpencodeZenKey, "existing-key")
 	}
 }
 
@@ -182,19 +137,15 @@ func TestInitCommand_GivenEnterOnAllPrompts_ThenPreservesExistingValues(t *testi
 	configPath := filepath.Join(tmpDir, "config")
 
 	// Create existing config
-	existingCfg := &config.Config{
-		SpritesToken: "preserve-me",
-		DefaultAgent: config.AgentCodex,
-		AgentAPIKeys: map[string]string{
-			"codex": "preserve-key",
-		},
-	}
-	if err := config.Save(configPath, existingCfg); err != nil {
+	existingContent := `sprites_token: "preserve-me"
+opencode_zen_key: "preserve-key"
+`
+	if err := os.WriteFile(configPath, []byte(existingContent), 0600); err != nil {
 		t.Fatalf("failed to create existing config: %v", err)
 	}
 
 	// Press Enter on all prompts
-	input := "\n\n\n"
+	input := "\n\n"
 
 	err := runInitWithInput(configPath, input)
 	if err != nil {
@@ -209,11 +160,8 @@ func TestInitCommand_GivenEnterOnAllPrompts_ThenPreservesExistingValues(t *testi
 	if cfg.SpritesToken != "preserve-me" {
 		t.Errorf("SpritesToken = %q, want %q", cfg.SpritesToken, "preserve-me")
 	}
-	if cfg.DefaultAgent != config.AgentCodex {
-		t.Errorf("DefaultAgent = %q, want %q", cfg.DefaultAgent, config.AgentCodex)
-	}
-	if key := cfg.AgentAPIKeys["codex"]; key != "preserve-key" {
-		t.Errorf("API key = %q, want %q", key, "preserve-key")
+	if cfg.OpencodeZenKey != "preserve-key" {
+		t.Errorf("OpencodeZenKey = %q, want %q", cfg.OpencodeZenKey, "preserve-key")
 	}
 }
 
@@ -223,19 +171,15 @@ func TestInitCommand_GivenNewInput_ThenReplacesExistingValues(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "config")
 
 	// Create existing config
-	existingCfg := &config.Config{
-		SpritesToken: "old-token",
-		DefaultAgent: config.AgentClaude,
-		AgentAPIKeys: map[string]string{
-			"claude": "old-key",
-		},
-	}
-	if err := config.Save(configPath, existingCfg); err != nil {
+	existingContent := `sprites_token: "old-token"
+opencode_zen_key: "old-key"
+`
+	if err := os.WriteFile(configPath, []byte(existingContent), 0600); err != nil {
 		t.Fatalf("failed to create existing config: %v", err)
 	}
 
 	// Provide new values
-	input := "new-token\n2\nnew-key\n"
+	input := "new-token\nnew-key\n"
 
 	err := runInitWithInput(configPath, input)
 	if err != nil {
@@ -250,8 +194,8 @@ func TestInitCommand_GivenNewInput_ThenReplacesExistingValues(t *testing.T) {
 	if cfg.SpritesToken != "new-token" {
 		t.Errorf("SpritesToken = %q, want %q", cfg.SpritesToken, "new-token")
 	}
-	if cfg.DefaultAgent != config.AgentOpencode {
-		t.Errorf("DefaultAgent = %q, want %q", cfg.DefaultAgent, config.AgentOpencode)
+	if cfg.OpencodeZenKey != "new-key" {
+		t.Errorf("OpencodeZenKey = %q, want %q", cfg.OpencodeZenKey, "new-key")
 	}
 }
 
@@ -261,7 +205,7 @@ func TestInitCommand_GivenSuccessfulSave_ThenShowsSuccessMessage(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "config")
 
 	var outputBuf bytes.Buffer
-	input := "token\n1\nkey\n"
+	input := "token\nkey\n"
 
 	err := runInitWithIO(configPath, strings.NewReader(input), &outputBuf)
 	if err != nil {
@@ -282,7 +226,7 @@ func TestInitCommand_GivenSuccess_ThenShowsNextSteps(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "config")
 
 	var outputBuf bytes.Buffer
-	input := "token\n1\nkey\n"
+	input := "token\nkey\n"
 
 	err := runInitWithIO(configPath, strings.NewReader(input), &outputBuf)
 	if err != nil {
@@ -297,16 +241,56 @@ func TestInitCommand_GivenSuccess_ThenShowsNextSteps(t *testing.T) {
 	}
 }
 
-// Tests for non-interactive mode (User Story 3)
-
-// TestInitCommand_GivenSpritesTokenFlag_ThenUsesFlag tests --sprites-token flag.
-func TestInitCommand_GivenSpritesTokenFlag_ThenUsesFlag(t *testing.T) {
+// TestInitCommand_GivenConfigWithNoDefaultAgentField_ThenSavesCorrectly tests new format.
+func TestInitCommand_GivenConfigWithNoDefaultAgentField_ThenSavesCorrectly(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config")
 
-	err := runNonInteractiveInitTest(configPath, "flag-token", "claude", "flag-key")
+	input := "my-token\nmy-zen-key\n"
+
+	err := runInitWithInput(configPath, input)
 	if err != nil {
 		t.Fatalf("init command error = %v", err)
+	}
+
+	// Read raw config to verify structure
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("failed to read config: %v", err)
+	}
+
+	configStr := string(data)
+
+	// Should NOT contain default_agent or agent_api_keys
+	if strings.Contains(configStr, "default_agent") {
+		t.Error("config should NOT contain default_agent field")
+	}
+	if strings.Contains(configStr, "agent_api_keys") {
+		t.Error("config should NOT contain agent_api_keys field")
+	}
+
+	// Should contain opencode_zen_key
+	if !strings.Contains(configStr, "opencode_zen_key") {
+		t.Error("config should contain opencode_zen_key field")
+	}
+}
+
+// Tests for non-interactive mode (User Story 3)
+
+// TestInitCommand_GivenSpritesTokenAndZenKeyFlags_ThenSkipsPrompts tests non-interactive mode.
+func TestInitCommand_GivenSpritesTokenAndZenKeyFlags_ThenSkipsPrompts(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config")
+
+	// Should succeed without any input prompts
+	err := runNonInteractiveInitTest(configPath, "flag-token", "flag-zen-key")
+	if err != nil {
+		t.Fatalf("init command error = %v", err)
+	}
+
+	// Verify config was created
+	if _, statErr := os.Stat(configPath); os.IsNotExist(statErr) {
+		t.Error("config file was not created")
 	}
 
 	cfg, err := loadConfigIgnorePerms(configPath)
@@ -317,62 +301,8 @@ func TestInitCommand_GivenSpritesTokenFlag_ThenUsesFlag(t *testing.T) {
 	if cfg.SpritesToken != "flag-token" {
 		t.Errorf("SpritesToken = %q, want %q", cfg.SpritesToken, "flag-token")
 	}
-}
-
-// TestInitCommand_GivenAgentFlag_ThenUsesFlag tests --agent flag.
-func TestInitCommand_GivenAgentFlag_ThenUsesFlag(t *testing.T) {
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "config")
-
-	err := runNonInteractiveInitTest(configPath, "token", "opencode", "key")
-	if err != nil {
-		t.Fatalf("init command error = %v", err)
-	}
-
-	cfg, err := loadConfigIgnorePerms(configPath)
-	if err != nil {
-		t.Fatalf("failed to load config: %v", err)
-	}
-
-	if cfg.DefaultAgent != config.AgentOpencode {
-		t.Errorf("DefaultAgent = %q, want %q", cfg.DefaultAgent, config.AgentOpencode)
-	}
-}
-
-// TestInitCommand_GivenAPIKeyFlag_ThenUsesFlag tests --api-key flag.
-func TestInitCommand_GivenAPIKeyFlag_ThenUsesFlag(t *testing.T) {
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "config")
-
-	err := runNonInteractiveInitTest(configPath, "token", "codex", "codex-api-key")
-	if err != nil {
-		t.Fatalf("init command error = %v", err)
-	}
-
-	cfg, err := loadConfigIgnorePerms(configPath)
-	if err != nil {
-		t.Fatalf("failed to load config: %v", err)
-	}
-
-	if key, ok := cfg.AgentAPIKeys["codex"]; !ok || key != "codex-api-key" {
-		t.Errorf("API key for codex = %q, want %q", key, "codex-api-key")
-	}
-}
-
-// TestInitCommand_GivenAllFlags_ThenSkipsPrompts tests skipping prompts with all flags.
-func TestInitCommand_GivenAllFlags_ThenSkipsPrompts(t *testing.T) {
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "config")
-
-	// Should succeed without any input prompts
-	err := runNonInteractiveInitTest(configPath, "token", "claude", "key")
-	if err != nil {
-		t.Fatalf("init command error = %v", err)
-	}
-
-	// Verify config was created
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		t.Error("config file was not created")
+	if cfg.OpencodeZenKey != "flag-zen-key" {
+		t.Errorf("OpencodeZenKey = %q, want %q", cfg.OpencodeZenKey, "flag-zen-key")
 	}
 }
 
@@ -381,7 +311,7 @@ func TestInitCommand_GivenMissingSpritesToken_ThenReturnsError(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config")
 
-	err := runNonInteractiveInitTest(configPath, "", "claude", "key")
+	err := runNonInteractiveInitTest(configPath, "", "zen-key")
 	if err == nil {
 		t.Error("expected error for missing --sprites-token")
 	}
@@ -390,45 +320,101 @@ func TestInitCommand_GivenMissingSpritesToken_ThenReturnsError(t *testing.T) {
 	}
 }
 
-// TestInitCommand_GivenMissingAgent_ThenReturnsError tests missing agent error.
-func TestInitCommand_GivenMissingAgent_ThenReturnsError(t *testing.T) {
+// TestInitCommand_GivenMissingZenKey_ThenReturnsError tests missing zen key error.
+func TestInitCommand_GivenMissingZenKey_ThenReturnsError(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config")
 
-	err := runNonInteractiveInitTest(configPath, "token", "", "key")
+	err := runNonInteractiveInitTest(configPath, "token", "")
 	if err == nil {
-		t.Error("expected error for missing --agent")
+		t.Error("expected error for missing --opencode-zen-key")
 	}
-	if !strings.Contains(err.Error(), "agent") {
-		t.Errorf("error should mention agent, got: %v", err)
+	if !strings.Contains(err.Error(), "opencode-zen-key") {
+		t.Errorf("error should mention opencode-zen-key, got: %v", err)
 	}
 }
 
-// TestInitCommand_GivenMissingAPIKey_ThenReturnsError tests missing API key error.
-func TestInitCommand_GivenMissingAPIKey_ThenReturnsError(t *testing.T) {
+// Tests for migration from old config format (User Story 4)
+
+// TestInitCommand_GivenOldConfigFormat_ThenPreservesSpritesToken tests migration.
+func TestInitCommand_GivenOldConfigFormat_ThenPreservesSpritesToken(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config")
 
-	err := runNonInteractiveInitTest(configPath, "token", "claude", "")
-	if err == nil {
-		t.Error("expected error for missing --api-key")
+	// Create old-format config
+	oldContent := `sprites_token: "preserve-this-token"
+default_agent: claude
+agent_api_keys:
+  claude: "old-key"
+`
+	if err := os.WriteFile(configPath, []byte(oldContent), 0600); err != nil {
+		t.Fatalf("failed to create old config: %v", err)
 	}
-	if !strings.Contains(err.Error(), "api-key") {
-		t.Errorf("error should mention api-key, got: %v", err)
+
+	// Run init - should preserve sprites_token, prompt for zen key
+	input := "\nnew-zen-key\n"
+
+	err := runInitWithInput(configPath, input)
+	if err != nil {
+		t.Fatalf("init command error = %v", err)
+	}
+
+	cfg, err := loadConfigIgnorePerms(configPath)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	// Sprites token should be preserved
+	if cfg.SpritesToken != "preserve-this-token" {
+		t.Errorf("SpritesToken = %q, want %q (preserved from old config)", cfg.SpritesToken, "preserve-this-token")
+	}
+
+	// Zen key should be the new value
+	if cfg.OpencodeZenKey != "new-zen-key" {
+		t.Errorf("OpencodeZenKey = %q, want %q", cfg.OpencodeZenKey, "new-zen-key")
 	}
 }
 
-// TestInitCommand_GivenInvalidAgent_ThenReturnsError tests invalid agent error.
-func TestInitCommand_GivenInvalidAgent_ThenReturnsError(t *testing.T) {
+// TestInitCommand_GivenOldConfigFormat_ThenRemovesOldFields tests migration cleanup.
+func TestInitCommand_GivenOldConfigFormat_ThenRemovesOldFields(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config")
 
-	err := runNonInteractiveInitTest(configPath, "token", "invalid-agent", "key")
-	if err == nil {
-		t.Error("expected error for invalid agent")
+	// Create old-format config
+	oldContent := `sprites_token: "token"
+default_agent: codex
+agent_api_keys:
+  codex: "old-codex-key"
+  claude: "old-claude-key"
+`
+	if err := os.WriteFile(configPath, []byte(oldContent), 0600); err != nil {
+		t.Fatalf("failed to create old config: %v", err)
 	}
-	if !strings.Contains(err.Error(), "invalid") {
-		t.Errorf("error should mention invalid agent, got: %v", err)
+
+	// Run init
+	input := "\nnew-zen-key\n"
+
+	err := runInitWithInput(configPath, input)
+	if err != nil {
+		t.Fatalf("init command error = %v", err)
+	}
+
+	// Read raw config to verify old fields are removed
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("failed to read config: %v", err)
+	}
+
+	configStr := string(data)
+
+	if strings.Contains(configStr, "default_agent") {
+		t.Error("config should NOT contain default_agent after migration")
+	}
+	if strings.Contains(configStr, "agent_api_keys") {
+		t.Error("config should NOT contain agent_api_keys after migration")
+	}
+	if strings.Contains(configStr, "codex") {
+		t.Error("config should NOT contain old agent references after migration")
 	}
 }
 
@@ -446,35 +432,38 @@ func runInitWithIO(configPath string, input *strings.Reader, output *bytes.Buffe
 }
 
 // runNonInteractiveInitTest runs the init command with flags (non-interactive mode).
-func runNonInteractiveInitTest(configPath, token, agent, apiKey string) error {
+func runNonInteractiveInitTest(configPath, token, zenKey string) error {
 	// Save and restore global flag state
 	oldToken := initSpritesToken
-	oldAgent := initAgent
-	oldAPIKey := initAPIKey
+	oldZenKey := initOpencodeZenKey
 	defer func() {
 		initSpritesToken = oldToken
-		initAgent = oldAgent
-		initAPIKey = oldAPIKey
+		initOpencodeZenKey = oldZenKey
 	}()
 
 	initSpritesToken = token
-	initAgent = agent
-	initAPIKey = apiKey
+	initOpencodeZenKey = zenKey
 
 	return runNonInteractiveInit(configPath)
 }
 
 // loadConfigIgnorePerms loads config without permission checks (for testing).
-func loadConfigIgnorePerms(path string) (*config.Config, error) {
+func loadConfigIgnorePerms(path string) (*configData, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
 
-	var cfg config.Config
+	var cfg configData
 	if err := unmarshalYAML(data, &cfg); err != nil {
 		return nil, err
 	}
 
 	return &cfg, nil
+}
+
+// configData is a test-only struct for loading config without validation.
+type configData struct {
+	SpritesToken   string `yaml:"sprites_token"`
+	OpencodeZenKey string `yaml:"opencode_zen_key"`
 }

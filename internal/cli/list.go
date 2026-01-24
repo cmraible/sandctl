@@ -146,17 +146,16 @@ func outputJSON(sessions []session.Session) error {
 // outputTable outputs sessions as a formatted table.
 func outputTable(sessions []session.Session) error {
 	// Print header
-	fmt.Printf("%-18s %-10s %-12s %-20s %s\n",
-		"ID", "AGENT", "STATUS", "CREATED", "TIMEOUT")
+	fmt.Printf("%-18s %-12s %-20s %s\n",
+		"ID", "STATUS", "CREATED", "TIMEOUT")
 
 	// Print sessions
 	for _, sess := range sessions {
 		timeout := formatTimeout(sess.TimeoutRemaining())
 		created := formatCreatedTime(sess.CreatedAt)
 
-		fmt.Printf("%-18s %-10s %-12s %-20s %s\n",
+		fmt.Printf("%-18s %-12s %-20s %s\n",
 			sess.ID,
-			sess.Agent,
 			sess.Status,
 			created,
 			timeout,

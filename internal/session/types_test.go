@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
-
-	"github.com/sandctl/sandctl/internal/config"
 )
 
 // TestStatus_IsActive_GivenActiveStatuses_ThenReturnsTrue tests active status detection.
@@ -260,7 +258,6 @@ func TestSession_TimeoutRemaining_GivenPastDeadline_ThenReturnsZero(t *testing.T
 func TestSession_Validate_GivenValidSession_ThenReturnsNil(t *testing.T) {
 	s := &Session{
 		ID:     "sandctl-abc12345",
-		Agent:  config.AgentClaude,
 		Prompt: "Build a todo app",
 	}
 
@@ -273,7 +270,6 @@ func TestSession_Validate_GivenValidSession_ThenReturnsNil(t *testing.T) {
 func TestSession_Validate_GivenEmptyID_ThenReturnsError(t *testing.T) {
 	s := &Session{
 		ID:     "",
-		Agent:  config.AgentClaude,
 		Prompt: "Build a todo app",
 	}
 
@@ -284,26 +280,10 @@ func TestSession_Validate_GivenEmptyID_ThenReturnsError(t *testing.T) {
 	}
 }
 
-// TestSession_Validate_GivenInvalidAgent_ThenReturnsError tests invalid agent validation.
-func TestSession_Validate_GivenInvalidAgent_ThenReturnsError(t *testing.T) {
-	s := &Session{
-		ID:     "sandctl-abc12345",
-		Agent:  "invalid",
-		Prompt: "Build a todo app",
-	}
-
-	err := s.Validate()
-
-	if err == nil {
-		t.Error("expected error for invalid agent")
-	}
-}
-
 // TestSession_Validate_GivenEmptyPrompt_ThenReturnsError tests empty prompt validation.
 func TestSession_Validate_GivenEmptyPrompt_ThenReturnsError(t *testing.T) {
 	s := &Session{
 		ID:     "sandctl-abc12345",
-		Agent:  config.AgentClaude,
 		Prompt: "",
 	}
 
@@ -324,7 +304,6 @@ func TestSession_Validate_GivenTooLongPrompt_ThenReturnsError(t *testing.T) {
 
 	s := &Session{
 		ID:     "sandctl-abc12345",
-		Agent:  config.AgentClaude,
 		Prompt: string(longPrompt),
 	}
 

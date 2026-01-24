@@ -9,35 +9,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// AgentType represents the type of AI coding agent.
-type AgentType string
-
-const (
-	AgentClaude   AgentType = "claude"
-	AgentOpencode AgentType = "opencode"
-	AgentCodex    AgentType = "codex"
-)
-
-// ValidAgentTypes returns all valid agent types.
-func ValidAgentTypes() []AgentType {
-	return []AgentType{AgentClaude, AgentOpencode, AgentCodex}
-}
-
-// IsValid checks if the agent type is valid.
-func (a AgentType) IsValid() bool {
-	for _, valid := range ValidAgentTypes() {
-		if a == valid {
-			return true
-		}
-	}
-	return false
-}
-
 // Config represents the sandctl configuration.
 type Config struct {
-	SpritesToken string            `yaml:"sprites_token"`
-	DefaultAgent AgentType         `yaml:"default_agent"`
-	AgentAPIKeys map[string]string `yaml:"agent_api_keys"`
+	SpritesToken   string `yaml:"sprites_token"`
+	OpencodeZenKey string `yaml:"opencode_zen_key"`
 }
 
 // DefaultConfigPath returns the default config file path.
@@ -100,29 +75,11 @@ func (c *Config) Validate() error {
 		return &ValidationError{Field: "sprites_token", Message: "is required"}
 	}
 
-	// Set default agent if not specified
-	if c.DefaultAgent == "" {
-		c.DefaultAgent = AgentClaude
-	}
-
-	if !c.DefaultAgent.IsValid() {
-		return &ValidationError{
-			Field:   "default_agent",
-			Message: fmt.Sprintf("must be one of: %v", ValidAgentTypes()),
-		}
-	}
-
-	if c.AgentAPIKeys == nil {
-		c.AgentAPIKeys = make(map[string]string)
+	if c.OpencodeZenKey == "" {
+		return &ValidationError{Field: "opencode_zen_key", Message: "is required"}
 	}
 
 	return nil
-}
-
-// GetAPIKey returns the API key for the given agent type.
-func (c *Config) GetAPIKey(agent AgentType) (string, bool) {
-	key, ok := c.AgentAPIKeys[string(agent)]
-	return key, ok && key != ""
 }
 
 // NotFoundError is returned when the config file doesn't exist.
@@ -162,14 +119,13 @@ func (e *ValidationError) Error() string {
 func SetupInstructions() string {
 	return fmt.Sprintf(`Configuration required.
 
-Create %s with your Sprites token:
+Create %s with your credentials:
 
-  sprites_token: "your-token-here"
-  agent_api_keys:
-    claude: "your-anthropic-key"
+  sprites_token: "your-sprites-token"
+  opencode_zen_key: "your-opencode-zen-key"
 
 Get your Sprites token at: https://sprites.dev/tokens
-Get your Anthropic key at: https://console.anthropic.com/
+Get your Opencode Zen key at: https://opencode.ai/settings
 
 After creating the file, set secure permissions:
   chmod 600 %s
