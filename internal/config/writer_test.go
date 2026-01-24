@@ -12,11 +12,8 @@ func TestSave_GivenValidConfig_ThenCreatesFileWithCorrectPermissions(t *testing.
 	configPath := filepath.Join(tmpDir, "config")
 
 	cfg := &Config{
-		SpritesToken: "test-token",
-		DefaultAgent: AgentClaude,
-		AgentAPIKeys: map[string]string{
-			"claude": "test-api-key",
-		},
+		SpritesToken:   "test-token",
+		OpencodeZenKey: "test-zen-key",
 	}
 
 	err := Save(configPath, cfg)
@@ -43,8 +40,8 @@ func TestSave_GivenNestedPath_ThenCreatesDirectory(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "nested", "dir", "config")
 
 	cfg := &Config{
-		SpritesToken: "test-token",
-		DefaultAgent: AgentClaude,
+		SpritesToken:   "test-token",
+		OpencodeZenKey: "test-zen-key",
 	}
 
 	err := Save(configPath, cfg)
@@ -73,8 +70,8 @@ func TestSave_GivenExistingConfig_ThenUpdatesAtomically(t *testing.T) {
 
 	// Create initial config
 	cfg1 := &Config{
-		SpritesToken: "token-1",
-		DefaultAgent: AgentClaude,
+		SpritesToken:   "token-1",
+		OpencodeZenKey: "key-1",
 	}
 	if err := Save(configPath, cfg1); err != nil {
 		t.Fatalf("Save() initial error = %v", err)
@@ -82,8 +79,8 @@ func TestSave_GivenExistingConfig_ThenUpdatesAtomically(t *testing.T) {
 
 	// Update config
 	cfg2 := &Config{
-		SpritesToken: "token-2",
-		DefaultAgent: AgentOpencode,
+		SpritesToken:   "token-2",
+		OpencodeZenKey: "key-2",
 	}
 	if err := Save(configPath, cfg2); err != nil {
 		t.Fatalf("Save() update error = %v", err)
@@ -98,8 +95,8 @@ func TestSave_GivenExistingConfig_ThenUpdatesAtomically(t *testing.T) {
 	if loaded.SpritesToken != "token-2" {
 		t.Errorf("SpritesToken = %q, want %q", loaded.SpritesToken, "token-2")
 	}
-	if loaded.DefaultAgent != AgentOpencode {
-		t.Errorf("DefaultAgent = %q, want %q", loaded.DefaultAgent, AgentOpencode)
+	if loaded.OpencodeZenKey != "key-2" {
+		t.Errorf("OpencodeZenKey = %q, want %q", loaded.OpencodeZenKey, "key-2")
 	}
 }
 
@@ -116,12 +113,8 @@ func TestSave_GivenValidConfig_ThenWritesYAML(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "config")
 
 	cfg := &Config{
-		SpritesToken: "test-token",
-		DefaultAgent: AgentClaude,
-		AgentAPIKeys: map[string]string{
-			"claude":   "claude-key",
-			"opencode": "opencode-key",
-		},
+		SpritesToken:   "test-token",
+		OpencodeZenKey: "test-zen-key",
 	}
 
 	if err := Save(configPath, cfg); err != nil {
@@ -138,11 +131,15 @@ func TestSave_GivenValidConfig_ThenWritesYAML(t *testing.T) {
 	if !contains(content, "sprites_token") {
 		t.Error("YAML should contain sprites_token")
 	}
-	if !contains(content, "default_agent") {
-		t.Error("YAML should contain default_agent")
+	if !contains(content, "opencode_zen_key") {
+		t.Error("YAML should contain opencode_zen_key")
 	}
-	if !contains(content, "agent_api_keys") {
-		t.Error("YAML should contain agent_api_keys")
+	// Should NOT contain old fields
+	if contains(content, "default_agent") {
+		t.Error("YAML should NOT contain default_agent")
+	}
+	if contains(content, "agent_api_keys") {
+		t.Error("YAML should NOT contain agent_api_keys")
 	}
 }
 
@@ -162,7 +159,7 @@ func TestSave_GivenNoTempFilePermission_ThenReturnsError(t *testing.T) {
 	}
 
 	configPath := filepath.Join(readOnlyDir, "config")
-	cfg := &Config{SpritesToken: "test"}
+	cfg := &Config{SpritesToken: "test", OpencodeZenKey: "test"}
 
 	err := Save(configPath, cfg)
 	if err == nil {

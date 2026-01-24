@@ -15,9 +15,8 @@ import (
 
 var (
 	// Flags for non-interactive mode
-	initSpritesToken string
-	initAgent        string
-	initAPIKey       string
+	initSpritesToken   string
+	initOpencodeZenKey string
 )
 
 // initCmd represents the init command.
@@ -28,14 +27,13 @@ var initCmd = &cobra.Command{
 
 This command guides you through setting up:
   - Sprites API token (for VM provisioning)
-  - Default AI coding agent (claude, opencode, or codex)
-  - API key for your selected agent
+  - Opencode Zen key (for AI agent access)
 
 If a configuration already exists, your current values are shown as defaults.
 Press Enter to keep existing values, or type new ones to update.
 
 For non-interactive setup (CI/scripts), use flags:
-  sandctl init --sprites-token TOKEN --agent claude --api-key KEY`,
+  sandctl init --sprites-token TOKEN --opencode-zen-key KEY`,
 	RunE: runInit,
 }
 
@@ -44,8 +42,7 @@ func init() {
 
 	// Non-interactive flags
 	initCmd.Flags().StringVar(&initSpritesToken, "sprites-token", "", "Sprites API token")
-	initCmd.Flags().StringVar(&initAgent, "agent", "", "Default agent (claude, opencode, codex)")
-	initCmd.Flags().StringVar(&initAPIKey, "api-key", "", "API key for the selected agent")
+	initCmd.Flags().StringVar(&initOpencodeZenKey, "opencode-zen-key", "", "Opencode Zen key for AI access")
 }
 
 // runInit executes the init command.
@@ -56,14 +53,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check if running non-interactively with flags
-	hasFlags := initSpritesToken != "" || initAgent != "" || initAPIKey != ""
+	hasFlags := initSpritesToken != "" || initOpencodeZenKey != ""
 	if hasFlags {
 		return runNonInteractiveInit(configPath)
 	}
 
 	// Check if we have a terminal for interactive mode
 	if !ui.IsTerminal() {
-		return errors.New("init requires a terminal for interactive mode, or use --sprites-token, --agent, and --api-key flags")
+		return errors.New("init requires a terminal for interactive mode, or use --sprites-token and --opencode-zen-key flags")
 	}
 
 	return runInitFlow(configPath, os.Stdin, os.Stdout)
@@ -75,26 +72,14 @@ func runNonInteractiveInit(configPath string) error {
 	if initSpritesToken == "" {
 		return errors.New("--sprites-token is required in non-interactive mode")
 	}
-	if initAgent == "" {
-		return errors.New("--agent is required in non-interactive mode")
-	}
-	if initAPIKey == "" {
-		return errors.New("--api-key is required in non-interactive mode")
-	}
-
-	// Validate agent type
-	agentType := config.AgentType(initAgent)
-	if !agentType.IsValid() {
-		return fmt.Errorf("invalid agent %q, must be one of: %v", initAgent, config.ValidAgentTypes())
+	if initOpencodeZenKey == "" {
+		return errors.New("--opencode-zen-key is required in non-interactive mode")
 	}
 
 	// Build config
 	cfg := &config.Config{
-		SpritesToken: initSpritesToken,
-		DefaultAgent: agentType,
-		AgentAPIKeys: map[string]string{
-			string(agentType): initAPIKey,
-		},
+		SpritesToken:   initSpritesToken,
+		OpencodeZenKey: initOpencodeZenKey,
 	}
 
 	// Save config
@@ -123,39 +108,16 @@ func runInitFlow(configPath string, input io.Reader, output io.Writer) error {
 		return err
 	}
 
-	// Prompt for agent selection
-	agent, err := promptAgentSelection(prompter, output, existingCfg)
-	if err != nil {
-		return err
-	}
-
-	// Prompt for API key
-	apiKey, keepExistingKey, err := promptAPIKey(prompter, agent, existingCfg)
+	// Prompt for Opencode Zen key
+	zenKey, err := promptOpencodeZenKey(prompter, existingCfg)
 	if err != nil {
 		return err
 	}
 
 	// Build config
 	cfg := &config.Config{
-		SpritesToken: spritesToken,
-		DefaultAgent: agent,
-		AgentAPIKeys: make(map[string]string),
-	}
-
-	// Preserve existing API keys and add/update the current one
-	if existingCfg != nil && existingCfg.AgentAPIKeys != nil {
-		for k, v := range existingCfg.AgentAPIKeys {
-			cfg.AgentAPIKeys[k] = v
-		}
-	}
-	if !keepExistingKey && apiKey != "" {
-		cfg.AgentAPIKeys[string(agent)] = apiKey
-	}
-
-	// Warn if no API key is configured for the selected agent
-	if _, hasKey := cfg.AgentAPIKeys[string(agent)]; !hasKey || cfg.AgentAPIKeys[string(agent)] == "" {
-		fmt.Fprintln(output)
-		fmt.Fprintf(output, "Warning: No API key configured for %s. Some features may not work.\n", agent)
+		SpritesToken:   spritesToken,
+		OpencodeZenKey: zenKey,
 	}
 
 	// Save config
@@ -176,21 +138,43 @@ func runInitFlow(configPath string, input io.Reader, output io.Writer) error {
 
 // loadExistingConfig attempts to load an existing config file.
 // Returns nil if no config exists or if it cannot be loaded.
+// This function handles migration from old config formats gracefully.
 func loadExistingConfig(path string) *config.Config {
+	// Try loading with validation first
 	cfg, err := config.Load(path)
-	if err != nil {
-		// Try loading without permission check for reconfiguration
-		data, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return nil
-		}
-		var c config.Config
-		if yaml.Unmarshal(data, &c) != nil {
-			return nil
-		}
+	if err == nil {
+		return cfg
+	}
+
+	// If validation failed, try loading the raw YAML to preserve sprites_token
+	// This handles migration from old config formats
+	data, readErr := os.ReadFile(path)
+	if readErr != nil {
+		return nil
+	}
+
+	// Use a map to read all fields including old ones
+	var rawCfg map[string]interface{}
+	if yaml.Unmarshal(data, &rawCfg) != nil {
+		return nil
+	}
+
+	// Extract sprites_token if present (for migration)
+	var c config.Config
+	if token, ok := rawCfg["sprites_token"].(string); ok {
+		c.SpritesToken = token
+	}
+	// Extract opencode_zen_key if present
+	if zenKey, ok := rawCfg["opencode_zen_key"].(string); ok {
+		c.OpencodeZenKey = zenKey
+	}
+
+	// Only return if we found at least one field
+	if c.SpritesToken != "" || c.OpencodeZenKey != "" {
 		return &c
 	}
-	return cfg
+
+	return nil
 }
 
 // promptSpritesToken prompts for the Sprites API token.
@@ -220,59 +204,31 @@ func promptSpritesToken(prompter *ui.Prompter, existingCfg *config.Config) (stri
 	return token, nil
 }
 
-// promptAgentSelection prompts for the default agent.
-func promptAgentSelection(prompter *ui.Prompter, output io.Writer, existingCfg *config.Config) (config.AgentType, error) {
-	options := []ui.SelectOption{
-		{Value: "claude", Label: "claude", Description: "Anthropic Claude"},
-		{Value: "opencode", Label: "opencode", Description: "OpenCode AI"},
-		{Value: "codex", Label: "codex", Description: "OpenAI Codex"},
-	}
+// promptOpencodeZenKey prompts for the Opencode Zen key.
+func promptOpencodeZenKey(prompter *ui.Prompter, existingCfg *config.Config) (string, error) {
+	hasExisting := existingCfg != nil && existingCfg.OpencodeZenKey != ""
 
-	// Determine default index
-	defaultIndex := 0
-	if existingCfg != nil && existingCfg.DefaultAgent != "" {
-		for i, opt := range options {
-			if opt.Value == string(existingCfg.DefaultAgent) {
-				defaultIndex = i
-				break
-			}
+	if hasExisting {
+		// Show masked key and allow keeping existing
+		key, keepExisting, err := prompter.PromptSecretWithDefault("Opencode Zen key", true)
+		if err != nil {
+			return "", err
 		}
+		if keepExisting {
+			return existingCfg.OpencodeZenKey, nil
+		}
+		return key, nil
 	}
 
-	fmt.Fprintln(output)
-	idx, err := prompter.PromptSelect("Select default AI agent:", options, defaultIndex)
+	// No existing key, require new input
+	key, err := prompter.PromptSecret("Opencode Zen key")
 	if err != nil {
 		return "", err
 	}
-
-	return config.AgentType(options[idx].Value), nil
-}
-
-// promptAPIKey prompts for the API key for the selected agent.
-func promptAPIKey(prompter *ui.Prompter, agent config.AgentType, existingCfg *config.Config) (string, bool, error) {
-	hasExisting := existingCfg != nil && existingCfg.AgentAPIKeys != nil
-	existingKey := ""
-	if hasExisting {
-		existingKey = existingCfg.AgentAPIKeys[string(agent)]
+	if key == "" {
+		return "", errors.New("Opencode Zen key is required")
 	}
-
-	prompt := fmt.Sprintf("API key for %s", agent)
-
-	if existingKey != "" {
-		key, keepExisting, err := prompter.PromptSecretWithDefault(prompt, true)
-		if err != nil {
-			return "", false, err
-		}
-		return key, keepExisting, nil
-	}
-
-	// No existing key
-	key, err := prompter.PromptSecret(prompt)
-	if err != nil {
-		return "", false, err
-	}
-
-	return key, false, nil
+	return key, nil
 }
 
 // unmarshalYAML is a helper for testing that wraps yaml.Unmarshal.
