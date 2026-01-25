@@ -342,6 +342,12 @@ func cloneRepository(client *sprites.Client, name string, repoSpec *repo.Spec) e
 		return parseGitError(output, err, repoSpec.String())
 	}
 
+	// Also check output for git errors even if err is nil
+	// (the API may return success even when the command fails)
+	if gitErr := checkGitOutputForErrors(output, repoSpec.String()); gitErr != nil {
+		return gitErr
+	}
+
 	return nil
 }
 
@@ -354,9 +360,27 @@ func parseGitError(output string, err error, repoName string) error {
 		return fmt.Errorf("clone timed out after 10 minutes for repository '%s'", repoName)
 	}
 
+	// Check output for common git errors
+	if gitErr := checkGitOutputForErrors(output, repoName); gitErr != nil {
+		return gitErr
+	}
+
+	// Generic error with output
+	if output != "" {
+		return fmt.Errorf("failed to clone repository '%s': %s", repoName, strings.TrimSpace(output))
+	}
+
+	return fmt.Errorf("failed to clone repository '%s': %w", repoName, err)
+}
+
+// checkGitOutputForErrors looks for git error patterns in command output.
+func checkGitOutputForErrors(output string, repoName string) error {
+	outputLower := strings.ToLower(output)
+
 	// Check for repository not found
 	if strings.Contains(outputLower, "repository not found") ||
 		strings.Contains(outputLower, "does not exist") ||
+		strings.Contains(outputLower, "not found") ||
 		strings.Contains(output, "404") {
 		return fmt.Errorf("repository '%s' not found", repoName)
 	}
@@ -375,10 +399,10 @@ func parseGitError(output string, err error, repoName string) error {
 		return fmt.Errorf("network error while cloning '%s': unable to reach GitHub", repoName)
 	}
 
-	// Generic error with output
-	if output != "" {
+	// Check for fatal errors in git output
+	if strings.Contains(outputLower, "fatal:") {
 		return fmt.Errorf("failed to clone repository '%s': %s", repoName, strings.TrimSpace(output))
 	}
 
-	return fmt.Errorf("failed to clone repository '%s': %w", repoName, err)
+	return nil
 }
