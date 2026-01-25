@@ -87,6 +87,9 @@ func TestSandctl(t *testing.T) {
 	t.Run("sandctl start > returns unknown command error", testStartReturnsUnknownCommand)
 	t.Run("sandctl exec > fails for nonexistent session", testExecFailsNonexistent)
 	t.Run("sandctl destroy > fails for nonexistent session", testDestroyFailsNonexistent)
+
+	// Console command tests
+	t.Run("sandctl console > fails for nonexistent session", testConsoleFailsNonexistent)
 }
 
 // testVersion tests that sandctl version displays version information.
@@ -388,4 +391,34 @@ func testDestroyFailsNonexistent(t *testing.T) {
 	}
 
 	t.Logf("destroy nonexistent session failed as expected: %s%s", stdout, stderr)
+}
+
+// testConsoleFailsNonexistent tests that sandctl console fails for nonexistent sessions.
+// Note: This test can only run in an environment with a TTY. In CI (no TTY), the console
+// command will detect non-terminal stdin and exit early with a helpful message.
+func testConsoleFailsNonexistent(t *testing.T) {
+	token := requireToken(t)
+	openCodeKey := requireOpenCodeKey(t)
+	configPath := newTempConfig(t, token, openCodeKey)
+
+	stdout, stderr, exitCode := runSandctlWithConfig(t, configPath, "console", "nonexistent-session-12345")
+
+	combined := stdout + stderr
+
+	// In CI environments without a TTY, the console command detects non-terminal stdin
+	// and exits with a helpful message. This is expected behavior, not a test failure.
+	if strings.Contains(combined, "console requires an interactive terminal") {
+		t.Skip("skipping: console command requires a TTY which is not available in this environment")
+	}
+
+	if exitCode == 0 {
+		t.Fatalf("expected console to fail for nonexistent session, but it succeeded\nstdout: %s\nstderr: %s", stdout, stderr)
+	}
+
+	// Should have an error message about session not found
+	if !strings.Contains(strings.ToLower(combined), "not found") {
+		t.Errorf("expected 'not found' in error message, got: %s", combined)
+	}
+
+	t.Logf("console nonexistent session failed as expected: %s%s", stdout, stderr)
 }

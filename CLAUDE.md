@@ -14,6 +14,8 @@ Auto-generated from all feature plans. Last updated: 2026-01-22
 - Go 1.23.0 + Cobra (CLI framework), `os/exec` (command execution), `testing` (Go standard test framework) (008-e2e-test-suite)
 - N/A (test artifacts use temp directories) (008-e2e-test-suite)
 - Go 1.24 + Cobra (CLI framework), gopkg.in/yaml.v3 (config), golang.org/x/term (secure input) (010-rename-start-to-new)
+- Go 1.24 + github.com/spf13/cobra v1.9.1 (CLI), github.com/gorilla/websocket v1.5.1 (WebSocket), golang.org/x/term v0.30.0 (terminal control) (011-console-command)
+- ~/.sandctl/sessions.json (local session store), ~/.sandctl/config (YAML config) (011-console-command)
 
 - Go 1.22+ + Cobra (CLI framework), Viper (config), Fly.io Sprites SDK (001-sandbox-cli)
 
@@ -33,9 +35,9 @@ tests/
 Go 1.22+: Follow standard conventions
 
 ## Recent Changes
+- 011-console-command: Added Go 1.24 + github.com/spf13/cobra v1.9.1 (CLI), github.com/gorilla/websocket v1.5.1 (WebSocket), golang.org/x/term v0.30.0 (terminal control)
 - 010-rename-start-to-new: Added Go 1.24 + Cobra (CLI framework), gopkg.in/yaml.v3 (config), golang.org/x/term (secure input)
 - 008-e2e-test-suite: Added Go 1.23.0 + Cobra (CLI framework), `os/exec` (command execution), `testing` (Go standard test framework)
-- 006-opencode-default-agent: Added Go 1.23.0 + Cobra (CLI), gopkg.in/yaml.v3 (config), golang.org/x/term (secure input)
 
 
 <!-- MANUAL ADDITIONS START -->
