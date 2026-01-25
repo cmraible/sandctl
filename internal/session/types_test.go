@@ -257,8 +257,7 @@ func TestSession_TimeoutRemaining_GivenPastDeadline_ThenReturnsZero(t *testing.T
 // TestSession_Validate_GivenValidSession_ThenReturnsNil tests valid session.
 func TestSession_Validate_GivenValidSession_ThenReturnsNil(t *testing.T) {
 	s := &Session{
-		ID:     "sandctl-abc12345",
-		Prompt: "Build a todo app",
+		ID: "sandctl-abc12345",
 	}
 
 	if err := s.Validate(); err != nil {
@@ -269,47 +268,12 @@ func TestSession_Validate_GivenValidSession_ThenReturnsNil(t *testing.T) {
 // TestSession_Validate_GivenEmptyID_ThenReturnsError tests empty ID validation.
 func TestSession_Validate_GivenEmptyID_ThenReturnsError(t *testing.T) {
 	s := &Session{
-		ID:     "",
-		Prompt: "Build a todo app",
+		ID: "",
 	}
 
 	err := s.Validate()
 
 	if err == nil {
 		t.Error("expected error for empty ID")
-	}
-}
-
-// TestSession_Validate_GivenEmptyPrompt_ThenReturnsError tests empty prompt validation.
-func TestSession_Validate_GivenEmptyPrompt_ThenReturnsError(t *testing.T) {
-	s := &Session{
-		ID:     "sandctl-abc12345",
-		Prompt: "",
-	}
-
-	err := s.Validate()
-
-	if err == nil {
-		t.Error("expected error for empty prompt")
-	}
-}
-
-// TestSession_Validate_GivenTooLongPrompt_ThenReturnsError tests prompt length validation.
-func TestSession_Validate_GivenTooLongPrompt_ThenReturnsError(t *testing.T) {
-	// Create a prompt longer than 10000 characters
-	longPrompt := make([]byte, 10001)
-	for i := range longPrompt {
-		longPrompt[i] = 'a'
-	}
-
-	s := &Session{
-		ID:     "sandctl-abc12345",
-		Prompt: string(longPrompt),
-	}
-
-	err := s.Validate()
-
-	if err == nil {
-		t.Error("expected error for too long prompt")
 	}
 }

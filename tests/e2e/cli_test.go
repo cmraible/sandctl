@@ -74,7 +74,7 @@ func TestSandctl(t *testing.T) {
 	t.Run("sandctl init > sets correct file permissions", testInitSetsPermissions)
 
 	// Session lifecycle tests - require API token
-	t.Run("sandctl start > succeeds with --prompt flag", testStartSucceeds)
+	t.Run("sandctl new > creates session without arguments", testNewSucceeds)
 	t.Run("sandctl list > shows active sessions", testListShowsSessions)
 	t.Run("sandctl exec > runs command in session", testExecRunsCommand)
 	t.Run("sandctl destroy > removes session", testDestroyRemovesSession)
@@ -83,8 +83,8 @@ func TestSandctl(t *testing.T) {
 	t.Run("workflow > complete session lifecycle", testWorkflowLifecycle)
 
 	// Error handling tests
-	t.Run("sandctl start > fails without config", testStartFailsWithoutConfig)
-	t.Run("sandctl start > requires the --prompt flag", testStartRequiresPrompt)
+	t.Run("sandctl new > fails without config", testNewFailsWithoutConfig)
+	t.Run("sandctl start > returns unknown command error", testStartReturnsUnknownCommand)
 	t.Run("sandctl exec > fails for nonexistent session", testExecFailsNonexistent)
 	t.Run("sandctl destroy > fails for nonexistent session", testDestroyFailsNonexistent)
 }
@@ -163,22 +163,22 @@ func testInitSetsPermissions(t *testing.T) {
 	}
 }
 
-// testStartSucceeds tests that sandctl start succeeds with --prompt flag.
-func testStartSucceeds(t *testing.T) {
+// testNewSucceeds tests that sandctl new creates a session without arguments.
+func testNewSucceeds(t *testing.T) {
 	token := requireToken(t)
 	openCodeKey := requireOpenCodeKey(t)
 	configPath := newTempConfig(t, token, openCodeKey)
 
-	t.Log("starting session")
-	stdout, stderr, exitCode := runSandctlWithConfig(t, configPath, "start", "--prompt", "e2e test session")
+	t.Log("creating new session")
+	stdout, stderr, exitCode := runSandctlWithConfig(t, configPath, "new")
 
 	if exitCode != 0 {
-		t.Fatalf("start failed with exit code %d\nstdout: %s\nstderr: %s", exitCode, stdout, stderr)
+		t.Fatalf("new failed with exit code %d\nstdout: %s\nstderr: %s", exitCode, stdout, stderr)
 	}
 
 	// Parse and register cleanup for actual session name
 	sessionName := parseSessionName(t, stdout)
-	t.Logf("session started: %s", sessionName)
+	t.Logf("session created: %s", sessionName)
 	registerSessionCleanup(t, configPath, sessionName)
 }
 
@@ -204,16 +204,16 @@ func testExecRunsCommand(t *testing.T) {
 	openCodeKey := requireOpenCodeKey(t)
 	configPath := newTempConfig(t, token, openCodeKey)
 
-	// Start a session first
-	t.Log("starting session for exec test")
-	stdout, stderr, exitCode := runSandctlWithConfig(t, configPath, "start", "--prompt", "e2e exec test")
+	// Create a session first
+	t.Log("creating session for exec test")
+	stdout, stderr, exitCode := runSandctlWithConfig(t, configPath, "new")
 	if exitCode != 0 {
-		t.Fatalf("could not start session for exec test: %s%s", stdout, stderr)
+		t.Fatalf("could not create session for exec test: %s%s", stdout, stderr)
 	}
 
 	// Parse actual session name and register cleanup
 	sessionName := parseSessionName(t, stdout)
-	t.Logf("session started: %s", sessionName)
+	t.Logf("session created: %s", sessionName)
 	registerSessionCleanup(t, configPath, sessionName)
 
 	// Wait for session to be ready
@@ -237,16 +237,16 @@ func testDestroyRemovesSession(t *testing.T) {
 	openCodeKey := requireOpenCodeKey(t)
 	configPath := newTempConfig(t, token, openCodeKey)
 
-	// Start a session first
-	t.Log("starting session for destroy test")
-	stdout, stderr, exitCode := runSandctlWithConfig(t, configPath, "start", "--prompt", "e2e destroy test")
+	// Create a session first
+	t.Log("creating session for destroy test")
+	stdout, stderr, exitCode := runSandctlWithConfig(t, configPath, "new")
 	if exitCode != 0 {
-		t.Fatalf("could not start session for destroy test: %s%s", stdout, stderr)
+		t.Fatalf("could not create session for destroy test: %s%s", stdout, stderr)
 	}
 
 	// Parse actual session name
 	sessionName := parseSessionName(t, stdout)
-	t.Logf("session started: %s", sessionName)
+	t.Logf("session created: %s", sessionName)
 
 	// Wait briefly for session
 	waitForSession(t, configPath, sessionName, 3*time.Minute)
@@ -261,14 +261,14 @@ func testDestroyRemovesSession(t *testing.T) {
 	t.Logf("destroy output: %s", stdout)
 }
 
-// testWorkflowLifecycle tests the complete user workflow: init -> start -> list -> exec -> destroy.
+// testWorkflowLifecycle tests the complete user workflow: init -> new -> list -> exec -> destroy.
 func testWorkflowLifecycle(t *testing.T) {
 	token := requireToken(t)
 	openCodeKey := requireOpenCodeKey(t)
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config")
 
-	// Track session name for cleanup (will be set after start)
+	// Track session name for cleanup (will be set after new)
 	var sessionName string
 
 	// Register cleanup in case test fails partway
@@ -288,16 +288,16 @@ func testWorkflowLifecycle(t *testing.T) {
 		t.Fatalf("workflow init failed: exit %d\nstdout: %s\nstderr: %s", exitCode, stdout, stderr)
 	}
 
-	// Step 2: Start
-	t.Log("workflow step 2: start")
-	stdout, stderr, exitCode = runSandctlWithConfig(t, configPath, "start", "--prompt", "e2e workflow test")
+	// Step 2: New
+	t.Log("workflow step 2: new")
+	stdout, stderr, exitCode = runSandctlWithConfig(t, configPath, "new")
 	if exitCode != 0 {
-		t.Fatalf("workflow start failed: exit %d\nstdout: %s\nstderr: %s", exitCode, stdout, stderr)
+		t.Fatalf("workflow new failed: exit %d\nstdout: %s\nstderr: %s", exitCode, stdout, stderr)
 	}
 
 	// Parse actual session name
 	sessionName = parseSessionName(t, stdout)
-	t.Logf("session started: %s", sessionName)
+	t.Logf("session created: %s", sessionName)
 
 	// Step 3: List
 	t.Log("workflow step 3: list")
@@ -324,15 +324,15 @@ func testWorkflowLifecycle(t *testing.T) {
 	t.Log("workflow complete: all steps passed")
 }
 
-// testStartFailsWithoutConfig tests that sandctl start fails without a config file.
-func testStartFailsWithoutConfig(t *testing.T) {
+// testNewFailsWithoutConfig tests that sandctl new fails without a config file.
+func testNewFailsWithoutConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 	nonExistentConfig := filepath.Join(tmpDir, "nonexistent-config")
 
-	stdout, stderr, exitCode := runSandctl(t, "--config", nonExistentConfig, "start", "--prompt", "test")
+	stdout, stderr, exitCode := runSandctl(t, "--config", nonExistentConfig, "new")
 
 	if exitCode == 0 {
-		t.Fatalf("expected start to fail without config, but it succeeded\nstdout: %s\nstderr: %s", stdout, stderr)
+		t.Fatalf("expected new to fail without config, but it succeeded\nstdout: %s\nstderr: %s", stdout, stderr)
 	}
 
 	// Should have an error message
@@ -341,27 +341,23 @@ func testStartFailsWithoutConfig(t *testing.T) {
 		t.Error("expected error message when config is missing")
 	}
 
-	t.Logf("start without config failed as expected: %s", combined)
+	t.Logf("new without config failed as expected: %s", combined)
 }
 
-// testStartRequiresPrompt tests that sandctl start requires the --prompt flag.
-func testStartRequiresPrompt(t *testing.T) {
-	token := requireToken(t)
-	openCodeKey := requireOpenCodeKey(t)
-	configPath := newTempConfig(t, token, openCodeKey)
-
-	stdout, stderr, exitCode := runSandctlWithConfig(t, configPath, "start")
+// testStartReturnsUnknownCommand tests that the old start command returns an unknown command error.
+func testStartReturnsUnknownCommand(t *testing.T) {
+	stdout, stderr, exitCode := runSandctl(t, "start")
 
 	if exitCode == 0 {
-		t.Fatalf("expected start to fail without --prompt, but it succeeded\nstdout: %s\nstderr: %s", stdout, stderr)
+		t.Fatalf("expected start to fail as unknown command, but it succeeded\nstdout: %s\nstderr: %s", stdout, stderr)
 	}
 
 	combined := stdout + stderr
-	if !strings.Contains(strings.ToLower(combined), "prompt") && !strings.Contains(strings.ToLower(combined), "required") {
-		t.Errorf("error message should mention prompt flag, got: %s", combined)
+	if !strings.Contains(strings.ToLower(combined), "unknown") {
+		t.Errorf("error message should mention 'unknown', got: %s", combined)
 	}
 
-	t.Logf("start without prompt failed as expected: %s", combined)
+	t.Logf("start command failed as expected with unknown command error: %s", combined)
 }
 
 // testExecFailsNonexistent tests that sandctl exec fails for nonexistent sessions.

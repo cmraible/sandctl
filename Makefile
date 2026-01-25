@@ -1,4 +1,4 @@
-.PHONY: build test test-unit test-integration test-e2e lint fmt check-fmt install install-hooks install-tools clean help
+.PHONY: build test test-unit test-integration test-e2e lint fmt check-fmt install install-hooks clean help
 
 # Build variables
 BINARY_NAME=sandctl
@@ -43,7 +43,7 @@ test-e2e: ## Run E2E tests (requires SPRITES_API_TOKEN, sources .env if present)
 	@if [ -f .env ]; then set -a; . ./.env; set +a; fi && $(GOTEST) -v -tags=e2e -timeout 10m ./tests/e2e/...
 
 lint: ## Run linters
-	golangci-lint run ./...
+	go tool golangci-lint run ./...
 
 fmt: ## Format code
 	$(GOFMT) -s -w .
@@ -60,10 +60,6 @@ check-fmt: ## Check code formatting (CI use)
 
 install-hooks: ## Install git pre-commit hooks
 	@./scripts/install-hooks.sh
-
-install-tools: ## Install development tools (golangci-lint)
-	@echo "Installing development tools..."
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint
 
 install: build ## Install binary to GOPATH/bin
 	@mkdir -p $(shell go env GOPATH)/bin

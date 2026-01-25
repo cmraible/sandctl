@@ -53,7 +53,6 @@ func TestStore_Add_GivenNewSession_ThenPersistsSession(t *testing.T) {
 
 	session := Session{
 		ID:        "sandctl-test1234",
-		Prompt:    "Test prompt",
 		Status:    StatusRunning,
 		CreatedAt: time.Now(),
 	}
@@ -84,7 +83,6 @@ func TestStore_Add_GivenDuplicateID_ThenReturnsError(t *testing.T) {
 
 	session := Session{
 		ID:     "sandctl-test1234",
-		Prompt: "Test prompt",
 		Status: StatusRunning,
 	}
 
@@ -108,7 +106,6 @@ func TestStore_Update_GivenExistingSession_ThenUpdatesStatus(t *testing.T) {
 
 	session := Session{
 		ID:     "sandctl-test1234",
-		Prompt: "Test prompt",
 		Status: StatusRunning,
 	}
 
@@ -160,7 +157,6 @@ func TestStore_Remove_GivenExistingSession_ThenRemovesSession(t *testing.T) {
 
 	session := Session{
 		ID:     "sandctl-test1234",
-		Prompt: "Test prompt",
 		Status: StatusRunning,
 	}
 
@@ -229,9 +225,9 @@ func TestStore_List_GivenMultipleSessions_ThenReturnsAll(t *testing.T) {
 	store := NewStore(storePath)
 
 	sessions := []Session{
-		{ID: "sandctl-session1", Prompt: "p1", Status: StatusRunning},
-		{ID: "sandctl-session2", Prompt: "p2", Status: StatusStopped},
-		{ID: "sandctl-session3", Prompt: "p3", Status: StatusFailed},
+		{ID: "sandctl-session1", Status: StatusRunning},
+		{ID: "sandctl-session2", Status: StatusStopped},
+		{ID: "sandctl-session3", Status: StatusFailed},
 	}
 
 	for _, s := range sessions {
@@ -257,10 +253,10 @@ func TestStore_ListActive_GivenMixedStatuses_ThenReturnsOnlyActive(t *testing.T)
 	store := NewStore(storePath)
 
 	sessions := []Session{
-		{ID: "sandctl-running1", Prompt: "p1", Status: StatusRunning},
-		{ID: "sandctl-prov1234", Prompt: "p2", Status: StatusProvisioning},
-		{ID: "sandctl-stopped1", Prompt: "p3", Status: StatusStopped},
-		{ID: "sandctl-failed12", Prompt: "p4", Status: StatusFailed},
+		{ID: "sandctl-running1", Status: StatusRunning},
+		{ID: "sandctl-prov1234", Status: StatusProvisioning},
+		{ID: "sandctl-stopped1", Status: StatusStopped},
+		{ID: "sandctl-failed12", Status: StatusFailed},
 	}
 
 	for _, s := range sessions {
@@ -294,7 +290,6 @@ func TestStore_Get_GivenExistingID_ThenReturnsSession(t *testing.T) {
 
 	session := Session{
 		ID:     "sandctl-test1234",
-		Prompt: "Test prompt",
 		Status: StatusRunning,
 	}
 
@@ -309,9 +304,6 @@ func TestStore_Get_GivenExistingID_ThenReturnsSession(t *testing.T) {
 	}
 	if got.ID != session.ID {
 		t.Errorf("ID = %q, want %q", got.ID, session.ID)
-	}
-	if got.Prompt != session.Prompt {
-		t.Errorf("Prompt = %q, want %q", got.Prompt, session.Prompt)
 	}
 }
 
@@ -343,7 +335,6 @@ func TestStore_ConcurrentOperations_GivenParallelAccess_ThenNoRaceConditions(t *
 	for i := 0; i < 5; i++ {
 		session := Session{
 			ID:     "sandctl-init" + string(rune('a'+i)) + "000",
-			Prompt: "Initial",
 			Status: StatusRunning,
 		}
 		if err := store.Add(session); err != nil {
@@ -372,7 +363,6 @@ func TestStore_ConcurrentOperations_GivenParallelAccess_ThenNoRaceConditions(t *
 			defer wg.Done()
 			session := Session{
 				ID:     "sandctl-conc" + string(rune('a'+n)) + "000",
-				Prompt: "Concurrent",
 				Status: StatusRunning,
 			}
 			// Duplicates are expected in concurrent adds, ignore errors
@@ -460,7 +450,6 @@ func TestStore_Get_GivenCaseInsensitiveID_ThenFindsSession(t *testing.T) {
 
 	session := Session{
 		ID:     "alice",
-		Prompt: "Test prompt",
 		Status: StatusRunning,
 	}
 
@@ -491,7 +480,6 @@ func TestStore_Update_GivenCaseInsensitiveID_ThenUpdatesSession(t *testing.T) {
 
 	session := Session{
 		ID:     "bob",
-		Prompt: "Test prompt",
 		Status: StatusRunning,
 	}
 
@@ -522,7 +510,6 @@ func TestStore_Remove_GivenCaseInsensitiveID_ThenRemovesSession(t *testing.T) {
 
 	session := Session{
 		ID:     "charlie",
-		Prompt: "Test prompt",
 		Status: StatusRunning,
 	}
 
@@ -553,7 +540,6 @@ func TestStore_Add_GivenCaseVariantDuplicate_ThenReturnsError(t *testing.T) {
 
 	session1 := Session{
 		ID:     "diana",
-		Prompt: "Test prompt 1",
 		Status: StatusRunning,
 	}
 
@@ -564,7 +550,6 @@ func TestStore_Add_GivenCaseVariantDuplicate_ThenReturnsError(t *testing.T) {
 	// Try to add with different case
 	session2 := Session{
 		ID:     "DIANA",
-		Prompt: "Test prompt 2",
 		Status: StatusRunning,
 	}
 
@@ -581,9 +566,9 @@ func TestStore_GetUsedNames_GivenSessions_ThenReturnsAllIDs(t *testing.T) {
 	store := NewStore(storePath)
 
 	sessions := []Session{
-		{ID: "alice", Prompt: "p1", Status: StatusRunning},
-		{ID: "bob", Prompt: "p2", Status: StatusStopped},
-		{ID: "charlie", Prompt: "p3", Status: StatusFailed},
+		{ID: "alice", Status: StatusRunning},
+		{ID: "bob", Status: StatusStopped},
+		{ID: "charlie", Status: StatusFailed},
 	}
 
 	for _, s := range sessions {
@@ -623,7 +608,6 @@ func TestStore_CreatesDirectoryIfNotExists(t *testing.T) {
 
 	session := Session{
 		ID:     "sandctl-test1234",
-		Prompt: "Test",
 		Status: StatusRunning,
 	}
 

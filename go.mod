@@ -1,6 +1,8 @@
 module github.com/sandctl/sandctl
 
-go 1.23.0
+go 1.24
+
+tool github.com/golangci/golangci-lint/cmd/golangci-lint
 
 require (
 	github.com/briandowns/spinner v1.23.0
