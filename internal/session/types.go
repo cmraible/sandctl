@@ -67,7 +67,6 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 // Session represents a sandboxed VM instance managed by sandctl.
 type Session struct {
 	ID        string    `json:"id"`
-	Prompt    string    `json:"prompt"`
 	Status    Status    `json:"status"`
 	CreatedAt time.Time `json:"created_at"`
 	Timeout   *Duration `json:"timeout,omitempty"`
@@ -105,12 +104,6 @@ func (s *Session) Age() time.Duration {
 func (s *Session) Validate() error {
 	if s.ID == "" {
 		return fmt.Errorf("session ID is required")
-	}
-	if s.Prompt == "" {
-		return fmt.Errorf("prompt is required")
-	}
-	if len(s.Prompt) > 10000 {
-		return fmt.Errorf("prompt exceeds maximum length of 10000 characters")
 	}
 	return nil
 }

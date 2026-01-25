@@ -13,36 +13,31 @@ import (
 )
 
 var (
-	startPrompt  string
-	startTimeout string
+	newTimeout string
 )
 
-var startCmd = &cobra.Command{
-	Use:   "start",
-	Short: "Provision a new sandboxed agent session",
-	Long: `Provision a new sandboxed VM and start an AI agent with the given prompt.
+var newCmd = &cobra.Command{
+	Use:   "new",
+	Short: "Create a new sandboxed agent session",
+	Long: `Create a new sandboxed VM with development tools and OpenCode installed.
 
-The system provisions a Fly.io Sprite, installs development tools, and starts
-OpenCode with your prompt. OpenCode is automatically authenticated using your
-configured Zen key.`,
-	Example: `  # Start a new session
-  sandctl start --prompt "Create a React todo app"
+The system provisions a Fly.io Sprite, installs development tools, and sets up
+OpenCode with your configured Zen key. Connect to the session using 'sandctl exec'.`,
+	Example: `  # Create a new session
+  sandctl new
 
-  # Start with auto-destroy timeout
-  sandctl start --prompt "Experiment with new feature" --timeout 2h`,
-	RunE: runStart,
+  # Create with auto-destroy timeout
+  sandctl new --timeout 2h`,
+	RunE: runNew,
 }
 
 func init() {
-	startCmd.Flags().StringVarP(&startPrompt, "prompt", "p", "", "task prompt for the agent (required)")
-	startCmd.Flags().StringVarP(&startTimeout, "timeout", "t", "", "auto-destroy after duration (e.g., 1h, 30m)")
+	newCmd.Flags().StringVarP(&newTimeout, "timeout", "t", "", "auto-destroy after duration (e.g., 1h, 30m)")
 
-	_ = startCmd.MarkFlagRequired("prompt")
-
-	rootCmd.AddCommand(startCmd)
+	rootCmd.AddCommand(newCmd)
 }
 
-func runStart(cmd *cobra.Command, args []string) error {
+func runNew(cmd *cobra.Command, args []string) error {
 	// Load configuration
 	cfg, err := loadConfig()
 	if err != nil {
@@ -51,20 +46,12 @@ func runStart(cmd *cobra.Command, args []string) error {
 
 	// Parse timeout if provided
 	var timeout *session.Duration
-	if startTimeout != "" {
-		d, parseErr := time.ParseDuration(startTimeout)
+	if newTimeout != "" {
+		d, parseErr := time.ParseDuration(newTimeout)
 		if parseErr != nil {
 			return fmt.Errorf("invalid timeout format: %w", parseErr)
 		}
 		timeout = &session.Duration{Duration: d}
-	}
-
-	// Validate prompt
-	if startPrompt == "" {
-		return fmt.Errorf("prompt is required")
-	}
-	if len(startPrompt) > 10000 {
-		return fmt.Errorf("prompt exceeds maximum length of 10000 characters")
 	}
 
 	// Get used names from store to avoid collisions
@@ -86,12 +73,11 @@ func runStart(cmd *cobra.Command, args []string) error {
 	// Create sprites client
 	client := sprites.NewClient(cfg.SpritesToken)
 
-	fmt.Println("Starting session with OpenCode agent...")
+	fmt.Println("Creating new session...")
 
 	// Create session record (provisioning state)
 	sess := session.Session{
 		ID:        sessionID,
-		Prompt:    startPrompt,
 		Status:    session.StatusProvisioning,
 		CreatedAt: time.Now().UTC(),
 		Timeout:   timeout,
@@ -129,12 +115,6 @@ func runStart(cmd *cobra.Command, args []string) error {
 				return setupOpenCodeAuth(client, sessionID, cfg.OpencodeZenKey)
 			},
 		},
-		{
-			Message: "Starting agent",
-			Action: func() error {
-				return startAgentInSprite(client, sessionID, startPrompt)
-			},
-		},
 	}
 
 	provisionErr = ui.RunSteps(os.Stdout, steps)
@@ -152,8 +132,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 
 	// Print success message
 	fmt.Println()
-	fmt.Printf("Session started: %s\n", sessionID)
-	fmt.Printf("Prompt: %s\n", truncateString(startPrompt, 80))
+	fmt.Printf("Session created: %s\n", sessionID)
 	fmt.Println()
 	fmt.Printf("Use 'sandctl exec %s' to connect.\n", sessionID)
 	fmt.Printf("Use 'sandctl destroy %s' when done.\n", sessionID)
@@ -266,26 +245,6 @@ func setupOpenCodeAuth(client *sprites.Client, name string, zenKey string) error
 	return nil
 }
 
-// startAgentInSprite starts the AI agent with the given prompt.
-func startAgentInSprite(client *sprites.Client, name string, prompt string) error {
-	// Start OpenCode with the prompt
-	// The install script puts opencode in ~/.opencode/bin/opencode
-	cmd := fmt.Sprintf("nohup ~/.opencode/bin/opencode --prompt %q > /var/log/agent.log 2>&1 &", prompt)
-	verboseLog("Starting agent with command: %s", cmd)
-
-	output, err := client.ExecCommand(name, cmd)
-	verboseLog("Start agent output: %s", output)
-	if err != nil {
-		return fmt.Errorf("failed to start agent: %w", err)
-	}
-
-	// Check if agent process is running
-	psOutput, psErr := client.ExecCommand(name, "ps aux | grep opencode | grep -v grep")
-	verboseLog("Process check output: %s, err: %v", psOutput, psErr)
-
-	return nil
-}
-
 // cleanupFailedSession removes a session that failed to provision.
 func cleanupFailedSession(client *sprites.Client, store *session.Store, sessionID string) {
 	verboseLog("Cleaning up failed session: %s", sessionID)
@@ -295,12 +254,4 @@ func cleanupFailedSession(client *sprites.Client, store *session.Store, sessionI
 
 	// Update local store to failed status
 	_ = store.Update(sessionID, session.StatusFailed)
-}
-
-// truncateString truncates a string to the given length.
-func truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen-3] + "..."
 }
