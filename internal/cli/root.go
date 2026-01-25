@@ -41,7 +41,8 @@ Commands:
   init     Initialize or update sandctl configuration
   new      Create a new sandboxed agent session
   list     List active sessions
-  exec     Connect to a running session
+  console  Open an interactive console to a session (SSH-like)
+  exec     Execute commands in a running session
   destroy  Terminate and remove a session
 
 Get started:
