@@ -63,9 +63,9 @@ func TestClient_ExecWebSocket_GivenValidSprite_ThenConnects(t *testing.T) {
 
 // TestClient_ExecWebSocket_GivenCommand_ThenSetsQueryParam tests command parameter.
 func TestClient_ExecWebSocket_GivenCommand_ThenSetsQueryParam(t *testing.T) {
-	var receivedCmd string
+	var receivedCmds []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		receivedCmd = r.URL.Query().Get("cmd")
+		receivedCmds = r.URL.Query()["cmd"]
 
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -88,8 +88,16 @@ func TestClient_ExecWebSocket_GivenCommand_ThenSetsQueryParam(t *testing.T) {
 	}
 	session.Close()
 
-	if receivedCmd != "ls -la" {
-		t.Errorf("cmd = %q, want %q", receivedCmd, "ls -la")
+	// Command is wrapped with bash -c, so we expect ["bash", "-c", "ls -la"]
+	want := []string{"bash", "-c", "ls -la"}
+	if len(receivedCmds) != len(want) {
+		t.Errorf("cmd params = %v, want %v", receivedCmds, want)
+		return
+	}
+	for i, v := range want {
+		if receivedCmds[i] != v {
+			t.Errorf("cmd[%d] = %q, want %q", i, receivedCmds[i], v)
+		}
 	}
 }
 

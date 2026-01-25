@@ -17,6 +17,7 @@ Auto-generated from all feature plans. Last updated: 2026-01-22
 - Go 1.24 + github.com/spf13/cobra v1.9.1 (CLI), github.com/gorilla/websocket v1.5.1 (WebSocket), golang.org/x/term v0.30.0 (terminal control) (011-console-command)
 - ~/.sandctl/sessions.json (local session store), ~/.sandctl/config (YAML config) (011-console-command)
 - Go 1.24 + github.com/spf13/cobra v1.9.1 (CLI), golang.org/x/term v0.30.0 (terminal detection) (012-auto-console-after-new)
+- Go 1.24 + github.com/spf13/cobra v1.9.1 (CLI), golang.org/x/term v0.30.0 (terminal) (013-repo-clone)
 
 - Go 1.22+ + Cobra (CLI framework), Viper (config), Fly.io Sprites SDK (001-sandbox-cli)
 
@@ -36,9 +37,9 @@ tests/
 Go 1.22+: Follow standard conventions
 
 ## Recent Changes
+- 013-repo-clone: Added Go 1.24 + github.com/spf13/cobra v1.9.1 (CLI), golang.org/x/term v0.30.0 (terminal)
 - 012-auto-console-after-new: Added Go 1.24 + github.com/spf13/cobra v1.9.1 (CLI), golang.org/x/term v0.30.0 (terminal detection)
 - 011-console-command: Added Go 1.24 + github.com/spf13/cobra v1.9.1 (CLI), github.com/gorilla/websocket v1.5.1 (WebSocket), golang.org/x/term v0.30.0 (terminal control)
-- 010-rename-start-to-new: Added Go 1.24 + Cobra (CLI framework), gopkg.in/yaml.v3 (config), golang.org/x/term (secure input)
 
 
 <!-- MANUAL ADDITIONS START -->

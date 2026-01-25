@@ -50,7 +50,11 @@ func (c *Client) ExecWebSocket(ctx context.Context, spriteName string, opts Exec
 	// Add query parameters
 	q := wsURL.Query()
 	if opts.Command != "" {
-		q.Set("cmd", opts.Command)
+		// Use bash -c to run the command as a shell command
+		// This matches ExecCommand behavior and supports pipes, redirects, etc.
+		q.Add("cmd", "bash")
+		q.Add("cmd", "-c")
+		q.Add("cmd", opts.Command)
 	} else if opts.Interactive {
 		// Default to bash for interactive sessions
 		q.Set("cmd", "bash")

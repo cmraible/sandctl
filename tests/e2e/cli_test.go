@@ -75,6 +75,8 @@ func TestSandctl(t *testing.T) {
 
 	// Session lifecycle tests - require API token
 	t.Run("sandctl new > creates session without arguments", testNewSucceeds)
+	t.Run("sandctl new > creates session with repo flag", testNewWithRepoFlag)
+	t.Run("sandctl new > creates session without repo flag (backward compat)", testNewWithoutRepoFlag)
 	t.Run("sandctl list > shows active sessions", testListShowsSessions)
 	t.Run("sandctl exec > runs command in session", testExecRunsCommand)
 	t.Run("sandctl destroy > removes session", testDestroyRemovesSession)
@@ -84,6 +86,8 @@ func TestSandctl(t *testing.T) {
 
 	// Error handling tests
 	t.Run("sandctl new > fails without config", testNewFailsWithoutConfig)
+	t.Run("sandctl new > fails with invalid repo", testNewWithInvalidRepo)
+	t.Run("sandctl new > fails with invalid repo format", testNewWithInvalidRepoFormat)
 	t.Run("sandctl start > returns unknown command error", testStartReturnsUnknownCommand)
 	t.Run("sandctl exec > fails for nonexistent session", testExecFailsNonexistent)
 	t.Run("sandctl destroy > fails for nonexistent session", testDestroyFailsNonexistent)
@@ -422,4 +426,133 @@ func testConsoleFailsNonexistent(t *testing.T) {
 	}
 
 	t.Logf("console nonexistent session failed as expected: %s%s", stdout, stderr)
+}
+
+// testNewWithRepoFlag tests that sandctl new -R clones a repository into the sprite.
+func testNewWithRepoFlag(t *testing.T) {
+	token := requireToken(t)
+	openCodeKey := requireOpenCodeKey(t)
+	configPath := newTempConfig(t, token, openCodeKey)
+
+	// Use a small, fast-cloning public repository
+	t.Log("creating new session with repo flag")
+	stdout, stderr, exitCode := runSandctlWithConfig(t, configPath, "new", "--no-console", "-R", "octocat/Hello-World")
+
+	if exitCode != 0 {
+		t.Fatalf("new with repo failed with exit code %d\nstdout: %s\nstderr: %s", exitCode, stdout, stderr)
+	}
+
+	// Parse and register cleanup for actual session name
+	sessionName := parseSessionName(t, stdout)
+	t.Logf("session created: %s", sessionName)
+	registerSessionCleanup(t, configPath, sessionName)
+
+	// Wait for session to be ready
+	waitForSession(t, configPath, sessionName, 5*time.Minute)
+
+	// Verify the repository was cloned
+	t.Log("verifying repository was cloned")
+	execStdout, execStderr, execExitCode := runSandctlWithConfig(t, configPath, "exec", sessionName, "-c", "ls -la /home/sprite/Hello-World")
+
+	if execExitCode != 0 {
+		t.Fatalf("exec failed to verify repo clone: exit %d\nstdout: %s\nstderr: %s", execExitCode, execStdout, execStderr)
+	}
+
+	// Check that the repo directory exists and has content (README should be there)
+	if !strings.Contains(execStdout, "README") {
+		t.Errorf("expected README in repo directory, got: %s", execStdout)
+	}
+
+	t.Logf("repo clone verified: %s", execStdout)
+}
+
+// testNewWithoutRepoFlag tests that sandctl new without -R flag preserves existing behavior.
+func testNewWithoutRepoFlag(t *testing.T) {
+	token := requireToken(t)
+	openCodeKey := requireOpenCodeKey(t)
+	configPath := newTempConfig(t, token, openCodeKey)
+
+	t.Log("creating new session without repo flag")
+	stdout, stderr, exitCode := runSandctlWithConfig(t, configPath, "new", "--no-console")
+
+	if exitCode != 0 {
+		t.Fatalf("new without repo failed with exit code %d\nstdout: %s\nstderr: %s", exitCode, stdout, stderr)
+	}
+
+	// Parse and register cleanup for actual session name
+	sessionName := parseSessionName(t, stdout)
+	t.Logf("session created: %s", sessionName)
+	registerSessionCleanup(t, configPath, sessionName)
+
+	// Wait for session to be ready
+	waitForSession(t, configPath, sessionName, 3*time.Minute)
+
+	// Verify no extra directories were created (backward compatibility)
+	t.Log("verifying no repository was cloned")
+	execStdout, _, execExitCode := runSandctlWithConfig(t, configPath, "exec", sessionName, "-c", "ls /home/sprite")
+
+	if execExitCode != 0 {
+		t.Logf("exec returned exit code %d (may be expected if sprite home is empty)", execExitCode)
+	}
+
+	// The output should NOT contain Hello-World or other repo directories
+	// (except standard dotfiles)
+	if strings.Contains(execStdout, "Hello-World") {
+		t.Errorf("unexpected Hello-World directory found when no repo was specified: %s", execStdout)
+	}
+
+	t.Log("backward compatibility verified: no unwanted repos cloned")
+}
+
+// testNewWithInvalidRepo tests that sandctl new -R fails gracefully with invalid repo.
+func testNewWithInvalidRepo(t *testing.T) {
+	token := requireToken(t)
+	openCodeKey := requireOpenCodeKey(t)
+	configPath := newTempConfig(t, token, openCodeKey)
+
+	t.Log("creating new session with invalid repo")
+	// Use a repository name that definitely doesn't exist (UUID-style suffix)
+	stdout, stderr, exitCode := runSandctlWithConfig(t, configPath, "new", "--no-console", "-R", "sandctl-test-invalid/repo-does-not-exist-8f3a9c2b7e1d4f6a")
+
+	combined := stdout + stderr
+
+	if exitCode == 0 {
+		// If it somehow succeeded, clean up
+		sessionName := parseSessionName(t, stdout)
+		registerSessionCleanup(t, configPath, sessionName)
+		t.Fatalf("expected new with invalid repo to fail, but it succeeded\nstdout: %s\nstderr: %s", stdout, stderr)
+	}
+
+	// Should have an error message about repository not found
+	if !strings.Contains(strings.ToLower(combined), "not found") && !strings.Contains(strings.ToLower(combined), "failed") {
+		t.Errorf("expected 'not found' or 'failed' in error message, got: %s", combined)
+	}
+
+	t.Logf("new with invalid repo failed as expected: %s", combined)
+}
+
+// testNewWithInvalidRepoFormat tests that sandctl new -R fails with invalid repo format.
+func testNewWithInvalidRepoFormat(t *testing.T) {
+	token := requireToken(t)
+	openCodeKey := requireOpenCodeKey(t)
+	configPath := newTempConfig(t, token, openCodeKey)
+
+	t.Log("creating new session with invalid repo format")
+	stdout, stderr, exitCode := runSandctlWithConfig(t, configPath, "new", "--no-console", "-R", "invalid-format-no-slash")
+
+	combined := stdout + stderr
+
+	if exitCode == 0 {
+		// If it somehow succeeded, clean up
+		sessionName := parseSessionName(t, stdout)
+		registerSessionCleanup(t, configPath, sessionName)
+		t.Fatalf("expected new with invalid repo format to fail, but it succeeded\nstdout: %s\nstderr: %s", stdout, stderr)
+	}
+
+	// Should have an error message about invalid format
+	if !strings.Contains(strings.ToLower(combined), "invalid") {
+		t.Errorf("expected 'invalid' in error message, got: %s", combined)
+	}
+
+	t.Logf("new with invalid repo format failed as expected: %s", combined)
 }
