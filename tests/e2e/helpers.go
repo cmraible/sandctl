@@ -121,13 +121,13 @@ func registerSessionCleanup(t *testing.T, configPath, sessionName string) {
 	})
 }
 
-// parseSessionName extracts the session name from sandctl start output.
-// Looks for "Session started: <name>" pattern.
+// parseSessionName extracts the session name from sandctl new output.
+// Looks for "Session created: <name>" pattern.
 func parseSessionName(t *testing.T, output string) string {
 	t.Helper()
 
 	for _, line := range strings.Split(output, "\n") {
-		if strings.HasPrefix(line, "Session started:") {
+		if strings.HasPrefix(line, "Session created:") {
 			parts := strings.SplitN(line, ":", 2)
 			if len(parts) == 2 {
 				return strings.TrimSpace(parts[1])
