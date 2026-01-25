@@ -173,7 +173,8 @@ func testNewSucceeds(t *testing.T) {
 	configPath := newTempConfig(t, token, openCodeKey)
 
 	t.Log("creating new session")
-	stdout, stderr, exitCode := runSandctlWithConfig(t, configPath, "new")
+	// Use --no-console to skip auto-console (tests run without TTY)
+	stdout, stderr, exitCode := runSandctlWithConfig(t, configPath, "new", "--no-console")
 
 	if exitCode != 0 {
 		t.Fatalf("new failed with exit code %d\nstdout: %s\nstderr: %s", exitCode, stdout, stderr)
@@ -207,9 +208,9 @@ func testExecRunsCommand(t *testing.T) {
 	openCodeKey := requireOpenCodeKey(t)
 	configPath := newTempConfig(t, token, openCodeKey)
 
-	// Create a session first
+	// Create a session first (use --no-console since tests run without TTY)
 	t.Log("creating session for exec test")
-	stdout, stderr, exitCode := runSandctlWithConfig(t, configPath, "new")
+	stdout, stderr, exitCode := runSandctlWithConfig(t, configPath, "new", "--no-console")
 	if exitCode != 0 {
 		t.Fatalf("could not create session for exec test: %s%s", stdout, stderr)
 	}
@@ -240,9 +241,9 @@ func testDestroyRemovesSession(t *testing.T) {
 	openCodeKey := requireOpenCodeKey(t)
 	configPath := newTempConfig(t, token, openCodeKey)
 
-	// Create a session first
+	// Create a session first (use --no-console since tests run without TTY)
 	t.Log("creating session for destroy test")
-	stdout, stderr, exitCode := runSandctlWithConfig(t, configPath, "new")
+	stdout, stderr, exitCode := runSandctlWithConfig(t, configPath, "new", "--no-console")
 	if exitCode != 0 {
 		t.Fatalf("could not create session for destroy test: %s%s", stdout, stderr)
 	}
@@ -291,9 +292,9 @@ func testWorkflowLifecycle(t *testing.T) {
 		t.Fatalf("workflow init failed: exit %d\nstdout: %s\nstderr: %s", exitCode, stdout, stderr)
 	}
 
-	// Step 2: New
+	// Step 2: New (use --no-console since tests run without TTY)
 	t.Log("workflow step 2: new")
-	stdout, stderr, exitCode = runSandctlWithConfig(t, configPath, "new")
+	stdout, stderr, exitCode = runSandctlWithConfig(t, configPath, "new", "--no-console")
 	if exitCode != 0 {
 		t.Fatalf("workflow new failed: exit %d\nstdout: %s\nstderr: %s", exitCode, stdout, stderr)
 	}
