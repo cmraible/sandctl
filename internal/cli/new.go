@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/sandctl/sandctl/internal/session"
 	"github.com/sandctl/sandctl/internal/sprites"
@@ -14,6 +15,7 @@ import (
 
 var (
 	newTimeout string
+	noConsole  bool
 )
 
 var newCmd = &cobra.Command{
@@ -22,17 +24,23 @@ var newCmd = &cobra.Command{
 	Long: `Create a new sandboxed VM with development tools and OpenCode installed.
 
 The system provisions a Fly.io Sprite, installs development tools, and sets up
-OpenCode with your configured Zen key. Connect to the session using 'sandctl exec'.`,
-	Example: `  # Create a new session
+OpenCode with your configured Zen key. After provisioning, an interactive console
+session is automatically started (unless --no-console is specified or stdin is
+not a terminal).`,
+	Example: `  # Create a new session and connect automatically
   sandctl new
 
   # Create with auto-destroy timeout
-  sandctl new --timeout 2h`,
+  sandctl new --timeout 2h
+
+  # Create without automatic console (for scripts)
+  sandctl new --no-console`,
 	RunE: runNew,
 }
 
 func init() {
 	newCmd.Flags().StringVarP(&newTimeout, "timeout", "t", "", "auto-destroy after duration (e.g., 1h, 30m)")
+	newCmd.Flags().BoolVar(&noConsole, "no-console", false, "skip automatic console connection after provisioning")
 
 	rootCmd.AddCommand(newCmd)
 }
@@ -130,12 +138,34 @@ func runNew(cmd *cobra.Command, args []string) error {
 		verboseLog("Warning: failed to update session status: %v", err)
 	}
 
-	// Print success message
+	// Print success message with session name
 	fmt.Println()
 	fmt.Printf("Session created: %s\n", sessionID)
-	fmt.Println()
-	fmt.Printf("Use 'sandctl exec %s' to connect.\n", sessionID)
-	fmt.Printf("Use 'sandctl destroy %s' when done.\n", sessionID)
+
+	// Determine if we should start console automatically
+	// Skip if: --no-console flag is set OR stdin is not a terminal
+	isInteractive := term.IsTerminal(int(os.Stdin.Fd()))
+	shouldStartConsole := !noConsole && isInteractive
+
+	if shouldStartConsole {
+		// Start interactive console session
+		fmt.Println("Connecting to console...")
+		fmt.Println()
+
+		if err := runSpriteConsole(sessionID); err != nil {
+			// Console failed but session was created successfully
+			// Print helpful message and don't fail the command
+			fmt.Fprintln(os.Stderr)
+			fmt.Fprintf(os.Stderr, "Warning: Failed to connect to console: %v\n", err)
+			fmt.Fprintln(os.Stderr)
+			fmt.Fprintf(os.Stderr, "Session was created successfully. Use 'sandctl console %s' to connect manually.\n", sessionID)
+		}
+	} else {
+		// Non-interactive mode or --no-console: print usage hints
+		fmt.Println()
+		fmt.Printf("Use 'sandctl console %s' to connect.\n", sessionID)
+		fmt.Printf("Use 'sandctl destroy %s' when done.\n", sessionID)
+	}
 
 	return nil
 }
