@@ -511,7 +511,8 @@ func testNewWithInvalidRepo(t *testing.T) {
 	configPath := newTempConfig(t, token, openCodeKey)
 
 	t.Log("creating new session with invalid repo")
-	stdout, stderr, exitCode := runSandctlWithConfig(t, configPath, "new", "--no-console", "-R", "invalid-owner/nonexistent-repo-12345-xyz")
+	// Use a repository name that definitely doesn't exist (UUID-style suffix)
+	stdout, stderr, exitCode := runSandctlWithConfig(t, configPath, "new", "--no-console", "-R", "sandctl-test-invalid/repo-does-not-exist-8f3a9c2b7e1d4f6a")
 
 	combined := stdout + stderr
 
