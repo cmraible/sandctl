@@ -3,11 +3,13 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/sandctl/sandctl/internal/repo"
 	"github.com/sandctl/sandctl/internal/session"
 	"github.com/sandctl/sandctl/internal/sprites"
 	"github.com/sandctl/sandctl/internal/ui"
@@ -16,6 +18,7 @@ import (
 var (
 	newTimeout string
 	noConsole  bool
+	repoFlag   string
 )
 
 var newCmd = &cobra.Command{
@@ -30,6 +33,12 @@ not a terminal).`,
 	Example: `  # Create a new session and connect automatically
   sandctl new
 
+  # Create with a GitHub repository cloned
+  sandctl new -R TryGhost/Ghost
+
+  # Clone from full GitHub URL
+  sandctl new --repo https://github.com/facebook/react
+
   # Create with auto-destroy timeout
   sandctl new --timeout 2h
 
@@ -41,6 +50,7 @@ not a terminal).`,
 func init() {
 	newCmd.Flags().StringVarP(&newTimeout, "timeout", "t", "", "auto-destroy after duration (e.g., 1h, 30m)")
 	newCmd.Flags().BoolVar(&noConsole, "no-console", false, "skip automatic console connection after provisioning")
+	newCmd.Flags().StringVarP(&repoFlag, "repo", "R", "", "GitHub repository to clone (owner/repo or full URL)")
 
 	rootCmd.AddCommand(newCmd)
 }
@@ -50,6 +60,16 @@ func runNew(cmd *cobra.Command, args []string) error {
 	cfg, err := loadConfig()
 	if err != nil {
 		return err
+	}
+
+	// Parse repository specification if provided
+	var repoSpec *repo.Spec
+	if repoFlag != "" {
+		repoSpec, err = repo.Parse(repoFlag)
+		if err != nil {
+			return fmt.Errorf("invalid repository: %w", err)
+		}
+		verboseLog("Repository: %s -> %s", repoSpec.String(), repoSpec.CloneURL)
 	}
 
 	// Parse timeout if provided
@@ -96,8 +116,7 @@ func runNew(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to save session: %w", err)
 	}
 
-	// Run provisioning steps
-	var provisionErr error
+	// Build provisioning steps
 	steps := []ui.ProgressStep{
 		{
 			Message: "Provisioning VM",
@@ -111,21 +130,35 @@ func runNew(cmd *cobra.Command, args []string) error {
 				return installDevTools(client, sessionID)
 			},
 		},
-		{
+	}
+
+	// Add clone step if repository specified
+	if repoSpec != nil {
+		steps = append(steps, ui.ProgressStep{
+			Message: "Cloning repository",
+			Action: func() error {
+				return cloneRepository(client, sessionID, repoSpec)
+			},
+		})
+	}
+
+	// Add OpenCode installation steps
+	steps = append(steps,
+		ui.ProgressStep{
 			Message: "Installing OpenCode",
 			Action: func() error {
 				return installOpenCode(client, sessionID)
 			},
 		},
-		{
+		ui.ProgressStep{
 			Message: "Setting up OpenCode authentication",
 			Action: func() error {
 				return setupOpenCodeAuth(client, sessionID, cfg.OpencodeZenKey)
 			},
 		},
-	}
+	)
 
-	provisionErr = ui.RunSteps(os.Stdout, steps)
+	provisionErr := ui.RunSteps(os.Stdout, steps)
 
 	if provisionErr != nil {
 		// Cleanup on failure
@@ -150,13 +183,19 @@ func runNew(cmd *cobra.Command, args []string) error {
 	if shouldStartConsole {
 		// Start interactive console session
 		fmt.Println("Connecting to console...")
+		if repoSpec != nil {
+			fmt.Printf("Repository cloned to: %s\n", repoSpec.TargetPath())
+		}
 		fmt.Println()
 
-		if err := runSpriteConsole(sessionID); err != nil {
+		// Start console (sprite CLI doesn't support workdir, so user may need to cd)
+		consoleErr := runSpriteConsole(sessionID)
+
+		if consoleErr != nil {
 			// Console failed but session was created successfully
 			// Print helpful message and don't fail the command
 			fmt.Fprintln(os.Stderr)
-			fmt.Fprintf(os.Stderr, "Warning: Failed to connect to console: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Warning: Failed to connect to console: %v\n", consoleErr)
 			fmt.Fprintln(os.Stderr)
 			fmt.Fprintf(os.Stderr, "Session was created successfully. Use 'sandctl console %s' to connect manually.\n", sessionID)
 		}
@@ -284,4 +323,62 @@ func cleanupFailedSession(client *sprites.Client, store *session.Store, sessionI
 
 	// Update local store to failed status
 	_ = store.Update(sessionID, session.StatusFailed)
+}
+
+// cloneRepository clones a GitHub repository into the sprite.
+// Uses a 10-minute timeout for large repositories.
+func cloneRepository(client *sprites.Client, name string, repoSpec *repo.Spec) error {
+	// Use timeout command to enforce 10-minute limit
+	// Clone to /home/sprite/{repo-name}
+	cloneCmd := fmt.Sprintf("timeout 600 git clone %s %s 2>&1",
+		repoSpec.CloneURL, repoSpec.TargetPath())
+
+	verboseLog("Clone command: %s", cloneCmd)
+
+	output, err := client.ExecCommand(name, cloneCmd)
+	verboseLog("Clone output: %s", output)
+
+	if err != nil {
+		return parseGitError(output, err, repoSpec.String())
+	}
+
+	return nil
+}
+
+// parseGitError converts git clone errors to user-friendly messages.
+func parseGitError(output string, err error, repoName string) error {
+	outputLower := strings.ToLower(output)
+
+	// Check for timeout (exit code 124 from timeout command)
+	if strings.Contains(err.Error(), "124") || strings.Contains(outputLower, "timed out") {
+		return fmt.Errorf("clone timed out after 10 minutes for repository '%s'", repoName)
+	}
+
+	// Check for repository not found
+	if strings.Contains(outputLower, "repository not found") ||
+		strings.Contains(outputLower, "does not exist") ||
+		strings.Contains(output, "404") {
+		return fmt.Errorf("repository '%s' not found", repoName)
+	}
+
+	// Check for access denied
+	if strings.Contains(outputLower, "permission denied") ||
+		strings.Contains(outputLower, "authentication failed") ||
+		strings.Contains(outputLower, "could not read from remote") {
+		return fmt.Errorf("access denied to repository '%s' (private repositories are not supported)", repoName)
+	}
+
+	// Check for network errors
+	if strings.Contains(outputLower, "could not resolve host") ||
+		strings.Contains(outputLower, "connection refused") ||
+		strings.Contains(outputLower, "network is unreachable") {
+		return fmt.Errorf("network error while cloning '%s': unable to reach GitHub", repoName)
+	}
+
+	// Generic error with output
+	if output != "" {
+		return fmt.Errorf("failed to clone repository '%s': %s", repoName, strings.TrimSpace(output))
+	}
+
+	return fmt.Errorf("failed to clone repository '%s': %w", repoName, err)
 }
