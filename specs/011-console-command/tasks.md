@@ -110,8 +110,8 @@
 
 - [x] T021 Run golangci-lint on internal/cli/console.go
 - [x] T022 [P] Verify all exit codes match contracts/cli-interface.md
-- [ ] T023 [P] Manual test following quickstart.md scenarios
-- [ ] T024 Run full E2E test suite with `go test -v -tags=e2e ./tests/e2e/...`
+- [x] T023 [P] Manual test following quickstart.md scenarios
+- [x] T024 Run full E2E test suite with `go test -v -tags=e2e ./tests/e2e/...`
 
 ---
 
