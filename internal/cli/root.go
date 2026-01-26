@@ -4,12 +4,15 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/sandctl/sandctl/internal/config"
+	// Import hetzner to register the provider
+	_ "github.com/sandctl/sandctl/internal/hetzner"
+	"github.com/sandctl/sandctl/internal/provider"
 	"github.com/sandctl/sandctl/internal/session"
-	"github.com/sandctl/sandctl/internal/sprites"
 )
 
 var (
@@ -23,9 +26,8 @@ var (
 	verbose bool
 
 	// Shared resources (initialized on demand).
-	cfg           *config.Config
-	sessionStore  *session.Store
-	spritesClient *sprites.Client
+	cfg          *config.Config
+	sessionStore *session.Store
 )
 
 // rootCmd represents the base command when called without any subcommands.
@@ -34,8 +36,10 @@ var rootCmd = &cobra.Command{
 	Short: "Manage sandboxed AI web development agents",
 	Long: `sandctl is a CLI tool for managing sandboxed AI web development agents.
 
-It provisions isolated VM environments using Fly.io Sprites where AI coding
-agents (Claude, OpenCode, Codex) can work on development tasks safely.
+It provisions isolated VM environments using pluggable cloud providers where
+AI coding agents (Claude, OpenCode, Codex) can work on development tasks safely.
+
+Supported providers: Hetzner Cloud (default)
 
 Commands:
   init     Initialize or update sandctl configuration
@@ -116,19 +120,55 @@ func getSessionStore() *session.Store {
 	return sessionStore
 }
 
-// getSpritesClient returns the Sprites API client, creating it if needed.
-func getSpritesClient() (*sprites.Client, error) {
-	if spritesClient != nil {
-		return spritesClient, nil
-	}
-
+// getProvider returns a provider by name, using the default if empty.
+func getProvider(name string) (provider.Provider, error) {
 	cfg, err := loadConfig()
 	if err != nil {
 		return nil, err
 	}
 
-	spritesClient = sprites.NewClient(cfg.SpritesToken)
-	return spritesClient, nil
+	// Check for legacy config
+	if cfg.IsLegacyConfig() {
+		return nil, fmt.Errorf("legacy configuration detected\n\n%s", config.MigrationInstructions())
+	}
+
+	if name == "" {
+		name = cfg.DefaultProvider
+	}
+
+	p, err := provider.Get(name, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	return p, nil
+}
+
+// getProviderFromSession returns the provider for a specific session.
+func getProviderFromSession(sess *session.Session) (provider.Provider, error) {
+	if sess.IsLegacySession() {
+		return nil, fmt.Errorf("session '%s' is from an old version and incompatible with current sandctl", sess.ID)
+	}
+
+	return getProvider(sess.Provider)
+}
+
+// getSSHPrivateKeyPath returns the path to the SSH private key.
+// Converts the public key path to private key path by removing .pub extension.
+func getSSHPrivateKeyPath() (string, error) {
+	cfg, err := loadConfig()
+	if err != nil {
+		return "", err
+	}
+
+	pubKeyPath := cfg.ExpandSSHPublicKeyPath()
+	if pubKeyPath == "" {
+		return "", fmt.Errorf("ssh_public_key not configured")
+	}
+
+	// Convert .pub path to private key path
+	privateKeyPath := strings.TrimSuffix(pubKeyPath, ".pub")
+	return privateKeyPath, nil
 }
 
 // isVerbose returns true if verbose output is enabled.

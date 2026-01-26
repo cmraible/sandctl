@@ -179,3 +179,9 @@ func (p *Prompter) PromptSelect(prompt string, options []SelectOption, defaultIn
 func IsTerminal() bool {
 	return term.IsTerminal(int(os.Stdin.Fd()))
 }
+
+// PromptWithDefault prompts for text input with a default value shown.
+// This is an alias for PromptString for convenience.
+func (p *Prompter) PromptWithDefault(prompt, defaultValue string) (string, error) {
+	return p.PromptString(prompt, defaultValue)
+}

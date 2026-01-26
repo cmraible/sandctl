@@ -1,7 +1,7 @@
 //go:build e2e
 
 // Package e2e contains end-to-end tests that invoke the sandctl CLI binary.
-// These tests require a valid SPRITES_API_TOKEN environment variable.
+// These tests require a valid HETZNER_API_TOKEN environment variable.
 // Run with: go test -v -tags=e2e ./tests/e2e/...
 package e2e
 
@@ -54,45 +54,87 @@ func runSandctlWithConfig(t *testing.T, configPath string, args ...string) (stdo
 	return runSandctl(t, fullArgs...)
 }
 
-// requireToken returns the SPRITES_API_TOKEN from environment or fails the test.
-func requireToken(t *testing.T) string {
+// requireHetznerToken returns the HETZNER_API_TOKEN from environment or fails the test.
+func requireHetznerToken(t *testing.T) string {
 	t.Helper()
 
-	token := os.Getenv("SPRITES_API_TOKEN")
+	token := os.Getenv("HETZNER_API_TOKEN")
 	if token == "" {
-		t.Fatal("SPRITES_API_TOKEN not set - E2E tests require an API token")
+		t.Fatal("HETZNER_API_TOKEN not set - E2E tests require a Hetzner API token")
 	}
 	return token
 }
 
-// requireOpenCodeKey returns the OPENCODE_ZEN_KEY from environment or fails the test.
-func requireOpenCodeKey(t *testing.T) string {
+// requireSSHPublicKey returns the SSH_PUBLIC_KEY path from environment or uses default.
+func requireSSHPublicKey(t *testing.T) string {
 	t.Helper()
 
-	key := os.Getenv("OPENCODE_ZEN_KEY")
-	if key == "" {
-		t.Fatal("OPENCODE_ZEN_KEY not set - E2E tests require an OpenCode key")
+	keyPath := os.Getenv("SSH_PUBLIC_KEY")
+	if keyPath == "" {
+		// Use default path
+		home, err := os.UserHomeDir()
+		if err != nil {
+			t.Fatal("could not determine home directory for default SSH key path")
+		}
+		keyPath = filepath.Join(home, ".ssh", "id_ed25519.pub")
 	}
-	return key
+
+	// Expand ~ if present
+	if strings.HasPrefix(keyPath, "~/") {
+		home, _ := os.UserHomeDir()
+		keyPath = filepath.Join(home, keyPath[2:])
+	}
+
+	// Verify key exists
+	if _, err := os.Stat(keyPath); err != nil {
+		t.Fatalf("SSH public key not found at %s: %v", keyPath, err)
+	}
+
+	return keyPath
+}
+
+// requireOpenCodeKey returns the OPENCODE_ZEN_KEY from environment or returns empty (optional).
+func requireOpenCodeKey(t *testing.T) string {
+	t.Helper()
+	return os.Getenv("OPENCODE_ZEN_KEY")
+}
+
+// providerConfig represents the provider-specific config.
+type providerConfig struct {
+	Token      string `yaml:"token"`
+	Region     string `yaml:"region,omitempty"`
+	ServerType string `yaml:"server_type,omitempty"`
+	Image      string `yaml:"image,omitempty"`
 }
 
 // configData represents the sandctl config file structure.
 type configData struct {
-	SpritesToken   string `yaml:"sprites_token"`
-	OpenCodeZenKey string `yaml:"opencode_zen_key,omitempty"`
+	DefaultProvider string                    `yaml:"default_provider"`
+	SSHPublicKey    string                    `yaml:"ssh_public_key"`
+	OpenCodeZenKey  string                    `yaml:"opencode_zen_key,omitempty"`
+	Providers       map[string]providerConfig `yaml:"providers"`
 }
 
 // newTempConfig creates a sandctl config file in a temp directory with the given credentials.
 // Returns the path to the config file.
-func newTempConfig(t *testing.T, token, openCodeKey string) string {
+func newTempConfig(t *testing.T, hetznerToken, sshKeyPath, openCodeKey string) string {
 	t.Helper()
 
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config")
 
 	cfg := configData{
-		SpritesToken:   token,
-		OpenCodeZenKey: openCodeKey,
+		DefaultProvider: "hetzner",
+		SSHPublicKey:    sshKeyPath,
+		OpenCodeZenKey:  openCodeKey,
+		Providers: map[string]providerConfig{
+			"hetzner": {
+				Token:      hetznerToken,
+				Region:     "ash",
+				ServerType: "cpx31",
+				Image:      "ubuntu-24.04",
+			},
+		},
 	}
 
 	data, err := yaml.Marshal(&cfg)
@@ -144,14 +186,15 @@ func waitForSession(t *testing.T, configPath, sessionName string, timeout time.D
 	t.Helper()
 
 	deadline := time.Now().Add(timeout)
-	pollInterval := 2 * time.Second
+	pollInterval := 5 * time.Second
 
 	for time.Now().Before(deadline) {
-		stdout, _, exitCode := runSandctlWithConfig(t, configPath, "list", "--format", "json")
-		if exitCode == 0 && strings.Contains(stdout, sessionName) {
+		stdout, _, exitCode := runSandctlWithConfig(t, configPath, "list")
+		if exitCode == 0 && strings.Contains(stdout, sessionName) && strings.Contains(stdout, "running") {
 			t.Logf("session %s is ready", sessionName)
 			return
 		}
+		t.Logf("waiting for session %s to be ready...", sessionName)
 		time.Sleep(pollInterval)
 	}
 

@@ -2,12 +2,13 @@ package ui
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/sandctl/sandctl/internal/config"
+	"github.com/sandctl/sandctl/internal/provider"
 	"github.com/sandctl/sandctl/internal/session"
-	"github.com/sandctl/sandctl/internal/sprites"
 )
 
 // TestFormatError_GivenNil_ThenReturnsSuccess tests nil error handling.
@@ -39,7 +40,8 @@ func TestFormatError_GivenConfigNotFoundError_ThenReturnsConfigError(t *testing.
 	if !strings.Contains(output, "Configuration file not found") {
 		t.Errorf("output should mention config not found, got: %q", output)
 	}
-	if !strings.Contains(output, "sprites_token") {
+	// Check for new provider-based setup instructions
+	if !strings.Contains(output, "sandctl init") {
 		t.Error("output should contain setup instructions")
 	}
 }
@@ -72,7 +74,7 @@ func TestFormatError_GivenInsecurePermissionsError_ThenReturnsConfigError(t *tes
 func TestFormatError_GivenValidationError_ThenReturnsConfigError(t *testing.T) {
 	var buf bytes.Buffer
 	err := &config.ValidationError{
-		Field:   "sprites_token",
+		Field:   "default_provider",
 		Message: "is required",
 	}
 
@@ -86,7 +88,7 @@ func TestFormatError_GivenValidationError_ThenReturnsConfigError(t *testing.T) {
 	if !strings.Contains(output, "Invalid configuration") {
 		t.Errorf("output should mention invalid configuration, got: %q", output)
 	}
-	if !strings.Contains(output, "sprites_token") {
+	if !strings.Contains(output, "default_provider") {
 		t.Error("output should mention the field")
 	}
 }
@@ -111,10 +113,10 @@ func TestFormatError_GivenNotFoundError_ThenReturnsSessionNotFound(t *testing.T)
 	}
 }
 
-// TestFormatError_GivenAPIAuthError_ThenReturnsAPIError tests auth error.
-func TestFormatError_GivenAPIAuthError_ThenReturnsAPIError(t *testing.T) {
+// TestFormatError_GivenProviderAuthError_ThenReturnsAPIError tests auth error.
+func TestFormatError_GivenProviderAuthError_ThenReturnsAPIError(t *testing.T) {
 	var buf bytes.Buffer
-	err := &sprites.APIError{StatusCode: 401, Message: "unauthorized"}
+	err := fmt.Errorf("some context: %w", provider.ErrAuthFailed)
 
 	code := FormatError(&buf, err)
 
@@ -126,15 +128,15 @@ func TestFormatError_GivenAPIAuthError_ThenReturnsAPIError(t *testing.T) {
 	if !strings.Contains(output, "Authentication failed") {
 		t.Errorf("output should mention auth failed, got: %q", output)
 	}
-	if !strings.Contains(output, "sprites.dev/tokens") {
-		t.Error("output should mention where to get new token")
+	if !strings.Contains(output, "sandctl init") {
+		t.Error("output should mention how to fix")
 	}
 }
 
-// TestFormatError_GivenAPIQuotaError_ThenReturnsAPIError tests quota error.
-func TestFormatError_GivenAPIQuotaError_ThenReturnsAPIError(t *testing.T) {
+// TestFormatError_GivenProviderQuotaError_ThenReturnsAPIError tests quota error.
+func TestFormatError_GivenProviderQuotaError_ThenReturnsAPIError(t *testing.T) {
 	var buf bytes.Buffer
-	err := &sprites.APIError{StatusCode: 429, Message: "rate limited"}
+	err := fmt.Errorf("some context: %w", provider.ErrQuotaExceeded)
 
 	code := FormatError(&buf, err)
 
@@ -148,10 +150,10 @@ func TestFormatError_GivenAPIQuotaError_ThenReturnsAPIError(t *testing.T) {
 	}
 }
 
-// TestFormatError_GivenAPINotFoundError_ThenReturnsSessionNotFound tests API 404.
-func TestFormatError_GivenAPINotFoundError_ThenReturnsSessionNotFound(t *testing.T) {
+// TestFormatError_GivenProviderNotFoundError_ThenReturnsSessionNotFound tests provider 404.
+func TestFormatError_GivenProviderNotFoundError_ThenReturnsSessionNotFound(t *testing.T) {
 	var buf bytes.Buffer
-	err := &sprites.APIError{StatusCode: 404, Message: "sprite not found"}
+	err := fmt.Errorf("VM lookup failed: %w", provider.ErrNotFound)
 
 	code := FormatError(&buf, err)
 
@@ -165,10 +167,10 @@ func TestFormatError_GivenAPINotFoundError_ThenReturnsSessionNotFound(t *testing
 	}
 }
 
-// TestFormatError_GivenGenericAPIError_ThenReturnsAPIError tests generic API error.
-func TestFormatError_GivenGenericAPIError_ThenReturnsAPIError(t *testing.T) {
+// TestFormatError_GivenProviderProvisionFailed_ThenReturnsAPIError tests provision failure.
+func TestFormatError_GivenProviderProvisionFailed_ThenReturnsAPIError(t *testing.T) {
 	var buf bytes.Buffer
-	err := &sprites.APIError{StatusCode: 500, Message: "internal server error"}
+	err := fmt.Errorf("create failed: %w", provider.ErrProvisionFailed)
 
 	code := FormatError(&buf, err)
 
@@ -177,11 +179,25 @@ func TestFormatError_GivenGenericAPIError_ThenReturnsAPIError(t *testing.T) {
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "API error") {
-		t.Errorf("output should mention API error, got: %q", output)
+	if !strings.Contains(output, "provisioning failed") {
+		t.Errorf("output should mention provisioning failed, got: %q", output)
 	}
-	if !strings.Contains(output, "internal server error") {
-		t.Error("output should contain error message")
+}
+
+// TestFormatError_GivenProviderTimeout_ThenReturnsAPIError tests timeout.
+func TestFormatError_GivenProviderTimeout_ThenReturnsAPIError(t *testing.T) {
+	var buf bytes.Buffer
+	err := fmt.Errorf("wait: %w", provider.ErrTimeout)
+
+	code := FormatError(&buf, err)
+
+	if code != ExitAPIError {
+		t.Errorf("exit code = %d, want %d", code, ExitAPIError)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "timed out") {
+		t.Errorf("output should mention timeout, got: %q", output)
 	}
 }
 

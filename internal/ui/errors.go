@@ -6,8 +6,8 @@ import (
 	"io"
 
 	"github.com/sandctl/sandctl/internal/config"
+	"github.com/sandctl/sandctl/internal/provider"
 	"github.com/sandctl/sandctl/internal/session"
-	"github.com/sandctl/sandctl/internal/sprites"
 )
 
 // Exit codes as defined in the CLI contract.
@@ -62,41 +62,45 @@ func FormatError(writer io.Writer, err error) int {
 		return ExitSessionNotFound
 	}
 
-	var apiErr *sprites.APIError
-	if errors.As(err, &apiErr) {
-		return formatAPIError(writer, apiErr)
+	// Check for provider errors
+	if errors.Is(err, provider.ErrAuthFailed) {
+		PrintError(writer, "Authentication failed")
+		fmt.Fprintln(writer)
+		fmt.Fprintln(writer, "Your provider API token may be invalid or expired.")
+		fmt.Fprintln(writer, "Run 'sandctl init' to update your credentials.")
+		return ExitAPIError
+	}
+
+	if errors.Is(err, provider.ErrQuotaExceeded) {
+		PrintError(writer, "Quota exceeded")
+		fmt.Fprintln(writer)
+		fmt.Fprintln(writer, "Your provider account has reached its server limit.")
+		fmt.Fprintln(writer, "Destroy unused sessions or request a quota increase.")
+		return ExitAPIError
+	}
+
+	if errors.Is(err, provider.ErrNotFound) {
+		PrintError(writer, "Resource not found")
+		return ExitSessionNotFound
+	}
+
+	if errors.Is(err, provider.ErrProvisionFailed) {
+		PrintError(writer, "VM provisioning failed")
+		fmt.Fprintln(writer)
+		fmt.Fprintln(writer, "The VM could not be created. Check your provider console for details.")
+		return ExitAPIError
+	}
+
+	if errors.Is(err, provider.ErrTimeout) {
+		PrintError(writer, "Operation timed out")
+		fmt.Fprintln(writer)
+		fmt.Fprintln(writer, "The operation took too long. The VM may still be provisioning.")
+		return ExitAPIError
 	}
 
 	// Generic error
 	PrintError(writer, "%v", err)
 	return ExitGeneralError
-}
-
-// formatAPIError formats Sprites API errors with helpful context.
-func formatAPIError(writer io.Writer, err *sprites.APIError) int {
-	if err.IsAuthError() {
-		PrintError(writer, "Authentication failed")
-		fmt.Fprintln(writer)
-		fmt.Fprintln(writer, "Your Sprites token may be invalid or expired.")
-		fmt.Fprintln(writer, "Get a new token at: https://sprites.dev/tokens")
-		return ExitAPIError
-	}
-
-	if err.IsQuotaExceeded() {
-		PrintError(writer, "Quota exceeded")
-		fmt.Fprintln(writer)
-		fmt.Fprintln(writer, "Your Fly.io account has reached its sprite limit.")
-		fmt.Fprintln(writer, "Visit https://fly.io/dashboard to upgrade or destroy unused sprites.")
-		return ExitAPIError
-	}
-
-	if err.IsNotFound() {
-		PrintError(writer, "Resource not found: %s", err.Message)
-		return ExitSessionNotFound
-	}
-
-	PrintError(writer, "API error: %s", err.Message)
-	return ExitAPIError
 }
 
 // SessionNotRunningError is returned when trying to connect to a non-running session.

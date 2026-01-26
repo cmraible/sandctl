@@ -246,12 +246,12 @@ func TestSetupInstructions_GivenCall_ThenReturnsInstructions(t *testing.T) {
 		t.Error("expected non-empty instructions")
 	}
 
-	// Should contain key elements
-	if !contains(instructions, "sprites_token") {
-		t.Error("instructions should mention sprites_token")
+	// Should contain key elements for new provider config
+	if !contains(instructions, "default_provider") {
+		t.Error("instructions should mention default_provider")
 	}
-	if !contains(instructions, "opencode_zen_key") {
-		t.Error("instructions should mention opencode_zen_key")
+	if !contains(instructions, "hetzner") {
+		t.Error("instructions should mention hetzner")
 	}
 	if !contains(instructions, "chmod 600") {
 		t.Error("instructions should mention chmod")

@@ -16,7 +16,7 @@ type Spec struct {
 
 // TargetPath returns the path where the repository should be cloned.
 func (r *Spec) TargetPath() string {
-	return "/home/sprite/" + r.Name
+	return "/root/" + r.Name
 }
 
 // String returns the shorthand representation (owner/name).
