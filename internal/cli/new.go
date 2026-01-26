@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"crypto/md5" //nolint:gosec // Used for unique naming, not security
+	"encoding/base64"
 	"fmt"
 	"os"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/sandctl/sandctl/internal/hetzner"
 	"github.com/sandctl/sandctl/internal/provider"
 	"github.com/sandctl/sandctl/internal/repo"
+	"github.com/sandctl/sandctl/internal/repoconfig"
 	"github.com/sandctl/sandctl/internal/session"
 	"github.com/sandctl/sandctl/internal/sshexec"
 	"github.com/sandctl/sandctl/internal/ui"
@@ -232,12 +234,38 @@ func runNew(cmd *cobra.Command, args []string) error {
 		return provisionErr
 	}
 
+	// Check for and run custom init script for the repository
+	var initScriptFailed bool
+	if repoSpec != nil {
+		repoStore := repoconfig.NewStore("")
+		if initScript, err := repoStore.GetInitScript(repoSpec.String()); err == nil && initScript != "" {
+			fmt.Println()
+			fmt.Println("Running repository init script...")
+			initErr := runInitScript(vm.IPAddress, repoSpec.TargetPath(), initScript)
+			if initErr != nil {
+				initScriptFailed = true
+				fmt.Fprintln(os.Stderr)
+				fmt.Fprintf(os.Stderr, "Init script failed: %v\n", initErr)
+				fmt.Fprintln(os.Stderr)
+				fmt.Fprintf(os.Stderr, "Session is available for debugging. Use 'sandctl console %s' to connect.\n", sessionID)
+				fmt.Fprintf(os.Stderr, "Use 'sandctl destroy %s' when done.\n", sessionID)
+			} else {
+				fmt.Println("Init script completed successfully.")
+			}
+		}
+	}
+
 	// Update session with provider info
 	sess.Status = session.StatusRunning
 	sess.ProviderID = vm.ID
 	sess.IPAddress = vm.IPAddress
 	if err := store.UpdateSession(sess); err != nil {
 		verboseLog("Warning: failed to update session: %v", err)
+	}
+
+	// If init script failed, we've already printed the message - exit without console
+	if initScriptFailed {
+		return fmt.Errorf("init script failed")
 	}
 
 	// Print success message with session name
@@ -400,4 +428,39 @@ func startSSHConsole(ipAddress string) error {
 	defer client.Close()
 
 	return client.Console(sshexec.ConsoleOptions{})
+}
+
+// runInitScript uploads and executes a custom init script on the VM.
+// The script runs with the working directory set to the repository path.
+func runInitScript(ipAddress, repoPath, scriptContent string) error {
+	privateKeyPath, err := getSSHPrivateKeyPath()
+	if err != nil {
+		return err
+	}
+
+	client, err := sshexec.NewClient(ipAddress, privateKeyPath)
+	if err != nil {
+		return fmt.Errorf("failed to create SSH client: %w", err)
+	}
+	defer client.Close()
+
+	// Upload the script using base64 encoding to handle special characters
+	encoded := base64.StdEncoding.EncodeToString([]byte(scriptContent))
+	uploadCmd := fmt.Sprintf("echo '%s' | base64 -d > /tmp/sandctl-init.sh && chmod +x /tmp/sandctl-init.sh", encoded)
+	_, err = client.Exec(uploadCmd)
+	if err != nil {
+		return fmt.Errorf("failed to upload init script: %w", err)
+	}
+
+	// Execute the script with output streaming
+	execCmd := fmt.Sprintf("cd %s && /tmp/sandctl-init.sh", repoPath)
+	err = client.ExecWithStreams(execCmd, nil, os.Stdout, os.Stderr)
+	if err != nil {
+		return fmt.Errorf("script execution failed: %w", err)
+	}
+
+	// Clean up the temp script
+	_, _ = client.Exec("rm -f /tmp/sandctl-init.sh")
+
+	return nil
 }

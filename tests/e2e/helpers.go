@@ -65,18 +65,43 @@ func requireHetznerToken(t *testing.T) string {
 	return token
 }
 
-// requireSSHPublicKey returns the SSH_PUBLIC_KEY path from environment or uses default.
+// generateTempSSHKey generates a temporary SSH key pair for testing.
+// Returns the path to the public key file. The private key is at the same path without .pub.
+// The key is generated without a passphrase for automated testing.
+func generateTempSSHKey(t *testing.T) string {
+	t.Helper()
+
+	tmpDir := t.TempDir()
+	keyPath := filepath.Join(tmpDir, "id_ed25519")
+
+	// Generate SSH key using ssh-keygen (no passphrase)
+	cmd := exec.Command("ssh-keygen", "-t", "ed25519", "-f", keyPath, "-N", "", "-q")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("failed to generate SSH key: %v\noutput: %s", err, output)
+	}
+
+	pubKeyPath := keyPath + ".pub"
+
+	// Verify both keys exist
+	if _, err := os.Stat(keyPath); err != nil {
+		t.Fatalf("private key not found at %s: %v", keyPath, err)
+	}
+	if _, err := os.Stat(pubKeyPath); err != nil {
+		t.Fatalf("public key not found at %s: %v", pubKeyPath, err)
+	}
+
+	t.Logf("generated temporary SSH key: %s", keyPath)
+	return pubKeyPath
+}
+
+// requireSSHPublicKey returns the SSH_PUBLIC_KEY path from environment or generates a temp key.
 func requireSSHPublicKey(t *testing.T) string {
 	t.Helper()
 
 	keyPath := os.Getenv("SSH_PUBLIC_KEY")
 	if keyPath == "" {
-		// Use default path
-		home, err := os.UserHomeDir()
-		if err != nil {
-			t.Fatal("could not determine home directory for default SSH key path")
-		}
-		keyPath = filepath.Join(home, ".ssh", "id_ed25519.pub")
+		// Generate a temporary SSH key for testing
+		return generateTempSSHKey(t)
 	}
 
 	// Expand ~ if present

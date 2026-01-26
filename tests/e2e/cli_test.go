@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // TestMain builds the sandctl binary once before all tests run.
@@ -77,6 +79,7 @@ func TestSandctl(t *testing.T) {
 	t.Run("sandctl new > creates session without arguments", testNewSucceeds)
 	t.Run("sandctl new > creates session with repo flag", testNewWithRepoFlag)
 	t.Run("sandctl new > creates session without repo flag (backward compat)", testNewWithoutRepoFlag)
+	t.Run("sandctl new > runs init script for configured repo", testNewRunsInitScript)
 	t.Run("sandctl list > shows active sessions", testListShowsSessions)
 	t.Run("sandctl exec > runs command in session", testExecRunsCommand)
 	t.Run("sandctl destroy > removes session", testDestroyRemovesSession)
@@ -523,6 +526,110 @@ func testNewWithoutRepoFlag(t *testing.T) {
 	}
 
 	t.Log("backward compatibility verified: no unwanted repos cloned")
+}
+
+// testNewRunsInitScript tests that sandctl new -R runs custom init script for configured repos.
+func testNewRunsInitScript(t *testing.T) {
+	token := requireHetznerToken(t)
+	sshKeyPath := requireSSHPublicKey(t)
+	openCodeKey := requireOpenCodeKey(t)
+
+	// Create temp directory for HOME
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, ".sandctl", "config")
+
+	// Create config directory
+	if err := os.MkdirAll(filepath.Dir(configPath), 0700); err != nil {
+		t.Fatalf("failed to create config dir: %v", err)
+	}
+
+	// Write config file
+	cfg := configData{
+		DefaultProvider: "hetzner",
+		SSHPublicKey:    sshKeyPath,
+		OpenCodeZenKey:  openCodeKey,
+		Providers: map[string]providerConfig{
+			"hetzner": {
+				Token:      token,
+				Region:     "ash",
+				ServerType: "cpx31",
+				Image:      "ubuntu-24.04",
+			},
+		},
+	}
+	data, err := yaml.Marshal(&cfg)
+	if err != nil {
+		t.Fatalf("failed to marshal config: %v", err)
+	}
+	if err := os.WriteFile(configPath, data, 0600); err != nil {
+		t.Fatalf("failed to write config file: %v", err)
+	}
+
+	// Create repo config with init script that creates a marker file
+	reposDir := filepath.Join(tmpDir, ".sandctl", "repos", "octocat-hello-world")
+	if err := os.MkdirAll(reposDir, 0700); err != nil {
+		t.Fatalf("failed to create repos dir: %v", err)
+	}
+
+	// Write repo config.yaml
+	repoConfig := `repo: octocat-hello-world
+original_name: octocat/Hello-World
+created_at: 2026-01-25T00:00:00Z
+`
+	if err := os.WriteFile(filepath.Join(reposDir, "config.yaml"), []byte(repoConfig), 0600); err != nil {
+		t.Fatalf("failed to write repo config: %v", err)
+	}
+
+	// Write init script that creates a marker file
+	initScript := `#!/bin/bash
+set -e
+echo "Init script running..."
+touch /tmp/sandctl-init-marker
+echo "INIT_SCRIPT_SUCCESS"
+`
+	if err := os.WriteFile(filepath.Join(reposDir, "init.sh"), []byte(initScript), 0700); err != nil {
+		t.Fatalf("failed to write init script: %v", err)
+	}
+
+	// Set HOME to temp dir so sandctl uses our repo config
+	t.Setenv("HOME", tmpDir)
+
+	t.Log("creating new session with configured repo init script")
+	stdout, stderr, exitCode := runSandctlWithConfig(t, configPath, "new", "--no-console", "-R", "octocat/Hello-World")
+
+	if exitCode != 0 {
+		t.Fatalf("new with init script failed with exit code %d\nstdout: %s\nstderr: %s", exitCode, stdout, stderr)
+	}
+
+	// Check that init script output was shown
+	if !strings.Contains(stdout, "Running repository init script") {
+		t.Errorf("expected 'Running repository init script' in output, got: %s", stdout)
+	}
+	if !strings.Contains(stdout, "INIT_SCRIPT_SUCCESS") {
+		t.Errorf("expected init script output 'INIT_SCRIPT_SUCCESS' in output, got: %s", stdout)
+	}
+
+	// Parse and register cleanup for actual session name
+	sessionName := parseSessionName(t, stdout)
+	t.Logf("session created: %s", sessionName)
+	registerSessionCleanup(t, configPath, sessionName)
+
+	// Wait for session to be ready
+	waitForSession(t, configPath, sessionName, 5*time.Minute)
+
+	// Verify the marker file was created by the init script
+	t.Log("verifying init script created marker file")
+	execStdout, execStderr, execExitCode := runSandctlWithConfig(t, configPath, "exec", sessionName, "-c", "test -f /tmp/sandctl-init-marker && echo MARKER_EXISTS")
+
+	if execExitCode != 0 {
+		t.Fatalf("exec failed to verify marker file: exit %d\nstdout: %s\nstderr: %s", execExitCode, execStdout, execStderr)
+	}
+
+	if !strings.Contains(execStdout, "MARKER_EXISTS") {
+		t.Errorf("expected marker file to exist, got: %s", execStdout)
+	}
+
+	t.Log("init script execution verified successfully")
 }
 
 // testNewWithInvalidRepo tests behavior with a nonexistent GitHub repo.
