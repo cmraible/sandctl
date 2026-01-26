@@ -13,6 +13,8 @@ import (
 	_ "github.com/sandctl/sandctl/internal/hetzner"
 	"github.com/sandctl/sandctl/internal/provider"
 	"github.com/sandctl/sandctl/internal/session"
+	"github.com/sandctl/sandctl/internal/sshagent"
+	"github.com/sandctl/sandctl/internal/sshexec"
 )
 
 var (
@@ -153,22 +155,31 @@ func getProviderFromSession(sess *session.Session) (provider.Provider, error) {
 	return getProvider(sess.Provider)
 }
 
-// getSSHPrivateKeyPath returns the path to the SSH private key.
-// Converts the public key path to private key path by removing .pub extension.
-func getSSHPrivateKeyPath() (string, error) {
+// createSSHClient creates an SSH client for the given host.
+// Handles both file mode (using private key file) and agent mode (using SSH agent).
+func createSSHClient(host string) (*sshexec.Client, error) {
 	cfg, err := loadConfig()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
+	if cfg.IsAgentMode() {
+		// Agent mode - get signer from SSH agent by fingerprint
+		signer, err := sshagent.GetSignerByFingerprint(cfg.SSHKeyFingerprint)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get SSH key from agent: %w", err)
+		}
+		return sshexec.NewClientWithSigner(host, signer), nil
+	}
+
+	// File mode - use private key file
 	pubKeyPath := cfg.ExpandSSHPublicKeyPath()
 	if pubKeyPath == "" {
-		return "", fmt.Errorf("ssh_public_key not configured")
+		return nil, fmt.Errorf("ssh_public_key not configured")
 	}
 
-	// Convert .pub path to private key path
 	privateKeyPath := strings.TrimSuffix(pubKeyPath, ".pub")
-	return privateKeyPath, nil
+	return sshexec.NewClient(host, privateKeyPath)
 }
 
 // isVerbose returns true if verbose output is enabled.

@@ -26,6 +26,11 @@ type Config struct {
 	SSHPublicKey    string                    `yaml:"ssh_public_key,omitempty"`
 	Providers       map[string]ProviderConfig `yaml:"providers,omitempty"`
 
+	// SSH key agent mode fields
+	SSHKeySource       string `yaml:"ssh_key_source,omitempty"`        // "file" or "agent"
+	SSHPublicKeyInline string `yaml:"ssh_public_key_inline,omitempty"` // Agent mode: full public key
+	SSHKeyFingerprint  string `yaml:"ssh_key_fingerprint,omitempty"`   // Agent mode: SHA256 fingerprint
+
 	// Legacy fields (for migration detection)
 	SpritesToken   string `yaml:"sprites_token,omitempty"`
 	OpencodeZenKey string `yaml:"opencode_zen_key,omitempty"`
@@ -71,6 +76,39 @@ func (c *Config) ExpandSSHPublicKeyPath() string {
 		return filepath.Join(home, c.SSHPublicKey[2:])
 	}
 	return c.SSHPublicKey
+}
+
+// IsAgentMode returns true if the configuration uses SSH agent for key management.
+func (c *Config) IsAgentMode() bool {
+	return c.SSHKeySource == "agent"
+}
+
+// GetSSHPublicKey returns the SSH public key content.
+// For agent mode, it returns the inline key. For file mode, it reads from the file.
+func (c *Config) GetSSHPublicKey() (string, error) {
+	// Agent mode - return inline key directly
+	if c.IsAgentMode() {
+		if c.SSHPublicKeyInline == "" {
+			return "", &ValidationError{
+				Field:   "ssh_public_key_inline",
+				Message: "is required when ssh_key_source is 'agent'",
+			}
+		}
+		return c.SSHPublicKeyInline, nil
+	}
+
+	// File mode - read from file
+	keyPath := c.ExpandSSHPublicKeyPath()
+	if keyPath == "" {
+		return "", &ValidationError{Field: "ssh_public_key", Message: "is required"}
+	}
+
+	data, err := os.ReadFile(keyPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read SSH public key: %w", err)
+	}
+
+	return strings.TrimSpace(string(data)), nil
 }
 
 // DefaultConfigPath returns the default config file path.
@@ -160,17 +198,9 @@ func (c *Config) validateProviderConfig() error {
 		}
 	}
 
-	// Check SSH public key path exists and is readable
-	if c.SSHPublicKey == "" {
-		return &ValidationError{Field: "ssh_public_key", Message: "is required"}
-	}
-
-	keyPath := c.ExpandSSHPublicKeyPath()
-	if _, err := os.Stat(keyPath); err != nil {
-		return &ValidationError{
-			Field:   "ssh_public_key",
-			Message: fmt.Sprintf("file not found: %s", keyPath),
-		}
+	// Validate SSH key configuration
+	if err := c.validateSSHKeyConfig(); err != nil {
+		return err
 	}
 
 	// Validate each provider config
@@ -180,6 +210,56 @@ func (c *Config) validateProviderConfig() error {
 				Field:   fmt.Sprintf("providers.%s.token", name),
 				Message: "is required",
 			}
+		}
+	}
+
+	return nil
+}
+
+// validateSSHKeyConfig validates SSH key configuration based on the source mode.
+func (c *Config) validateSSHKeyConfig() error {
+	// Check if ssh_key_source is valid
+	if c.SSHKeySource != "" && c.SSHKeySource != "file" && c.SSHKeySource != "agent" {
+		return &ValidationError{
+			Field:   "ssh_key_source",
+			Message: "must be 'file' or 'agent'",
+		}
+	}
+
+	// Agent mode validation
+	if c.IsAgentMode() {
+		if c.SSHPublicKeyInline == "" {
+			return &ValidationError{
+				Field:   "ssh_public_key_inline",
+				Message: "is required when ssh_key_source is 'agent'",
+			}
+		}
+		if c.SSHKeyFingerprint == "" {
+			return &ValidationError{
+				Field:   "ssh_key_fingerprint",
+				Message: "is required when ssh_key_source is 'agent'",
+			}
+		}
+		// Validate fingerprint format
+		if !strings.HasPrefix(c.SSHKeyFingerprint, "SHA256:") {
+			return &ValidationError{
+				Field:   "ssh_key_fingerprint",
+				Message: "must start with 'SHA256:'",
+			}
+		}
+		return nil
+	}
+
+	// File mode validation (default)
+	if c.SSHPublicKey == "" {
+		return &ValidationError{Field: "ssh_public_key", Message: "is required"}
+	}
+
+	keyPath := c.ExpandSSHPublicKeyPath()
+	if _, err := os.Stat(keyPath); err != nil {
+		return &ValidationError{
+			Field:   "ssh_public_key",
+			Message: fmt.Sprintf("file not found: %s", keyPath),
 		}
 	}
 

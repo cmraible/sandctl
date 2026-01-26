@@ -211,7 +211,7 @@ func runNew(cmd *cobra.Command, args []string) error {
 		steps = append(steps, ui.ProgressStep{
 			Message: "Waiting for setup to complete",
 			Action: func() error {
-				return waitForCloudInit(vm.IPAddress, 3*time.Minute)
+				return waitForCloudInit(vm.IPAddress, 10*time.Minute)
 			},
 		})
 	}
@@ -309,18 +309,17 @@ func ensureSSHKey(ctx context.Context, cfg *config.Config, prov provider.Provide
 		return "", fmt.Errorf("provider %s does not support SSH key management", prov.Name())
 	}
 
-	// Read public key
-	pubKeyPath := cfg.ExpandSSHPublicKeyPath()
-	pubKeyData, err := os.ReadFile(pubKeyPath)
+	// Get public key (from agent or file)
+	pubKeyData, err := cfg.GetSSHPublicKey()
 	if err != nil {
-		return "", fmt.Errorf("failed to read SSH public key: %w", err)
+		return "", fmt.Errorf("failed to get SSH public key: %w", err)
 	}
 
 	// Generate a name for the key based on content hash
-	keyName := fmt.Sprintf("sandctl-%s", hashPrefix(string(pubKeyData), 8))
+	keyName := fmt.Sprintf("sandctl-%s", hashPrefix(pubKeyData, 8))
 
 	// Ensure key exists in provider
-	keyID, err := keyManager.EnsureSSHKey(ctx, keyName, string(pubKeyData))
+	keyID, err := keyManager.EnsureSSHKey(ctx, keyName, pubKeyData)
 	if err != nil {
 		return "", err
 	}
@@ -340,12 +339,7 @@ func hashPrefix(s string, n int) string {
 
 // setupOpenCodeViaSSH installs and configures OpenCode via SSH.
 func setupOpenCodeViaSSH(ipAddress string, cfg *config.Config) error {
-	privateKeyPath, err := getSSHPrivateKeyPath()
-	if err != nil {
-		return err
-	}
-
-	client, err := sshexec.NewClient(ipAddress, privateKeyPath)
+	client, err := createSSHClient(ipAddress)
 	if err != nil {
 		return fmt.Errorf("failed to create SSH client: %w", err)
 	}
@@ -375,12 +369,7 @@ func setupOpenCodeViaSSH(ipAddress string, cfg *config.Config) error {
 
 // waitForCloudInit waits for cloud-init to complete by polling for the boot-finished file.
 func waitForCloudInit(ipAddress string, timeout time.Duration) error {
-	privateKeyPath, err := getSSHPrivateKeyPath()
-	if err != nil {
-		return err
-	}
-
-	client, err := sshexec.NewClient(ipAddress, privateKeyPath)
+	client, err := createSSHClient(ipAddress)
 	if err != nil {
 		return fmt.Errorf("failed to create SSH client: %w", err)
 	}
@@ -392,6 +381,11 @@ func waitForCloudInit(ipAddress string, timeout time.Duration) error {
 	for time.Now().Before(deadline) {
 		// Check if cloud-init has finished
 		output, err := client.Exec("test -f /var/lib/cloud/instance/boot-finished && echo done")
+		if err != nil {
+			verboseLog("cloud-init check failed: %v", err)
+		} else {
+			verboseLog("cloud-init check output: %q", output)
+		}
 		if err == nil && output == "done\n" {
 			return nil
 		}
@@ -416,12 +410,7 @@ func cleanupFailedSession(ctx context.Context, prov provider.Provider, store *se
 
 // startSSHConsole opens an interactive SSH console to the VM.
 func startSSHConsole(ipAddress string) error {
-	privateKeyPath, err := getSSHPrivateKeyPath()
-	if err != nil {
-		return err
-	}
-
-	client, err := sshexec.NewClient(ipAddress, privateKeyPath)
+	client, err := createSSHClient(ipAddress)
 	if err != nil {
 		return fmt.Errorf("failed to create SSH client: %w", err)
 	}
@@ -433,12 +422,7 @@ func startSSHConsole(ipAddress string) error {
 // runInitScript uploads and executes a custom init script on the VM.
 // The script runs with the working directory set to the repository path.
 func runInitScript(ipAddress, repoPath, scriptContent string) error {
-	privateKeyPath, err := getSSHPrivateKeyPath()
-	if err != nil {
-		return err
-	}
-
-	client, err := sshexec.NewClient(ipAddress, privateKeyPath)
+	client, err := createSSHClient(ipAddress)
 	if err != nil {
 		return fmt.Errorf("failed to create SSH client: %w", err)
 	}

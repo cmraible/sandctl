@@ -84,14 +84,8 @@ func runExec(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("session '%s' has no IP address", sessionName)
 	}
 
-	// Get SSH private key path
-	privateKeyPath, err := getSSHPrivateKeyPath()
-	if err != nil {
-		return err
-	}
-
 	// Create SSH client
-	client, err := sshexec.NewClient(sess.IPAddress, privateKeyPath)
+	client, err := createSSHClient(sess.IPAddress)
 	if err != nil {
 		return fmt.Errorf("failed to connect: %w", err)
 	}
