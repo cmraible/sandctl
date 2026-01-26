@@ -47,9 +47,7 @@ func runRepoRemove(cmd *cobra.Command, args []string) error {
 	// Check if config exists
 	config, err := store.Get(repoName)
 	if err != nil {
-		var notFound *repoconfig.NotFoundError
-		if _, ok := err.(*repoconfig.NotFoundError); ok {
-			notFound = err.(*repoconfig.NotFoundError)
+		if notFound, ok := err.(*repoconfig.NotFoundError); ok {
 			fmt.Fprintf(os.Stderr, "Error: %s\n", notFound.Error())
 			return nil
 		}
@@ -67,7 +65,7 @@ func runRepoRemove(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		if !confirmed {
-			fmt.Println("Cancelled")
+			fmt.Println("Canceled")
 			return nil
 		}
 	}

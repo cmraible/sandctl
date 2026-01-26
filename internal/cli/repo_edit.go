@@ -37,9 +37,7 @@ func runRepoEdit(cmd *cobra.Command, args []string) error {
 	// Check if config exists
 	_, err := store.Get(repoName)
 	if err != nil {
-		var notFound *repoconfig.NotFoundError
-		if _, ok := err.(*repoconfig.NotFoundError); ok {
-			notFound = err.(*repoconfig.NotFoundError)
+		if notFound, ok := err.(*repoconfig.NotFoundError); ok {
 			fmt.Fprintf(os.Stderr, "Error: %s\n", notFound.Error())
 			fmt.Fprintln(os.Stderr, "Use 'sandctl repo add' to create one")
 			return nil

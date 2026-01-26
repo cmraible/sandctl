@@ -47,11 +47,6 @@ func (s *Store) repoDir(normalizedName string) string {
 	return filepath.Join(s.basePath, normalizedName)
 }
 
-// ensureDir creates the repos directory if it doesn't exist.
-func (s *Store) ensureDir() error {
-	return os.MkdirAll(s.basePath, 0700)
-}
-
 // Add creates a new repository configuration with an init script template.
 func (s *Store) Add(config RepoConfig) error {
 	s.mu.Lock()
@@ -81,10 +76,10 @@ func (s *Store) Add(config RepoConfig) error {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
-	// Write init.sh template
+	// Write init.sh template (executable)
 	scriptContent := GenerateInitScript(config.OriginalName)
 	scriptPath := s.scriptPath(normalizedName)
-	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0700); err != nil { //nolint:gosec // init scripts need to be executable
 		return fmt.Errorf("failed to write init script: %w", err)
 	}
 

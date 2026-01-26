@@ -89,9 +89,7 @@ func runRepoAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := store.Add(config); err != nil {
-		var alreadyExists *repoconfig.AlreadyExistsError
-		if _, ok := err.(*repoconfig.AlreadyExistsError); ok {
-			alreadyExists = err.(*repoconfig.AlreadyExistsError)
+		if alreadyExists, ok := err.(*repoconfig.AlreadyExistsError); ok {
 			fmt.Fprintf(os.Stderr, "Error: %s\n", alreadyExists.Error())
 			fmt.Fprintf(os.Stderr, "Use 'sandctl repo edit %s' to modify the init script\n", repoSpec.String())
 			return nil

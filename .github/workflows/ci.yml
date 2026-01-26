@@ -72,6 +72,6 @@ jobs:
 
       - name: Run E2E tests
         env:
-          SPRITES_API_TOKEN: ${{ secrets.SPRITES_API_TOKEN }}
+          HETZNER_API_TOKEN: ${{ secrets.HETZNER_API_TOKEN }}
           OPENCODE_ZEN_KEY: ${{ secrets.OPENCODE_ZEN_KEY }}
         run: go test -v -tags=e2e -timeout 10m ./tests/e2e/...
