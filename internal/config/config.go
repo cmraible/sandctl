@@ -5,14 +5,72 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
+// ProviderConfig holds provider-specific configuration.
+type ProviderConfig struct {
+	Token      string `yaml:"token"`
+	Region     string `yaml:"region,omitempty"`
+	ServerType string `yaml:"server_type,omitempty"`
+	Image      string `yaml:"image,omitempty"`
+	SSHKeyID   int64  `yaml:"ssh_key_id,omitempty"` // Cached provider SSH key ID
+}
+
 // Config represents the sandctl configuration.
 type Config struct {
-	SpritesToken   string `yaml:"sprites_token"`
-	OpencodeZenKey string `yaml:"opencode_zen_key"`
+	// New provider-based configuration
+	DefaultProvider string                    `yaml:"default_provider,omitempty"`
+	SSHPublicKey    string                    `yaml:"ssh_public_key,omitempty"`
+	Providers       map[string]ProviderConfig `yaml:"providers,omitempty"`
+
+	// Legacy fields (for migration detection)
+	SpritesToken   string `yaml:"sprites_token,omitempty"`
+	OpencodeZenKey string `yaml:"opencode_zen_key,omitempty"`
+}
+
+// IsLegacyConfig returns true if this is an old sprites-based config.
+func (c *Config) IsLegacyConfig() bool {
+	return c.SpritesToken != "" && c.DefaultProvider == ""
+}
+
+// GetProviderConfig returns the configuration for a specific provider.
+func (c *Config) GetProviderConfig(name string) (*ProviderConfig, bool) {
+	if c.Providers == nil {
+		return nil, false
+	}
+	cfg, ok := c.Providers[name]
+	if !ok {
+		return nil, false
+	}
+	return &cfg, true
+}
+
+// SetProviderSSHKeyID updates the cached SSH key ID for a provider.
+func (c *Config) SetProviderSSHKeyID(providerName string, keyID int64) {
+	if c.Providers == nil {
+		c.Providers = make(map[string]ProviderConfig)
+	}
+	cfg := c.Providers[providerName]
+	cfg.SSHKeyID = keyID
+	c.Providers[providerName] = cfg
+}
+
+// ExpandSSHPublicKeyPath expands ~ in the SSH public key path.
+func (c *Config) ExpandSSHPublicKeyPath() string {
+	if c.SSHPublicKey == "" {
+		return ""
+	}
+	if strings.HasPrefix(c.SSHPublicKey, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return c.SSHPublicKey
+		}
+		return filepath.Join(home, c.SSHPublicKey[2:])
+	}
+	return c.SSHPublicKey
 }
 
 // DefaultConfigPath returns the default config file path.
@@ -71,12 +129,58 @@ func Load(path string) (*Config, error) {
 
 // Validate checks that the config has all required fields.
 func (c *Config) Validate() error {
+	// Check if this is the new provider-based config
+	if c.DefaultProvider != "" {
+		return c.validateProviderConfig()
+	}
+
+	// Legacy validation for old sprites-based config
 	if c.SpritesToken == "" {
 		return &ValidationError{Field: "sprites_token", Message: "is required"}
 	}
 
 	if c.OpencodeZenKey == "" {
 		return &ValidationError{Field: "opencode_zen_key", Message: "is required"}
+	}
+
+	return nil
+}
+
+// validateProviderConfig validates the new provider-based configuration.
+func (c *Config) validateProviderConfig() error {
+	// Check default_provider exists in providers map
+	if len(c.Providers) == 0 {
+		return &ValidationError{Field: "providers", Message: "at least one provider must be configured"}
+	}
+
+	if _, ok := c.Providers[c.DefaultProvider]; !ok {
+		return &ValidationError{
+			Field:   "default_provider",
+			Message: fmt.Sprintf("'%s' is not configured in providers", c.DefaultProvider),
+		}
+	}
+
+	// Check SSH public key path exists and is readable
+	if c.SSHPublicKey == "" {
+		return &ValidationError{Field: "ssh_public_key", Message: "is required"}
+	}
+
+	keyPath := c.ExpandSSHPublicKeyPath()
+	if _, err := os.Stat(keyPath); err != nil {
+		return &ValidationError{
+			Field:   "ssh_public_key",
+			Message: fmt.Sprintf("file not found: %s", keyPath),
+		}
+	}
+
+	// Validate each provider config
+	for name, provCfg := range c.Providers {
+		if provCfg.Token == "" {
+			return &ValidationError{
+				Field:   fmt.Sprintf("providers.%s.token", name),
+				Message: "is required",
+			}
+		}
 	}
 
 	return nil
@@ -119,15 +223,35 @@ func (e *ValidationError) Error() string {
 func SetupInstructions() string {
 	return fmt.Sprintf(`Configuration required.
 
-Create %s with your credentials:
+Run 'sandctl init' to configure your provider credentials, or create
+%s manually:
 
-  sprites_token: "your-sprites-token"
+  default_provider: hetzner
+  ssh_public_key: ~/.ssh/id_ed25519.pub
   opencode_zen_key: "your-opencode-zen-key"
 
-Get your Sprites token at: https://sprites.dev/tokens
+  providers:
+    hetzner:
+      token: "your-hetzner-api-token"
+      region: ash
+      server_type: cpx31
+      image: ubuntu-24.04
+
+Get your Hetzner API token at: https://console.hetzner.cloud
 Get your Opencode Zen key at: https://opencode.ai/settings
 
 After creating the file, set secure permissions:
   chmod 600 %s
 `, DefaultConfigPath(), DefaultConfigPath())
+}
+
+// MigrationInstructions returns instructions for migrating from old config.
+func MigrationInstructions() string {
+	return `Your configuration uses the old Sprites format.
+
+Sprites has been replaced with pluggable VM providers. Run 'sandctl init'
+to configure your new provider (Hetzner Cloud).
+
+Your existing opencode_zen_key will be preserved.
+`
 }

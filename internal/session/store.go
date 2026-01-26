@@ -138,6 +138,35 @@ func (s *Store) Update(id string, status Status) error {
 	return s.save(data)
 }
 
+// UpdateSession replaces an existing session with updated data.
+func (s *Store) UpdateSession(session Session) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	data, err := s.load()
+	if err != nil {
+		return err
+	}
+
+	// Normalize input for case-insensitive lookup
+	normalizedID := NormalizeName(session.ID)
+
+	found := false
+	for i, existing := range data.Sessions {
+		if NormalizeName(existing.ID) == normalizedID {
+			data.Sessions[i] = session
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return &NotFoundError{ID: session.ID}
+	}
+
+	return s.save(data)
+}
+
 // Remove deletes a session from the store.
 func (s *Store) Remove(id string) error {
 	s.mu.Lock()

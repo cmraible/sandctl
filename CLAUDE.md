@@ -37,9 +37,9 @@ tests/
 Go 1.22+: Follow standard conventions
 
 ## Recent Changes
+- 015-pluggable-vm-providers: Added Go 1.24
 - 013-repo-clone: Added Go 1.24 + github.com/spf13/cobra v1.9.1 (CLI), golang.org/x/term v0.30.0 (terminal)
 - 012-auto-console-after-new: Added Go 1.24 + github.com/spf13/cobra v1.9.1 (CLI), golang.org/x/term v0.30.0 (terminal detection)
-- 011-console-command: Added Go 1.24 + github.com/spf13/cobra v1.9.1 (CLI), github.com/gorilla/websocket v1.5.1 (WebSocket), golang.org/x/term v0.30.0 (terminal control)
 
 
 <!-- MANUAL ADDITIONS START -->

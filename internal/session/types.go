@@ -70,6 +70,11 @@ type Session struct {
 	Status    Status    `json:"status"`
 	CreatedAt time.Time `json:"created_at"`
 	Timeout   *Duration `json:"timeout,omitempty"`
+
+	// Provider fields (new for pluggable providers)
+	Provider   string `json:"provider,omitempty"`    // Provider name (e.g., "hetzner")
+	ProviderID string `json:"provider_id,omitempty"` // Provider-specific VM identifier
+	IPAddress  string `json:"ip_address,omitempty"`  // Public IPv4 address for SSH
 }
 
 // IsRunning returns true if the session is in running state.
@@ -105,5 +110,26 @@ func (s *Session) Validate() error {
 	if s.ID == "" {
 		return fmt.Errorf("session ID is required")
 	}
+
+	// For new provider-based sessions, validate provider fields
+	if s.Provider != "" {
+		if s.ProviderID == "" && s.Status == StatusRunning {
+			return fmt.Errorf("provider_id is required when status is running")
+		}
+		if s.IPAddress == "" && s.Status == StatusRunning {
+			return fmt.Errorf("ip_address is required when status is running")
+		}
+	}
+
 	return nil
+}
+
+// HasProvider returns true if this is a new provider-based session.
+func (s *Session) HasProvider() bool {
+	return s.Provider != ""
+}
+
+// IsLegacySession returns true if this is an old sprites-based session.
+func (s *Session) IsLegacySession() bool {
+	return s.Provider == ""
 }

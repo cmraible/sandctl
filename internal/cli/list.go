@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/sandctl/sandctl/internal/provider"
 	"github.com/sandctl/sandctl/internal/session"
 )
 
@@ -22,7 +24,9 @@ var listCmd = &cobra.Command{
 	Long: `Display all active sandctl sessions.
 
 By default, only shows sessions in provisioning or running state.
-Use --all to include stopped and failed sessions.`,
+Use --all to include stopped and failed sessions.
+
+This command syncs with the provider API to show current VM status.`,
 	Example: `  # List active sessions
   sandctl list
 
@@ -43,6 +47,7 @@ func init() {
 }
 
 func runList(cmd *cobra.Command, args []string) error {
+	ctx := context.Background()
 	store := getSessionStore()
 
 	// Get sessions from local store
@@ -59,17 +64,14 @@ func runList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to list sessions: %w", err)
 	}
 
-	// Sync with Sprites API if we have config
-	cfg, cfgErr := loadConfig()
-	if cfgErr == nil {
-		sessions = syncWithSpritesAPI(sessions, cfg.SpritesToken, store)
-	}
+	// Sync with provider API
+	sessions = syncWithProviderAPI(ctx, sessions, store)
 
 	// Handle empty state
 	if len(sessions) == 0 {
 		fmt.Println("No active sessions.")
 		fmt.Println()
-		fmt.Println("Use 'sandctl start --prompt \"your task\"' to create one.")
+		fmt.Println("Use 'sandctl new' to create one.")
 		return nil
 	}
 
@@ -84,52 +86,85 @@ func runList(cmd *cobra.Command, args []string) error {
 	}
 }
 
-// syncWithSpritesAPI updates local session statuses from the Sprites API.
-func syncWithSpritesAPI(sessions []session.Session, _ string, store *session.Store) []session.Session {
-	client, err := getSpritesClient()
-	if err != nil {
-		verboseLog("Failed to create Sprites client for sync: %v", err)
-		return sessions
-	}
-
-	sprites, err := client.ListSprites()
-	if err != nil {
-		verboseLog("Failed to sync with Sprites API: %v", err)
-		return sessions
-	}
-
-	// Build a map of sprite states
-	spriteStates := make(map[string]string)
-	for _, sprite := range sprites {
-		spriteStates[sprite.Name] = sprite.State
-	}
-
-	// Update session statuses
+// syncWithProviderAPI updates local session statuses from provider APIs.
+func syncWithProviderAPI(ctx context.Context, sessions []session.Session, store *session.Store) []session.Session {
+	// Group sessions by provider
+	byProvider := make(map[string][]int) // provider name -> session indices
 	for i, sess := range sessions {
-		if state, exists := spriteStates[sess.ID]; exists {
-			newStatus := mapSpriteState(state)
-			if newStatus != sess.Status {
-				sessions[i].Status = newStatus
-				_ = store.Update(sess.ID, newStatus)
+		if sess.Provider != "" {
+			byProvider[sess.Provider] = append(byProvider[sess.Provider], i)
+		}
+	}
+
+	// Sync each provider
+	for provName, indices := range byProvider {
+		prov, err := getProvider(provName)
+		if err != nil {
+			verboseLog("Failed to get provider %s for sync: %v", provName, err)
+			continue
+		}
+
+		vms, err := prov.List(ctx)
+		if err != nil {
+			verboseLog("Failed to list VMs from %s: %v", provName, err)
+			continue
+		}
+
+		// Build a map of VM states by ID
+		vmStates := make(map[string]*provider.VM)
+		for _, vm := range vms {
+			vmStates[vm.ID] = vm
+		}
+
+		// Update session statuses
+		for _, i := range indices {
+			sess := &sessions[i]
+			if sess.ProviderID == "" {
+				continue
 			}
-		} else if sess.Status.IsActive() {
-			// Sprite doesn't exist but session thinks it's active
+
+			if vm, exists := vmStates[sess.ProviderID]; exists {
+				newStatus := mapVMStatusToSession(vm.Status)
+				if newStatus != sess.Status {
+					sessions[i].Status = newStatus
+					_ = store.Update(sess.ID, newStatus)
+				}
+				// Update IP address if it changed
+				if vm.IPAddress != "" && vm.IPAddress != sess.IPAddress {
+					sessions[i].IPAddress = vm.IPAddress
+					_ = store.UpdateSession(sessions[i])
+				}
+			} else if sess.Status.IsActive() {
+				// VM doesn't exist but session thinks it's active
+				sessions[i].Status = session.StatusStopped
+				_ = store.Update(sess.ID, session.StatusStopped)
+			}
+		}
+	}
+
+	// Handle legacy sessions (warn about them)
+	for i, sess := range sessions {
+		if sess.IsLegacySession() && sess.Status.IsActive() {
+			// Mark legacy sessions as stopped since we can't verify them
 			sessions[i].Status = session.StatusStopped
 			_ = store.Update(sess.ID, session.StatusStopped)
+			verboseLog("Legacy session '%s' marked as stopped", sess.ID)
 		}
 	}
 
 	return sessions
 }
 
-// mapSpriteState converts Sprites API state to session status.
-func mapSpriteState(state string) session.Status {
-	switch state {
-	case "running":
+// mapVMStatusToSession converts provider.VMStatus to session.Status.
+func mapVMStatusToSession(status provider.VMStatus) session.Status {
+	switch status {
+	case provider.StatusRunning:
 		return session.StatusRunning
-	case "stopped", "destroyed":
+	case provider.StatusProvisioning, provider.StatusStarting:
+		return session.StatusProvisioning
+	case provider.StatusStopped, provider.StatusStopping, provider.StatusDeleting:
 		return session.StatusStopped
-	case "failed":
+	case provider.StatusFailed:
 		return session.StatusFailed
 	default:
 		return session.StatusProvisioning
@@ -146,16 +181,21 @@ func outputJSON(sessions []session.Session) error {
 // outputTable outputs sessions as a formatted table.
 func outputTable(sessions []session.Session) error {
 	// Print header
-	fmt.Printf("%-18s %-12s %-20s %s\n",
-		"ID", "STATUS", "CREATED", "TIMEOUT")
+	fmt.Printf("%-18s %-10s %-16s %-20s %s\n",
+		"ID", "PROVIDER", "STATUS", "CREATED", "TIMEOUT")
 
 	// Print sessions
 	for _, sess := range sessions {
 		timeout := formatTimeout(sess.TimeoutRemaining())
 		created := formatCreatedTime(sess.CreatedAt)
+		providerName := sess.Provider
+		if providerName == "" {
+			providerName = "(legacy)"
+		}
 
-		fmt.Printf("%-18s %-12s %-20s %s\n",
+		fmt.Printf("%-18s %-10s %-16s %-20s %s\n",
 			sess.ID,
+			providerName,
 			sess.Status,
 			created,
 			timeout,

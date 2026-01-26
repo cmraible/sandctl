@@ -4,54 +4,58 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sandctl/sandctl/internal/provider"
 	"github.com/sandctl/sandctl/internal/session"
 )
 
-// TestMapSpriteState_GivenRunning_ThenReturnsRunningStatus tests running state mapping.
-func TestMapSpriteState_GivenRunning_ThenReturnsRunningStatus(t *testing.T) {
-	status := mapSpriteState("running")
+// TestMapVMStatusToSession_GivenRunning_ThenReturnsRunningStatus tests running state mapping.
+func TestMapVMStatusToSession_GivenRunning_ThenReturnsRunningStatus(t *testing.T) {
+	status := mapVMStatusToSession(provider.StatusRunning)
 
 	if status != session.StatusRunning {
-		t.Errorf("mapSpriteState(running) = %q, want %q", status, session.StatusRunning)
+		t.Errorf("mapVMStatusToSession(running) = %q, want %q", status, session.StatusRunning)
 	}
 }
 
-// TestMapSpriteState_GivenStopped_ThenReturnsStoppedStatus tests stopped state mapping.
-func TestMapSpriteState_GivenStopped_ThenReturnsStoppedStatus(t *testing.T) {
-	status := mapSpriteState("stopped")
+// TestMapVMStatusToSession_GivenStopped_ThenReturnsStoppedStatus tests stopped state mapping.
+func TestMapVMStatusToSession_GivenStopped_ThenReturnsStoppedStatus(t *testing.T) {
+	status := mapVMStatusToSession(provider.StatusStopped)
 
 	if status != session.StatusStopped {
-		t.Errorf("mapSpriteState(stopped) = %q, want %q", status, session.StatusStopped)
+		t.Errorf("mapVMStatusToSession(stopped) = %q, want %q", status, session.StatusStopped)
 	}
 }
 
-// TestMapSpriteState_GivenDestroyed_ThenReturnsStoppedStatus tests destroyed state mapping.
-func TestMapSpriteState_GivenDestroyed_ThenReturnsStoppedStatus(t *testing.T) {
-	status := mapSpriteState("destroyed")
+// TestMapVMStatusToSession_GivenDeleting_ThenReturnsStoppedStatus tests deleting state mapping.
+func TestMapVMStatusToSession_GivenDeleting_ThenReturnsStoppedStatus(t *testing.T) {
+	status := mapVMStatusToSession(provider.StatusDeleting)
 
 	if status != session.StatusStopped {
-		t.Errorf("mapSpriteState(destroyed) = %q, want %q", status, session.StatusStopped)
+		t.Errorf("mapVMStatusToSession(deleting) = %q, want %q", status, session.StatusStopped)
 	}
 }
 
-// TestMapSpriteState_GivenFailed_ThenReturnsFailedStatus tests failed state mapping.
-func TestMapSpriteState_GivenFailed_ThenReturnsFailedStatus(t *testing.T) {
-	status := mapSpriteState("failed")
+// TestMapVMStatusToSession_GivenFailed_ThenReturnsFailedStatus tests failed state mapping.
+func TestMapVMStatusToSession_GivenFailed_ThenReturnsFailedStatus(t *testing.T) {
+	status := mapVMStatusToSession(provider.StatusFailed)
 
 	if status != session.StatusFailed {
-		t.Errorf("mapSpriteState(failed) = %q, want %q", status, session.StatusFailed)
+		t.Errorf("mapVMStatusToSession(failed) = %q, want %q", status, session.StatusFailed)
 	}
 }
 
-// TestMapSpriteState_GivenUnknown_ThenReturnsProvisioning tests unknown state mapping.
-func TestMapSpriteState_GivenUnknown_ThenReturnsProvisioning(t *testing.T) {
-	unknownStates := []string{"pending", "starting", "unknown", "", "other"}
+// TestMapVMStatusToSession_GivenProvisioning_ThenReturnsProvisioning tests provisioning state mapping.
+func TestMapVMStatusToSession_GivenProvisioning_ThenReturnsProvisioning(t *testing.T) {
+	testCases := []provider.VMStatus{
+		provider.StatusProvisioning,
+		provider.StatusStarting,
+	}
 
-	for _, state := range unknownStates {
-		t.Run(state, func(t *testing.T) {
-			status := mapSpriteState(state)
+	for _, vmStatus := range testCases {
+		t.Run(string(vmStatus), func(t *testing.T) {
+			status := mapVMStatusToSession(vmStatus)
 			if status != session.StatusProvisioning {
-				t.Errorf("mapSpriteState(%q) = %q, want %q", state, status, session.StatusProvisioning)
+				t.Errorf("mapVMStatusToSession(%q) = %q, want %q", vmStatus, status, session.StatusProvisioning)
 			}
 		})
 	}

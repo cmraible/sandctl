@@ -1,13 +1,14 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/sandctl/sandctl/internal/session"
-	"github.com/sandctl/sandctl/internal/sprites"
 	"github.com/sandctl/sandctl/internal/ui"
 )
 
@@ -37,6 +38,8 @@ func init() {
 }
 
 func runDestroy(cmd *cobra.Command, args []string) error {
+	ctx := context.Background()
+
 	// Normalize the session name (case-insensitive)
 	sessionName := session.NormalizeName(args[0])
 
@@ -47,16 +50,33 @@ func runDestroy(cmd *cobra.Command, args []string) error {
 
 	// Get session from store
 	store := getSessionStore()
-	_, err := store.Get(sessionName)
+	sess, err := store.Get(sessionName)
 	if err != nil {
-		// Check if it's a not found error
-		if _, ok := err.(*session.NotFoundError); ok {
+		var notFound *session.NotFoundError
+		if errors.As(err, &notFound) {
 			ui.PrintError(os.Stderr, "session '%s' not found", sessionName)
 			fmt.Fprintln(os.Stderr)
 			fmt.Fprintln(os.Stderr, "Use 'sandctl list' to see active sessions.")
 			return nil
 		}
 		return err
+	}
+
+	// Check if session has provider info (new format)
+	if sess.IsLegacySession() {
+		ui.PrintError(os.Stderr, "session '%s' is from an old version", sessionName)
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "This session cannot be destroyed automatically.")
+		fmt.Fprintln(os.Stderr, "Please check your old provider console to manually remove any orphaned VMs.")
+
+		// Still remove from local store
+		if destroyForce {
+			_ = store.Remove(sessionName)
+			fmt.Printf("Removed '%s' from local session store.\n", sessionName)
+		} else {
+			fmt.Fprintln(os.Stderr, "Use --force to remove from local store only.")
+		}
+		return nil
 	}
 
 	// Confirm unless --force
@@ -72,31 +92,22 @@ func runDestroy(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Get Sprites client
-	client, err := getSpritesClient()
+	// Get provider for this session
+	prov, err := getProviderFromSession(sess)
 	if err != nil {
-		return err
+		// If provider lookup fails but we have provider_id, still try to remove from store
+		verboseLog("Warning: could not get provider: %v", err)
 	}
 
 	// Show progress
 	spin := ui.NewSpinner(os.Stdout)
 	spin.Start("Destroying session")
 
-	// Delete sprite from Fly.io
-	if err := client.DeleteSprite(sessionName); err != nil {
-		// If not found on Fly.io, still remove from local store
-		if apiErr, ok := err.(*sprites.APIError); ok && apiErr.IsNotFound() {
-			verboseLog("Sprite not found on Fly.io, removing from local store only")
-		} else {
-			// API might return error but still delete - verify it's actually gone
-			_, verifyErr := client.GetSprite(sessionName)
-			if verifyErr == nil {
-				// Sprite still exists, deletion actually failed
-				spin.Fail("Destroying session")
-				return fmt.Errorf("failed to destroy session: %w", err)
-			}
-			// Sprite is gone, treat as success despite the error
-			verboseLog("API returned error but sprite was deleted: %v", err)
+	// Delete VM from provider
+	if prov != nil && sess.ProviderID != "" {
+		if err := prov.Delete(ctx, sess.ProviderID); err != nil {
+			// Log the error but continue with local cleanup
+			verboseLog("Warning: failed to delete VM from provider: %v", err)
 		}
 	}
 
