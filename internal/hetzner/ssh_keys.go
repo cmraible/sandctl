@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/md5" //nolint:gosec // MD5 is required for Hetzner SSH key fingerprints (RFC 4716)
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -39,6 +40,15 @@ func (c *Client) EnsureSSHKey(ctx context.Context, name, publicKey string) (stri
 
 	newKey, _, err := c.hc.SSHKey.Create(ctx, opts)
 	if err != nil {
+		// Handle race condition: key might have been created between lookup and create.
+		// If we get a uniqueness error, retry the fingerprint lookup.
+		var hcloudErr hcloud.Error
+		if errors.As(err, &hcloudErr) && hcloudErr.Code == hcloud.ErrorCodeUniquenessError {
+			existingKey, _, lookupErr := c.hc.SSHKey.GetByFingerprint(ctx, fingerprint)
+			if lookupErr == nil && existingKey != nil {
+				return fmt.Sprintf("%d", existingKey.ID), nil
+			}
+		}
 		return "", fmt.Errorf("failed to create SSH key: %w", err)
 	}
 
