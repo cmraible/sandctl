@@ -185,3 +185,35 @@ func IsTerminal() bool {
 func (p *Prompter) PromptWithDefault(prompt, defaultValue string) (string, error) {
 	return p.PromptString(prompt, defaultValue)
 }
+
+// PromptYesNo prompts for a yes/no confirmation.
+// Returns true for yes, false for no.
+func (p *Prompter) PromptYesNo(prompt string, defaultYes bool) (bool, error) {
+	defaultStr := "Y/n"
+	if !defaultYes {
+		defaultStr = "y/N"
+	}
+
+	fmt.Fprintf(p.writer, "%s [%s]: ", prompt, defaultStr)
+
+	if !p.scanner.Scan() {
+		if err := p.scanner.Err(); err != nil {
+			return false, err
+		}
+		return defaultYes, nil
+	}
+
+	input := strings.ToLower(strings.TrimSpace(p.scanner.Text()))
+	if input == "" {
+		return defaultYes, nil
+	}
+
+	switch input {
+	case "y", "yes":
+		return true, nil
+	case "n", "no":
+		return false, nil
+	default:
+		return defaultYes, nil
+	}
+}

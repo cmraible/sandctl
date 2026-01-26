@@ -18,6 +18,7 @@ Auto-generated from all feature plans. Last updated: 2026-01-22
 - ~/.sandctl/sessions.json (local session store), ~/.sandctl/config (YAML config) (011-console-command)
 - Go 1.24 + github.com/spf13/cobra v1.9.1 (CLI), golang.org/x/term v0.30.0 (terminal detection) (012-auto-console-after-new)
 - Go 1.24 + github.com/spf13/cobra v1.9.1 (CLI), golang.org/x/term v0.30.0 (terminal) (013-repo-clone)
+- Go 1.24.0 + github.com/spf13/cobra v1.9.1 (CLI), golang.org/x/crypto/ssh (SSH client/agent), gopkg.in/yaml.v3 (config), golang.org/x/term (terminal detection) (016-ssh-agent-support)
 
 - Go 1.22+ + Cobra (CLI framework), Viper (config), Fly.io Sprites SDK (001-sandbox-cli)
 
@@ -37,9 +38,9 @@ tests/
 Go 1.22+: Follow standard conventions
 
 ## Recent Changes
+- 016-ssh-agent-support: Added Go 1.24.0 + github.com/spf13/cobra v1.9.1 (CLI), golang.org/x/crypto/ssh (SSH client/agent), gopkg.in/yaml.v3 (config), golang.org/x/term (terminal detection)
 - 015-pluggable-vm-providers: Added Go 1.24
 - 013-repo-clone: Added Go 1.24 + github.com/spf13/cobra v1.9.1 (CLI), golang.org/x/term v0.30.0 (terminal)
-- 012-auto-console-after-new: Added Go 1.24 + github.com/spf13/cobra v1.9.1 (CLI), golang.org/x/term v0.30.0 (terminal detection)
 
 
 <!-- MANUAL ADDITIONS START -->

@@ -88,28 +88,14 @@ func runConsole(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("session '%s' has no IP address", sessionName)
 	}
 
-	// Load config for SSH key
-	cfg, err := loadConfig()
-	if err != nil {
-		return err
-	}
-
-	// Get SSH private key path
-	privateKeyPath, err := getSSHPrivateKeyPath()
-	if err != nil {
-		return err
-	}
-
 	fmt.Printf("Connecting to %s (%s)...\n", sessionName, sess.IPAddress)
 
 	// Create SSH client and open console
-	client, err := sshexec.NewClient(sess.IPAddress, privateKeyPath)
+	client, err := createSSHClient(sess.IPAddress)
 	if err != nil {
 		return fmt.Errorf("failed to connect: %w", err)
 	}
 	defer client.Close()
-
-	_ = cfg // We might need this for future use
 
 	return client.Console(sshexec.ConsoleOptions{})
 }

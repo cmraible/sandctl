@@ -12,16 +12,19 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/sandctl/sandctl/internal/config"
+	"github.com/sandctl/sandctl/internal/sshagent"
 	"github.com/sandctl/sandctl/internal/ui"
 )
 
 var (
 	// Flags for non-interactive mode
-	initHetznerToken   string
-	initSSHPublicKey   string
-	initRegion         string
-	initServerType     string
-	initOpencodeZenKey string
+	initHetznerToken      string
+	initSSHPublicKey      string
+	initSSHAgent          bool
+	initSSHKeyFingerprint string
+	initRegion            string
+	initServerType        string
+	initOpencodeZenKey    string
 )
 
 // initCmd represents the init command.
@@ -32,14 +35,19 @@ var initCmd = &cobra.Command{
 
 This command guides you through setting up:
   - Hetzner Cloud API token (for VM provisioning)
-  - SSH public key path (for VM access)
+  - SSH public key (from agent or file path)
   - Default region and server type
   - Opencode Zen key (optional, for AI agent access)
+
+SSH keys can be configured from:
+  - SSH Agent (1Password, ssh-agent, gpg-agent) - recommended
+  - File path to public key file
 
 If a configuration already exists, your current values are shown as defaults.
 Press Enter to keep existing values, or type new ones to update.
 
 For non-interactive setup (CI/scripts), use flags:
+  sandctl init --hetzner-token TOKEN --ssh-agent
   sandctl init --hetzner-token TOKEN --ssh-public-key ~/.ssh/id_ed25519.pub`,
 	RunE: runInit,
 }
@@ -50,6 +58,8 @@ func init() {
 	// Non-interactive flags
 	initCmd.Flags().StringVar(&initHetznerToken, "hetzner-token", "", "Hetzner Cloud API token")
 	initCmd.Flags().StringVar(&initSSHPublicKey, "ssh-public-key", "", "Path to SSH public key (e.g., ~/.ssh/id_ed25519.pub)")
+	initCmd.Flags().BoolVar(&initSSHAgent, "ssh-agent", false, "Use SSH agent for key management (1Password, ssh-agent)")
+	initCmd.Flags().StringVar(&initSSHKeyFingerprint, "ssh-key-fingerprint", "", "SSH key fingerprint when using --ssh-agent with multiple keys")
 	initCmd.Flags().StringVar(&initRegion, "region", "", "Default Hetzner region (ash, hel1, fsn1, nbg1)")
 	initCmd.Flags().StringVar(&initServerType, "server-type", "", "Default server type (cpx21, cpx31, cpx41)")
 	initCmd.Flags().StringVar(&initOpencodeZenKey, "opencode-zen-key", "", "Opencode Zen key for AI access (optional)")
@@ -62,15 +72,20 @@ func runInit(cmd *cobra.Command, args []string) error {
 		configPath = config.DefaultConfigPath()
 	}
 
+	// Validate mutually exclusive flags
+	if initSSHAgent && initSSHPublicKey != "" {
+		return errors.New("--ssh-agent and --ssh-public-key are mutually exclusive")
+	}
+
 	// Check if running non-interactively with flags
-	hasFlags := initHetznerToken != "" || initSSHPublicKey != ""
+	hasFlags := initHetznerToken != "" || initSSHPublicKey != "" || initSSHAgent
 	if hasFlags {
 		return runNonInteractiveInit(configPath)
 	}
 
 	// Check if we have a terminal for interactive mode
 	if !ui.IsTerminal() {
-		return errors.New("init requires a terminal for interactive mode, or use --hetzner-token and --ssh-public-key flags")
+		return errors.New("init requires a terminal for interactive mode, or use --hetzner-token with --ssh-agent or --ssh-public-key flags")
 	}
 
 	return runInitFlow(configPath, os.Stdin, os.Stdout)
@@ -82,14 +97,8 @@ func runNonInteractiveInit(configPath string) error {
 	if initHetznerToken == "" {
 		return errors.New("--hetzner-token is required in non-interactive mode")
 	}
-	if initSSHPublicKey == "" {
-		return errors.New("--ssh-public-key is required in non-interactive mode")
-	}
-
-	// Expand SSH key path
-	sshKeyPath := expandPath(initSSHPublicKey)
-	if _, err := os.Stat(sshKeyPath); err != nil {
-		return fmt.Errorf("SSH public key not found: %s", sshKeyPath)
+	if !initSSHAgent && initSSHPublicKey == "" {
+		return errors.New("--ssh-public-key or --ssh-agent is required in non-interactive mode")
 	}
 
 	// Set defaults
@@ -105,7 +114,6 @@ func runNonInteractiveInit(configPath string) error {
 	// Build config
 	cfg := &config.Config{
 		DefaultProvider: "hetzner",
-		SSHPublicKey:    initSSHPublicKey,
 		OpencodeZenKey:  initOpencodeZenKey,
 		Providers: map[string]config.ProviderConfig{
 			"hetzner": {
@@ -117,6 +125,43 @@ func runNonInteractiveInit(configPath string) error {
 		},
 	}
 
+	// Handle SSH key configuration
+	if initSSHAgent {
+		// SSH agent mode
+		agent, err := sshagent.New()
+		if err != nil {
+			return fmt.Errorf("failed to connect to SSH agent: %w", err)
+		}
+		defer agent.Close()
+
+		var key *sshagent.AgentKey
+		if initSSHKeyFingerprint != "" {
+			// Use specific key by fingerprint
+			key, err = agent.GetKeyByFingerprint(initSSHKeyFingerprint)
+			if err != nil {
+				return err
+			}
+		} else {
+			// Use first available key
+			keys, err := agent.ListKeys()
+			if err != nil {
+				return err
+			}
+			key = &keys[0]
+		}
+
+		cfg.SSHKeySource = "agent"
+		cfg.SSHPublicKeyInline = strings.TrimSpace(key.PublicKey)
+		cfg.SSHKeyFingerprint = key.Fingerprint
+	} else {
+		// File mode
+		sshKeyPath := expandPath(initSSHPublicKey)
+		if _, err := os.Stat(sshKeyPath); err != nil {
+			return fmt.Errorf("SSH public key not found: %s", sshKeyPath)
+		}
+		cfg.SSHPublicKey = initSSHPublicKey
+	}
+
 	// Save config
 	if err := config.Save(configPath, cfg); err != nil {
 		return fmt.Errorf("failed to save configuration: %w", err)
@@ -124,6 +169,14 @@ func runNonInteractiveInit(configPath string) error {
 
 	fmt.Printf("Configuration saved to %s\n", configPath)
 	return nil
+}
+
+// sshKeyConfig holds SSH key configuration from interactive prompts.
+type sshKeyConfig struct {
+	source      string // "agent" or "file"
+	filePath    string // For file mode
+	publicKey   string // For agent mode
+	fingerprint string // For agent mode
 }
 
 // runInitFlow runs the interactive init flow.
@@ -149,8 +202,8 @@ func runInitFlow(configPath string, input io.Reader, output io.Writer) error {
 		return err
 	}
 
-	// Prompt for SSH public key path
-	sshKeyPath, err := promptSSHPublicKey(prompter, existingCfg)
+	// Prompt for SSH key configuration (agent or file)
+	sshCfg, err := promptSSHKeyConfig(prompter, output, existingCfg)
 	if err != nil {
 		return err
 	}
@@ -176,7 +229,6 @@ func runInitFlow(configPath string, input io.Reader, output io.Writer) error {
 	// Build config
 	cfg := &config.Config{
 		DefaultProvider: "hetzner",
-		SSHPublicKey:    sshKeyPath,
 		OpencodeZenKey:  zenKey,
 		Providers: map[string]config.ProviderConfig{
 			"hetzner": {
@@ -186,6 +238,15 @@ func runInitFlow(configPath string, input io.Reader, output io.Writer) error {
 				Image:      "ubuntu-24.04",
 			},
 		},
+	}
+
+	// Set SSH key configuration based on source
+	if sshCfg.source == "agent" {
+		cfg.SSHKeySource = "agent"
+		cfg.SSHPublicKeyInline = sshCfg.publicKey
+		cfg.SSHKeyFingerprint = sshCfg.fingerprint
+	} else {
+		cfg.SSHPublicKey = sshCfg.filePath
 	}
 
 	// Save config
@@ -310,12 +371,130 @@ func promptHetznerToken(prompter *ui.Prompter, existingCfg *config.Config) (stri
 	return token, nil
 }
 
-// promptSSHPublicKey prompts for the SSH public key path.
-func promptSSHPublicKey(prompter *ui.Prompter, existingCfg *config.Config) (string, error) {
+// promptSSHKeyConfig prompts for SSH key configuration (agent or file).
+func promptSSHKeyConfig(prompter *ui.Prompter, output io.Writer, existingCfg *config.Config) (*sshKeyConfig, error) {
+	// Check if SSH agent is available
+	agentAvailable := sshagent.IsAvailable()
+	keyCount := sshagent.KeyCount()
+
+	// If existing config uses agent mode, prefer that
+	if existingCfg != nil && existingCfg.IsAgentMode() {
+		fmt.Fprintln(output)
+		fmt.Fprintln(output, "Current SSH key source: SSH Agent")
+		fmt.Fprintf(output, "  Fingerprint: %s\n", existingCfg.SSHKeyFingerprint)
+
+		keepExisting, err := prompter.PromptYesNo("Keep current SSH agent key configuration?", true)
+		if err != nil {
+			return nil, err
+		}
+		if keepExisting {
+			return &sshKeyConfig{
+				source:      "agent",
+				publicKey:   existingCfg.SSHPublicKeyInline,
+				fingerprint: existingCfg.SSHKeyFingerprint,
+			}, nil
+		}
+	}
+
+	// Show SSH key source options
+	fmt.Fprintln(output)
+	fmt.Fprintln(output, "SSH key source:")
+
+	if agentAvailable {
+		fmt.Fprintf(output, "  1) SSH Agent (recommended) - %d key(s) available\n", keyCount)
+	} else {
+		fmt.Fprintln(output, "  1) SSH Agent - not available")
+	}
+	fmt.Fprintln(output, "  2) File path - specify path to public key file")
+	fmt.Fprintln(output)
+
+	// Determine default based on availability
+	defaultChoice := "1"
+	if !agentAvailable {
+		defaultChoice = "2"
+	}
+
+	choice, err := prompter.PromptWithDefault("Select", defaultChoice)
+	if err != nil {
+		return nil, err
+	}
+
+	choice = strings.TrimSpace(choice)
+
+	if choice == "1" {
+		if !agentAvailable {
+			fmt.Fprintln(output)
+			fmt.Fprintln(output, "No SSH agent found. Please ensure your SSH agent is running.")
+			fmt.Fprintln(output, "  - For 1Password: Enable SSH Agent in Settings > Developer")
+			fmt.Fprintln(output, "  - For ssh-agent: Run 'ssh-add ~/.ssh/id_ed25519'")
+			fmt.Fprintln(output)
+			fmt.Fprintln(output, "Falling back to file path mode...")
+			return promptSSHFilePath(prompter, existingCfg)
+		}
+		return promptSSHAgentKey(prompter, output)
+	}
+
+	return promptSSHFilePath(prompter, existingCfg)
+}
+
+// promptSSHAgentKey prompts for SSH key selection from agent.
+func promptSSHAgentKey(prompter *ui.Prompter, output io.Writer) (*sshKeyConfig, error) {
+	agent, err := sshagent.New()
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to SSH agent: %w", err)
+	}
+	defer agent.Close()
+
+	keys, err := agent.ListKeys()
+	if err != nil {
+		return nil, err
+	}
+
+	// If only one key, auto-select it
+	if len(keys) == 1 {
+		key := keys[0]
+		fmt.Fprintln(output)
+		fmt.Fprintf(output, "Using SSH key: %s\n", key.DisplayString())
+		return &sshKeyConfig{
+			source:      "agent",
+			publicKey:   strings.TrimSpace(key.PublicKey),
+			fingerprint: key.Fingerprint,
+		}, nil
+	}
+
+	// Multiple keys - show selection
+	fmt.Fprintln(output)
+	fmt.Fprintln(output, "Available SSH keys from agent:")
+	for i, key := range keys {
+		fmt.Fprintf(output, "  %d) %s\n", i+1, key.DisplayString())
+	}
+	fmt.Fprintln(output)
+
+	selection, err := prompter.PromptWithDefault("Select key", "1")
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse selection
+	var idx int
+	if _, err := fmt.Sscanf(selection, "%d", &idx); err != nil || idx < 1 || idx > len(keys) {
+		return nil, fmt.Errorf("invalid selection: %s", selection)
+	}
+
+	key := keys[idx-1]
+	return &sshKeyConfig{
+		source:      "agent",
+		publicKey:   strings.TrimSpace(key.PublicKey),
+		fingerprint: key.Fingerprint,
+	}, nil
+}
+
+// promptSSHFilePath prompts for SSH public key file path.
+func promptSSHFilePath(prompter *ui.Prompter, existingCfg *config.Config) (*sshKeyConfig, error) {
 	defaultPath := "~/.ssh/id_ed25519.pub"
 
-	// Check for existing value
-	if existingCfg != nil && existingCfg.SSHPublicKey != "" {
+	// Check for existing value (file mode only)
+	if existingCfg != nil && existingCfg.SSHPublicKey != "" && !existingCfg.IsAgentMode() {
 		defaultPath = existingCfg.SSHPublicKey
 	}
 
@@ -336,16 +515,19 @@ func promptSSHPublicKey(prompter *ui.Prompter, existingCfg *config.Config) (stri
 
 	path, err := prompter.PromptWithDefault("SSH public key path", defaultPath)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// Validate the path exists
 	expandedPath := expandPath(path)
 	if _, err := os.Stat(expandedPath); err != nil {
-		return "", fmt.Errorf("SSH public key not found: %s", expandedPath)
+		return nil, fmt.Errorf("SSH public key not found: %s", expandedPath)
 	}
 
-	return path, nil
+	return &sshKeyConfig{
+		source:   "file",
+		filePath: path,
+	}, nil
 }
 
 // promptRegion prompts for the default region.

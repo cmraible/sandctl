@@ -13,6 +13,8 @@ import (
 	_ "github.com/sandctl/sandctl/internal/hetzner"
 	"github.com/sandctl/sandctl/internal/provider"
 	"github.com/sandctl/sandctl/internal/session"
+	"github.com/sandctl/sandctl/internal/sshagent"
+	"github.com/sandctl/sandctl/internal/sshexec"
 )
 
 var (
@@ -155,10 +157,17 @@ func getProviderFromSession(sess *session.Session) (provider.Provider, error) {
 
 // getSSHPrivateKeyPath returns the path to the SSH private key.
 // Converts the public key path to private key path by removing .pub extension.
+// This only works for file mode - use createSSHClient for agent mode support.
 func getSSHPrivateKeyPath() (string, error) {
 	cfg, err := loadConfig()
 	if err != nil {
 		return "", err
+	}
+
+	// For agent mode, this function shouldn't be called directly
+	// Use createSSHClient instead
+	if cfg.IsAgentMode() {
+		return "", fmt.Errorf("cannot get private key path in SSH agent mode - use createSSHClient instead")
 	}
 
 	pubKeyPath := cfg.ExpandSSHPublicKeyPath()
@@ -169,6 +178,33 @@ func getSSHPrivateKeyPath() (string, error) {
 	// Convert .pub path to private key path
 	privateKeyPath := strings.TrimSuffix(pubKeyPath, ".pub")
 	return privateKeyPath, nil
+}
+
+// createSSHClient creates an SSH client for the given host.
+// Handles both file mode (using private key file) and agent mode (using SSH agent).
+func createSSHClient(host string, opts ...sshexec.ClientOption) (*sshexec.Client, error) {
+	cfg, err := loadConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	if cfg.IsAgentMode() {
+		// Agent mode - get signer from SSH agent by fingerprint
+		signer, err := sshagent.GetSignerByFingerprint(cfg.SSHKeyFingerprint)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get SSH key from agent: %w", err)
+		}
+		return sshexec.NewClientWithSigner(host, signer, opts...), nil
+	}
+
+	// File mode - use private key file
+	pubKeyPath := cfg.ExpandSSHPublicKeyPath()
+	if pubKeyPath == "" {
+		return nil, fmt.Errorf("ssh_public_key not configured")
+	}
+
+	privateKeyPath := strings.TrimSuffix(pubKeyPath, ".pub")
+	return sshexec.NewClient(host, privateKeyPath, opts...)
 }
 
 // isVerbose returns true if verbose output is enabled.
