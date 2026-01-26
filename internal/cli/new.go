@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"crypto/md5" //nolint:gosec // Used for unique naming, not security
 	"fmt"
 	"os"
 	"time"
@@ -299,14 +300,14 @@ func ensureSSHKey(ctx context.Context, cfg *config.Config, prov provider.Provide
 	return keyID, nil
 }
 
-// hashPrefix returns a prefix of the hash of the input string.
+// hashPrefix returns a prefix of the MD5 hash of the input string.
 func hashPrefix(s string, n int) string {
-	// Simple hash - just use first n chars of MD5 hex
-	h := fmt.Sprintf("%x", s)
-	if len(h) > n {
-		return h[:n]
+	h := md5.Sum([]byte(s)) //nolint:gosec // Not used for security, just for unique naming
+	hexStr := fmt.Sprintf("%x", h)
+	if len(hexStr) > n {
+		return hexStr[:n]
 	}
-	return h
+	return hexStr
 }
 
 // setupOpenCodeViaSSH installs and configures OpenCode via SSH.
