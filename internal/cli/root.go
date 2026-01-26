@@ -155,34 +155,9 @@ func getProviderFromSession(sess *session.Session) (provider.Provider, error) {
 	return getProvider(sess.Provider)
 }
 
-// getSSHPrivateKeyPath returns the path to the SSH private key.
-// Converts the public key path to private key path by removing .pub extension.
-// This only works for file mode - use createSSHClient for agent mode support.
-func getSSHPrivateKeyPath() (string, error) {
-	cfg, err := loadConfig()
-	if err != nil {
-		return "", err
-	}
-
-	// For agent mode, this function shouldn't be called directly
-	// Use createSSHClient instead
-	if cfg.IsAgentMode() {
-		return "", fmt.Errorf("cannot get private key path in SSH agent mode - use createSSHClient instead")
-	}
-
-	pubKeyPath := cfg.ExpandSSHPublicKeyPath()
-	if pubKeyPath == "" {
-		return "", fmt.Errorf("ssh_public_key not configured")
-	}
-
-	// Convert .pub path to private key path
-	privateKeyPath := strings.TrimSuffix(pubKeyPath, ".pub")
-	return privateKeyPath, nil
-}
-
 // createSSHClient creates an SSH client for the given host.
 // Handles both file mode (using private key file) and agent mode (using SSH agent).
-func createSSHClient(host string, opts ...sshexec.ClientOption) (*sshexec.Client, error) {
+func createSSHClient(host string) (*sshexec.Client, error) {
 	cfg, err := loadConfig()
 	if err != nil {
 		return nil, err
@@ -194,7 +169,7 @@ func createSSHClient(host string, opts ...sshexec.ClientOption) (*sshexec.Client
 		if err != nil {
 			return nil, fmt.Errorf("failed to get SSH key from agent: %w", err)
 		}
-		return sshexec.NewClientWithSigner(host, signer, opts...), nil
+		return sshexec.NewClientWithSigner(host, signer), nil
 	}
 
 	// File mode - use private key file
@@ -204,7 +179,7 @@ func createSSHClient(host string, opts ...sshexec.ClientOption) (*sshexec.Client
 	}
 
 	privateKeyPath := strings.TrimSuffix(pubKeyPath, ".pub")
-	return sshexec.NewClient(host, privateKeyPath, opts...)
+	return sshexec.NewClient(host, privateKeyPath)
 }
 
 // isVerbose returns true if verbose output is enabled.
