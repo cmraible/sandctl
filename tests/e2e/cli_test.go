@@ -9,8 +9,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"gopkg.in/yaml.v3"
 )
 
 // TestMain builds the sandctl binary once before all tests run.
@@ -77,9 +75,7 @@ func TestSandctl(t *testing.T) {
 
 	// Session lifecycle tests - require Hetzner API token
 	t.Run("sandctl new > creates session without arguments", testNewSucceeds)
-	t.Run("sandctl new > creates session with repo flag", testNewWithRepoFlag)
-	t.Run("sandctl new > creates session without repo flag (backward compat)", testNewWithoutRepoFlag)
-	t.Run("sandctl new > runs init script for configured repo", testNewRunsInitScript)
+	t.Run("sandctl new > creates session with template flag", testNewWithTemplateFlag)
 	t.Run("sandctl list > shows active sessions", testListShowsSessions)
 	t.Run("sandctl exec > runs command in session", testExecRunsCommand)
 	t.Run("sandctl destroy > removes session", testDestroyRemovesSession)
@@ -89,8 +85,7 @@ func TestSandctl(t *testing.T) {
 
 	// Error handling tests
 	t.Run("sandctl new > fails without config", testNewFailsWithoutConfig)
-	t.Run("sandctl new > fails with invalid repo", testNewWithInvalidRepo)
-	t.Run("sandctl new > fails with invalid repo format", testNewWithInvalidRepoFormat)
+	t.Run("sandctl new > fails with nonexistent template", testNewWithNonexistentTemplate)
 	t.Run("sandctl start > returns unknown command error", testStartReturnsUnknownCommand)
 	t.Run("sandctl exec > fails for nonexistent session", testExecFailsNonexistent)
 	t.Run("sandctl destroy > fails for nonexistent session", testDestroyFailsNonexistent)
@@ -451,28 +446,37 @@ func testConsoleFailsNonexistent(t *testing.T) {
 	t.Logf("console nonexistent session failed as expected: %s%s", stdout, stderr)
 }
 
-// testNewWithRepoFlag tests that sandctl new -R with an init script clones a repository into the VM.
-func testNewWithRepoFlag(t *testing.T) {
+// testNewWithTemplateFlag tests that sandctl new -T runs the template's init script.
+func testNewWithTemplateFlag(t *testing.T) {
 	token := requireHetznerToken(t)
 	sshKeyPath := requireSSHPublicKey(t)
 	openCodeKey := requireOpenCodeKey(t)
+
+	// Create temp home with config
 	home := newTempHome(t, token, sshKeyPath, openCodeKey)
 
-	// Create an init script that clones the repo using the environment variables
+	// Add a template with init script that creates a marker file
 	initScript := `#!/bin/bash
-set -ex
-echo "Cloning $SANDCTL_REPO to $SANDCTL_REPO_PATH"
-git clone "$SANDCTL_REPO_URL" "$SANDCTL_REPO_PATH"
-echo "Clone complete"
+set -e
+echo "Init script running for template: $SANDCTL_TEMPLATE_NAME"
+touch /tmp/sandctl-init-marker
+echo "INIT_SCRIPT_SUCCESS"
 `
-	home.addRepoInitScript(t, "octocat/Hello-World", initScript)
+	home.addTemplateInitScript(t, "TestTemplate", initScript)
 
-	// Use a small, fast-cloning public repository
-	t.Log("creating new session with repo flag")
-	stdout, stderr, exitCode := runSandctlWithHome(t, home, "new", "--no-console", "-R", "octocat/Hello-World")
+	t.Log("creating new session with template flag")
+	stdout, stderr, exitCode := runSandctlWithHome(t, home, "new", "--no-console", "-T", "TestTemplate")
 
 	if exitCode != 0 {
-		t.Fatalf("new with repo failed with exit code %d\nstdout: %s\nstderr: %s", exitCode, stdout, stderr)
+		t.Fatalf("new with template failed with exit code %d\nstdout: %s\nstderr: %s", exitCode, stdout, stderr)
+	}
+
+	// Check that init script output was shown
+	if !strings.Contains(stdout, "Running template init script") {
+		t.Errorf("expected 'Running template init script' in output, got: %s", stdout)
+	}
+	if !strings.Contains(stdout, "INIT_SCRIPT_SUCCESS") {
+		t.Errorf("expected init script output 'INIT_SCRIPT_SUCCESS' in output, got: %s", stdout)
 	}
 
 	// Parse and register cleanup for actual session name
@@ -483,152 +487,9 @@ echo "Clone complete"
 	// Wait for session to be ready
 	waitForSessionWithHome(t, home, sessionName, 5*time.Minute)
 
-	// Verify the repository was cloned
-	t.Log("verifying repository was cloned")
-	execStdout, execStderr, execExitCode := runSandctlWithHome(t, home, "exec", sessionName, "-c", "ls -la /home/agent/Hello-World")
-
-	if execExitCode != 0 {
-		t.Fatalf("exec failed to verify repo clone: exit %d\nstdout: %s\nstderr: %s", execExitCode, execStdout, execStderr)
-	}
-
-	// Check that the repo directory exists and has content (README should be there)
-	if !strings.Contains(execStdout, "README") {
-		t.Errorf("expected README in repo directory, got: %s", execStdout)
-	}
-
-	t.Logf("repo clone verified: %s", execStdout)
-}
-
-// testNewWithoutRepoFlag tests that sandctl new without -R flag preserves existing behavior.
-func testNewWithoutRepoFlag(t *testing.T) {
-	token := requireHetznerToken(t)
-	sshKeyPath := requireSSHPublicKey(t)
-	openCodeKey := requireOpenCodeKey(t)
-	configPath := newTempConfig(t, token, sshKeyPath, openCodeKey)
-
-	t.Log("creating new session without repo flag")
-	stdout, stderr, exitCode := runSandctlWithConfig(t, configPath, "new", "--no-console")
-
-	if exitCode != 0 {
-		t.Fatalf("new without repo failed with exit code %d\nstdout: %s\nstderr: %s", exitCode, stdout, stderr)
-	}
-
-	// Parse and register cleanup for actual session name
-	sessionName := parseSessionName(t, stdout)
-	t.Logf("session created: %s", sessionName)
-	registerSessionCleanup(t, configPath, sessionName)
-
-	// Wait for session to be ready
-	waitForSession(t, configPath, sessionName, 5*time.Minute)
-
-	// Verify no extra directories were created (backward compatibility)
-	t.Log("verifying no repository was cloned")
-	execStdout, _, execExitCode := runSandctlWithConfig(t, configPath, "exec", sessionName, "-c", "ls /root")
-
-	if execExitCode != 0 {
-		t.Logf("exec returned exit code %d (may be expected if home is empty)", execExitCode)
-	}
-
-	// The output should NOT contain Hello-World or other repo directories
-	if strings.Contains(execStdout, "Hello-World") {
-		t.Errorf("unexpected Hello-World directory found when no repo was specified: %s", execStdout)
-	}
-
-	t.Log("backward compatibility verified: no unwanted repos cloned")
-}
-
-// testNewRunsInitScript tests that sandctl new -R runs custom init script for configured repos.
-func testNewRunsInitScript(t *testing.T) {
-	token := requireHetznerToken(t)
-	sshKeyPath := requireSSHPublicKey(t)
-	openCodeKey := requireOpenCodeKey(t)
-
-	// Create temp directory for HOME
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, ".sandctl", "config")
-
-	// Create config directory
-	if err := os.MkdirAll(filepath.Dir(configPath), 0700); err != nil {
-		t.Fatalf("failed to create config dir: %v", err)
-	}
-
-	// Write config file
-	cfg := configData{
-		DefaultProvider: "hetzner",
-		SSHPublicKey:    sshKeyPath,
-		OpenCodeZenKey:  openCodeKey,
-		Providers: map[string]providerConfig{
-			"hetzner": {
-				Token:      token,
-				Region:     "ash",
-				ServerType: "cpx31",
-				Image:      "ubuntu-24.04",
-			},
-		},
-	}
-	data, err := yaml.Marshal(&cfg)
-	if err != nil {
-		t.Fatalf("failed to marshal config: %v", err)
-	}
-	if err := os.WriteFile(configPath, data, 0600); err != nil {
-		t.Fatalf("failed to write config file: %v", err)
-	}
-
-	// Create repo config with init script that creates a marker file
-	reposDir := filepath.Join(tmpDir, ".sandctl", "repos", "octocat-hello-world")
-	if err := os.MkdirAll(reposDir, 0700); err != nil {
-		t.Fatalf("failed to create repos dir: %v", err)
-	}
-
-	// Write repo config.yaml
-	repoConfig := `repo: octocat-hello-world
-original_name: octocat/Hello-World
-created_at: 2026-01-25T00:00:00Z
-`
-	if err := os.WriteFile(filepath.Join(reposDir, "config.yaml"), []byte(repoConfig), 0600); err != nil {
-		t.Fatalf("failed to write repo config: %v", err)
-	}
-
-	// Write init script that creates a marker file
-	initScript := `#!/bin/bash
-set -e
-echo "Init script running..."
-touch /tmp/sandctl-init-marker
-echo "INIT_SCRIPT_SUCCESS"
-`
-	if err := os.WriteFile(filepath.Join(reposDir, "init.sh"), []byte(initScript), 0700); err != nil {
-		t.Fatalf("failed to write init script: %v", err)
-	}
-
-	// Set HOME to temp dir so sandctl uses our repo config
-	t.Setenv("HOME", tmpDir)
-
-	t.Log("creating new session with configured repo init script")
-	stdout, stderr, exitCode := runSandctlWithConfig(t, configPath, "new", "--no-console", "-R", "octocat/Hello-World")
-
-	if exitCode != 0 {
-		t.Fatalf("new with init script failed with exit code %d\nstdout: %s\nstderr: %s", exitCode, stdout, stderr)
-	}
-
-	// Check that init script output was shown
-	if !strings.Contains(stdout, "Running repository init script") {
-		t.Errorf("expected 'Running repository init script' in output, got: %s", stdout)
-	}
-	if !strings.Contains(stdout, "INIT_SCRIPT_SUCCESS") {
-		t.Errorf("expected init script output 'INIT_SCRIPT_SUCCESS' in output, got: %s", stdout)
-	}
-
-	// Parse and register cleanup for actual session name
-	sessionName := parseSessionName(t, stdout)
-	t.Logf("session created: %s", sessionName)
-	registerSessionCleanup(t, configPath, sessionName)
-
-	// Wait for session to be ready
-	waitForSession(t, configPath, sessionName, 5*time.Minute)
-
 	// Verify the marker file was created by the init script
 	t.Log("verifying init script created marker file")
-	execStdout, execStderr, execExitCode := runSandctlWithConfig(t, configPath, "exec", sessionName, "-c", "test -f /tmp/sandctl-init-marker && echo MARKER_EXISTS")
+	execStdout, execStderr, execExitCode := runSandctlWithHome(t, home, "exec", sessionName, "-c", "test -f /tmp/sandctl-init-marker && echo MARKER_EXISTS")
 
 	if execExitCode != 0 {
 		t.Fatalf("exec failed to verify marker file: exit %d\nstdout: %s\nstderr: %s", execExitCode, execStdout, execStderr)
@@ -638,25 +499,18 @@ echo "INIT_SCRIPT_SUCCESS"
 		t.Errorf("expected marker file to exist, got: %s", execStdout)
 	}
 
-	t.Log("init script execution verified successfully")
+	t.Log("template init script execution verified successfully")
 }
 
-// testNewWithInvalidRepo tests behavior with a nonexistent GitHub repo.
-// Note: We don't pre-validate repo existence - cloud-init will attempt git clone
-// and fail silently if the repo doesn't exist. The VM is still created.
-func testNewWithInvalidRepo(t *testing.T) {
-	t.Skip("repo existence validation not implemented - git clone fails silently during cloud-init")
-}
-
-// testNewWithInvalidRepoFormat tests that sandctl new -R fails with invalid repo format.
-func testNewWithInvalidRepoFormat(t *testing.T) {
+// testNewWithNonexistentTemplate tests that sandctl new -T fails with a nonexistent template.
+func testNewWithNonexistentTemplate(t *testing.T) {
 	token := requireHetznerToken(t)
 	sshKeyPath := requireSSHPublicKey(t)
 	openCodeKey := requireOpenCodeKey(t)
 	configPath := newTempConfig(t, token, sshKeyPath, openCodeKey)
 
-	t.Log("creating new session with invalid repo format")
-	stdout, stderr, exitCode := runSandctlWithConfig(t, configPath, "new", "--no-console", "-R", "invalid-format-no-slash")
+	t.Log("creating new session with nonexistent template")
+	stdout, stderr, exitCode := runSandctlWithConfig(t, configPath, "new", "--no-console", "-T", "nonexistent-template")
 
 	combined := stdout + stderr
 
@@ -664,13 +518,13 @@ func testNewWithInvalidRepoFormat(t *testing.T) {
 		// If it somehow succeeded, clean up
 		sessionName := parseSessionName(t, stdout)
 		registerSessionCleanup(t, configPath, sessionName)
-		t.Fatalf("expected new with invalid repo format to fail, but it succeeded\nstdout: %s\nstderr: %s", stdout, stderr)
+		t.Fatalf("expected new with nonexistent template to fail, but it succeeded\nstdout: %s\nstderr: %s", stdout, stderr)
 	}
 
-	// Should have an error message about invalid format
-	if !strings.Contains(strings.ToLower(combined), "invalid") {
-		t.Errorf("expected 'invalid' in error message, got: %s", combined)
+	// Should have an error message about template not found
+	if !strings.Contains(strings.ToLower(combined), "not found") {
+		t.Errorf("expected 'not found' in error message, got: %s", combined)
 	}
 
-	t.Logf("new with invalid repo format failed as expected: %s", combined)
+	t.Logf("new with nonexistent template failed as expected: %s", combined)
 }

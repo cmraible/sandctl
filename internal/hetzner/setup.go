@@ -65,9 +65,3 @@ touch /var/lib/cloud/instance/boot-finished
 echo "sandctl setup complete" >> /var/log/cloud-init-output.log
 `
 }
-
-// CloudInitScriptWithRepo is deprecated - repo cloning now happens via SSH as the agent user.
-// This function is kept for backward compatibility but just returns the base script.
-func CloudInitScriptWithRepo(repoURL, targetPath string) string {
-	return CloudInitScript()
-}

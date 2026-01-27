@@ -215,33 +215,33 @@ func newTempHome(t *testing.T, hetznerToken, sshKeyPath, openCodeKey string) *te
 	}
 }
 
-// addRepoInitScript adds an init script for a repository in the temp home.
-// The repo should be in "owner/name" format (e.g., "octocat/Hello-World").
-func (h *tempHome) addRepoInitScript(t *testing.T, repo, scriptContent string) {
+// addTemplateInitScript adds an init script for a template in the temp home.
+// The name will be normalized (lowercase, hyphens).
+func (h *tempHome) addTemplateInitScript(t *testing.T, name, scriptContent string) {
 	t.Helper()
 
-	// Normalize repo name: owner/name -> owner-name
-	normalizedName := strings.ReplaceAll(strings.ToLower(repo), "/", "-")
+	// Normalize template name: lowercase
+	normalizedName := strings.ToLower(name)
 
-	repoDir := filepath.Join(h.HomeDir, ".sandctl", "repos", normalizedName)
-	if err := os.MkdirAll(repoDir, 0700); err != nil {
-		t.Fatalf("failed to create repo dir: %v", err)
+	templateDir := filepath.Join(h.HomeDir, ".sandctl", "templates", normalizedName)
+	if err := os.MkdirAll(templateDir, 0700); err != nil {
+		t.Fatalf("failed to create template dir: %v", err)
 	}
 
-	// Write config.yaml (required for the repo to be recognized)
-	configContent := "repo: " + normalizedName + "\noriginal_name: " + repo + "\n"
-	configPath := filepath.Join(repoDir, "config.yaml")
+	// Write config.yaml (required for the template to be recognized)
+	configContent := "template: " + normalizedName + "\noriginal_name: " + name + "\ncreated_at: 2026-01-25T00:00:00Z\n"
+	configPath := filepath.Join(templateDir, "config.yaml")
 	if err := os.WriteFile(configPath, []byte(configContent), 0600); err != nil {
-		t.Fatalf("failed to write repo config: %v", err)
+		t.Fatalf("failed to write template config: %v", err)
 	}
 
 	// Write init.sh
-	scriptPath := filepath.Join(repoDir, "init.sh")
+	scriptPath := filepath.Join(templateDir, "init.sh")
 	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0700); err != nil {
 		t.Fatalf("failed to write init script: %v", err)
 	}
 
-	t.Logf("created init script for %s at %s", repo, scriptPath)
+	t.Logf("created init script for template %s at %s", name, scriptPath)
 }
 
 // newTempConfig creates a sandctl config file in a temp directory with the given credentials.
