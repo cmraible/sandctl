@@ -206,7 +206,7 @@ func runNew(cmd *cobra.Command, args []string) error {
 		},
 	}
 
-	// Wait for cloud-init if repo cloning is requested
+	// Wait for cloud-init if repo is requested (init script will handle cloning)
 	if repoSpec != nil {
 		steps = append(steps, ui.ProgressStep{
 			Message: "Waiting for setup to complete",
@@ -241,7 +241,7 @@ func runNew(cmd *cobra.Command, args []string) error {
 		if initScript, err := repoStore.GetInitScript(repoSpec.String()); err == nil && initScript != "" {
 			fmt.Println()
 			fmt.Println("Running repository init script...")
-			initErr := runInitScript(vm.IPAddress, repoSpec.TargetPath(), initScript)
+			initErr := runInitScript(vm.IPAddress, repoSpec, initScript)
 			if initErr != nil {
 				initScriptFailed = true
 				fmt.Fprintln(os.Stderr)
@@ -279,9 +279,6 @@ func runNew(cmd *cobra.Command, args []string) error {
 
 	if shouldStartConsole {
 		fmt.Println("Connecting to console...")
-		if repoSpec != nil {
-			fmt.Printf("Repository cloned to: %s\n", repoSpec.TargetPath())
-		}
 		fmt.Println()
 
 		// Start SSH console
@@ -420,8 +417,8 @@ func startSSHConsole(ipAddress string) error {
 }
 
 // runInitScript uploads and executes a custom init script on the VM.
-// The script runs with the working directory set to the repository path.
-func runInitScript(ipAddress, repoPath, scriptContent string) error {
+// The script runs from the home directory with repo info passed as environment variables.
+func runInitScript(ipAddress string, repoSpec *repo.Spec, scriptContent string) error {
 	client, err := createSSHClient(ipAddress)
 	if err != nil {
 		return fmt.Errorf("failed to create SSH client: %w", err)
@@ -436,8 +433,13 @@ func runInitScript(ipAddress, repoPath, scriptContent string) error {
 		return fmt.Errorf("failed to upload init script: %w", err)
 	}
 
-	// Execute the script with output streaming
-	execCmd := fmt.Sprintf("cd %s && /tmp/sandctl-init.sh", repoPath)
+	// Execute the script with repo info as environment variables
+	execCmd := fmt.Sprintf(
+		"SANDCTL_REPO_URL=%s SANDCTL_REPO_PATH=%s SANDCTL_REPO=%s /tmp/sandctl-init.sh",
+		repoSpec.CloneURL,
+		repoSpec.TargetPath(),
+		repoSpec.String(),
+	)
 	err = client.ExecWithStreams(execCmd, nil, os.Stdout, os.Stderr)
 	if err != nil {
 		return fmt.Errorf("script execution failed: %w", err)

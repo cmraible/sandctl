@@ -14,7 +14,7 @@ import (
 
 const (
 	defaultSSHPort    = 22
-	defaultSSHUser    = "root"
+	defaultSSHUser    = "agent"
 	defaultSSHTimeout = 30 * time.Second
 )
 
