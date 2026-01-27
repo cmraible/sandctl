@@ -451,16 +451,25 @@ func testConsoleFailsNonexistent(t *testing.T) {
 	t.Logf("console nonexistent session failed as expected: %s%s", stdout, stderr)
 }
 
-// testNewWithRepoFlag tests that sandctl new -R clones a repository into the VM.
+// testNewWithRepoFlag tests that sandctl new -R with an init script clones a repository into the VM.
 func testNewWithRepoFlag(t *testing.T) {
 	token := requireHetznerToken(t)
 	sshKeyPath := requireSSHPublicKey(t)
 	openCodeKey := requireOpenCodeKey(t)
-	configPath := newTempConfig(t, token, sshKeyPath, openCodeKey)
+	home := newTempHome(t, token, sshKeyPath, openCodeKey)
+
+	// Create an init script that clones the repo using the environment variables
+	initScript := `#!/bin/bash
+set -ex
+echo "Cloning $SANDCTL_REPO to $SANDCTL_REPO_PATH"
+git clone "$SANDCTL_REPO_URL" "$SANDCTL_REPO_PATH"
+echo "Clone complete"
+`
+	home.addRepoInitScript(t, "octocat/Hello-World", initScript)
 
 	// Use a small, fast-cloning public repository
 	t.Log("creating new session with repo flag")
-	stdout, stderr, exitCode := runSandctlWithConfig(t, configPath, "new", "--no-console", "-R", "octocat/Hello-World")
+	stdout, stderr, exitCode := runSandctlWithHome(t, home, "new", "--no-console", "-R", "octocat/Hello-World")
 
 	if exitCode != 0 {
 		t.Fatalf("new with repo failed with exit code %d\nstdout: %s\nstderr: %s", exitCode, stdout, stderr)
@@ -469,14 +478,14 @@ func testNewWithRepoFlag(t *testing.T) {
 	// Parse and register cleanup for actual session name
 	sessionName := parseSessionName(t, stdout)
 	t.Logf("session created: %s", sessionName)
-	registerSessionCleanup(t, configPath, sessionName)
+	registerSessionCleanupWithHome(t, home, sessionName)
 
 	// Wait for session to be ready
-	waitForSession(t, configPath, sessionName, 5*time.Minute)
+	waitForSessionWithHome(t, home, sessionName, 5*time.Minute)
 
 	// Verify the repository was cloned
 	t.Log("verifying repository was cloned")
-	execStdout, execStderr, execExitCode := runSandctlWithConfig(t, configPath, "exec", sessionName, "-c", "ls -la /root/Hello-World")
+	execStdout, execStderr, execExitCode := runSandctlWithHome(t, home, "exec", sessionName, "-c", "ls -la /home/agent/Hello-World")
 
 	if execExitCode != 0 {
 		t.Fatalf("exec failed to verify repo clone: exit %d\nstdout: %s\nstderr: %s", execExitCode, execStdout, execStderr)
