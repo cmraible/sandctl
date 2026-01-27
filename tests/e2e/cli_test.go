@@ -9,8 +9,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"gopkg.in/yaml.v3"
 )
 
 // TestMain builds the sandctl binary once before all tests run.
@@ -454,68 +452,20 @@ func testNewWithTemplateFlag(t *testing.T) {
 	sshKeyPath := requireSSHPublicKey(t)
 	openCodeKey := requireOpenCodeKey(t)
 
-	// Create temp directory for HOME
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, ".sandctl", "config")
+	// Create temp home with config
+	home := newTempHome(t, token, sshKeyPath, openCodeKey)
 
-	// Create config directory
-	if err := os.MkdirAll(filepath.Dir(configPath), 0700); err != nil {
-		t.Fatalf("failed to create config dir: %v", err)
-	}
-
-	// Write config file
-	cfg := configData{
-		DefaultProvider: "hetzner",
-		SSHPublicKey:    sshKeyPath,
-		OpenCodeZenKey:  openCodeKey,
-		Providers: map[string]providerConfig{
-			"hetzner": {
-				Token:      token,
-				Region:     "ash",
-				ServerType: "cpx31",
-				Image:      "ubuntu-24.04",
-			},
-		},
-	}
-	data, err := yaml.Marshal(&cfg)
-	if err != nil {
-		t.Fatalf("failed to marshal config: %v", err)
-	}
-	if err := os.WriteFile(configPath, data, 0600); err != nil {
-		t.Fatalf("failed to write config file: %v", err)
-	}
-
-	// Create template config with init script that creates a marker file
-	templatesDir := filepath.Join(tmpDir, ".sandctl", "templates", "test-template")
-	if err := os.MkdirAll(templatesDir, 0700); err != nil {
-		t.Fatalf("failed to create templates dir: %v", err)
-	}
-
-	// Write template config.yaml
-	templateConfig := `template: test-template
-original_name: TestTemplate
-created_at: 2026-01-25T00:00:00Z
-`
-	if err := os.WriteFile(filepath.Join(templatesDir, "config.yaml"), []byte(templateConfig), 0600); err != nil {
-		t.Fatalf("failed to write template config: %v", err)
-	}
-
-	// Write init script that creates a marker file
+	// Add a template with init script that creates a marker file
 	initScript := `#!/bin/bash
 set -e
 echo "Init script running for template: $SANDCTL_TEMPLATE_NAME"
 touch /tmp/sandctl-init-marker
 echo "INIT_SCRIPT_SUCCESS"
 `
-	if err := os.WriteFile(filepath.Join(templatesDir, "init.sh"), []byte(initScript), 0700); err != nil {
-		t.Fatalf("failed to write init script: %v", err)
-	}
-
-	// Set HOME to temp dir so sandctl uses our template config
-	t.Setenv("HOME", tmpDir)
+	home.addTemplateInitScript(t, "TestTemplate", initScript)
 
 	t.Log("creating new session with template flag")
-	stdout, stderr, exitCode := runSandctlWithConfig(t, configPath, "new", "--no-console", "-T", "TestTemplate")
+	stdout, stderr, exitCode := runSandctlWithHome(t, home, "new", "--no-console", "-T", "TestTemplate")
 
 	if exitCode != 0 {
 		t.Fatalf("new with template failed with exit code %d\nstdout: %s\nstderr: %s", exitCode, stdout, stderr)
@@ -532,14 +482,14 @@ echo "INIT_SCRIPT_SUCCESS"
 	// Parse and register cleanup for actual session name
 	sessionName := parseSessionName(t, stdout)
 	t.Logf("session created: %s", sessionName)
-	registerSessionCleanup(t, configPath, sessionName)
+	registerSessionCleanupWithHome(t, home, sessionName)
 
 	// Wait for session to be ready
-	waitForSession(t, configPath, sessionName, 5*time.Minute)
+	waitForSessionWithHome(t, home, sessionName, 5*time.Minute)
 
 	// Verify the marker file was created by the init script
 	t.Log("verifying init script created marker file")
-	execStdout, execStderr, execExitCode := runSandctlWithConfig(t, configPath, "exec", sessionName, "-c", "test -f /tmp/sandctl-init-marker && echo MARKER_EXISTS")
+	execStdout, execStderr, execExitCode := runSandctlWithHome(t, home, "exec", sessionName, "-c", "test -f /tmp/sandctl-init-marker && echo MARKER_EXISTS")
 
 	if execExitCode != 0 {
 		t.Fatalf("exec failed to verify marker file: exit %d\nstdout: %s\nstderr: %s", execExitCode, execStdout, execStderr)
