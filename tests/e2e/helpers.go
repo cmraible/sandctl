@@ -54,6 +54,33 @@ func runSandctlWithConfig(t *testing.T, configPath string, args ...string) (stdo
 	return runSandctl(t, fullArgs...)
 }
 
+// runSandctlWithHome executes sandctl with a custom HOME directory (for repo init scripts).
+func runSandctlWithHome(t *testing.T, home *tempHome, args ...string) (stdout, stderr string, exitCode int) {
+	t.Helper()
+
+	fullArgs := append([]string{"--config", home.ConfigPath}, args...)
+
+	cmd := exec.Command(binaryPath, fullArgs...)
+	cmd.Env = append(os.Environ(), "HOME="+home.HomeDir)
+	var stdoutBuf, stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+
+	err := cmd.Run()
+	stdout = stdoutBuf.String()
+	stderr = stderrBuf.String()
+
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		} else {
+			t.Fatalf("failed to run sandctl: %v", err)
+		}
+	}
+
+	return stdout, stderr, exitCode
+}
+
 // requireHetznerToken returns the HETZNER_API_TOKEN from environment or fails the test.
 func requireHetznerToken(t *testing.T) string {
 	t.Helper()
@@ -140,8 +167,86 @@ type configData struct {
 	Providers       map[string]providerConfig `yaml:"providers"`
 }
 
+// tempHome represents a temporary home directory for sandctl tests.
+type tempHome struct {
+	HomeDir    string // The temp home directory (set as HOME env var)
+	ConfigPath string // Path to the sandctl config file
+}
+
+// newTempHome creates a temp directory structure that acts as HOME for sandctl.
+// This allows tests to configure repo init scripts and other user-specific settings.
+func newTempHome(t *testing.T, hetznerToken, sshKeyPath, openCodeKey string) *tempHome {
+	t.Helper()
+
+	tmpDir := t.TempDir()
+	sandctlDir := filepath.Join(tmpDir, ".sandctl")
+	if err := os.MkdirAll(sandctlDir, 0700); err != nil {
+		t.Fatalf("failed to create .sandctl dir: %v", err)
+	}
+
+	configPath := filepath.Join(sandctlDir, "config")
+
+	cfg := configData{
+		DefaultProvider: "hetzner",
+		SSHPublicKey:    sshKeyPath,
+		OpenCodeZenKey:  openCodeKey,
+		Providers: map[string]providerConfig{
+			"hetzner": {
+				Token:      hetznerToken,
+				Region:     "ash",
+				ServerType: "cpx31",
+				Image:      "ubuntu-24.04",
+			},
+		},
+	}
+
+	data, err := yaml.Marshal(&cfg)
+	if err != nil {
+		t.Fatalf("failed to marshal config: %v", err)
+	}
+
+	if err := os.WriteFile(configPath, data, 0600); err != nil {
+		t.Fatalf("failed to write config file: %v", err)
+	}
+
+	return &tempHome{
+		HomeDir:    tmpDir,
+		ConfigPath: configPath,
+	}
+}
+
+// addRepoInitScript adds an init script for a repository in the temp home.
+// The repo should be in "owner/name" format (e.g., "octocat/Hello-World").
+func (h *tempHome) addRepoInitScript(t *testing.T, repo, scriptContent string) {
+	t.Helper()
+
+	// Normalize repo name: owner/name -> owner-name
+	normalizedName := strings.ReplaceAll(strings.ToLower(repo), "/", "-")
+
+	repoDir := filepath.Join(h.HomeDir, ".sandctl", "repos", normalizedName)
+	if err := os.MkdirAll(repoDir, 0700); err != nil {
+		t.Fatalf("failed to create repo dir: %v", err)
+	}
+
+	// Write config.yaml (required for the repo to be recognized)
+	configContent := "repo: " + normalizedName + "\noriginal_name: " + repo + "\n"
+	configPath := filepath.Join(repoDir, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(configContent), 0600); err != nil {
+		t.Fatalf("failed to write repo config: %v", err)
+	}
+
+	// Write init.sh
+	scriptPath := filepath.Join(repoDir, "init.sh")
+	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0700); err != nil {
+		t.Fatalf("failed to write init script: %v", err)
+	}
+
+	t.Logf("created init script for %s at %s", repo, scriptPath)
+}
+
 // newTempConfig creates a sandctl config file in a temp directory with the given credentials.
 // Returns the path to the config file.
+// Deprecated: Use newTempHome for tests that need repo init scripts.
 func newTempConfig(t *testing.T, hetznerToken, sshKeyPath, openCodeKey string) string {
 	t.Helper()
 
@@ -188,6 +293,19 @@ func registerSessionCleanup(t *testing.T, configPath, sessionName string) {
 	})
 }
 
+// registerSessionCleanupWithHome registers a cleanup function using a tempHome.
+func registerSessionCleanupWithHome(t *testing.T, home *tempHome, sessionName string) {
+	t.Helper()
+
+	t.Cleanup(func() {
+		t.Logf("cleaning up session: %s", sessionName)
+		stdout, stderr, exitCode := runSandctlWithHome(t, home, "destroy", sessionName, "--force")
+		if exitCode != 0 {
+			t.Logf("warning: cleanup of session %s failed (exit %d): %s%s", sessionName, exitCode, stdout, stderr)
+		}
+	})
+}
+
 // parseSessionName extracts the session name from sandctl new output.
 // Looks for "Session created: <name>" pattern.
 func parseSessionName(t *testing.T, output string) string {
@@ -215,6 +333,26 @@ func waitForSession(t *testing.T, configPath, sessionName string, timeout time.D
 
 	for time.Now().Before(deadline) {
 		stdout, _, exitCode := runSandctlWithConfig(t, configPath, "list")
+		if exitCode == 0 && strings.Contains(stdout, sessionName) && strings.Contains(stdout, "running") {
+			t.Logf("session %s is ready", sessionName)
+			return
+		}
+		t.Logf("waiting for session %s to be ready...", sessionName)
+		time.Sleep(pollInterval)
+	}
+
+	t.Fatalf("timeout waiting for session %s to be ready", sessionName)
+}
+
+// waitForSessionWithHome waits for a session to be ready using a tempHome.
+func waitForSessionWithHome(t *testing.T, home *tempHome, sessionName string, timeout time.Duration) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	pollInterval := 5 * time.Second
+
+	for time.Now().Before(deadline) {
+		stdout, _, exitCode := runSandctlWithHome(t, home, "list")
 		if exitCode == 0 && strings.Contains(stdout, sessionName) && strings.Contains(stdout, "running") {
 			t.Logf("session %s is ready", sessionName)
 			return
