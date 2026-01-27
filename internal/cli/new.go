@@ -206,15 +206,13 @@ func runNew(cmd *cobra.Command, args []string) error {
 		},
 	}
 
-	// Wait for cloud-init if repo is requested (init script will handle cloning)
-	if repoSpec != nil {
-		steps = append(steps, ui.ProgressStep{
-			Message: "Waiting for setup to complete",
-			Action: func() error {
-				return waitForCloudInit(vm.IPAddress, 10*time.Minute)
-			},
-		})
-	}
+	// Wait for cloud-init to complete (creates agent user with SSH access)
+	steps = append(steps, ui.ProgressStep{
+		Message: "Waiting for setup to complete",
+		Action: func() error {
+			return waitForCloudInit(vm.IPAddress, 10*time.Minute)
+		},
+	})
 
 	// Add OpenCode setup if configured
 	if cfg.OpencodeZenKey != "" {
