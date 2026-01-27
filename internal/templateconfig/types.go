@@ -1,5 +1,5 @@
-// Package repoconfig handles repository initialization script configuration.
-package repoconfig
+// Package templateconfig handles template initialization script configuration.
+package templateconfig
 
 import (
 	"fmt"
@@ -35,12 +35,12 @@ func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
-// RepoConfig represents a user's initialization configuration for a GitHub repository.
-type RepoConfig struct {
-	// Repo is the normalized repository identifier (lowercase, owner-repo format).
-	Repo string `yaml:"repo"`
+// TemplateConfig represents a template's configuration metadata.
+type TemplateConfig struct {
+	// Template is the normalized template name (lowercase, hyphens).
+	Template string `yaml:"template"`
 
-	// OriginalName is the original repository name as entered by user (preserves casing).
+	// OriginalName is the user-provided template name (preserves casing).
 	OriginalName string `yaml:"original_name"`
 
 	// CreatedAt is when the configuration was created.
@@ -51,9 +51,9 @@ type RepoConfig struct {
 }
 
 // GetTimeout returns the timeout duration, using default if not set.
-func (r *RepoConfig) GetTimeout() time.Duration {
-	if r.Timeout.Duration == 0 {
+func (c *TemplateConfig) GetTimeout() time.Duration {
+	if c.Timeout.Duration == 0 {
 		return DefaultTimeout
 	}
-	return r.Timeout.Duration
+	return c.Timeout.Duration
 }

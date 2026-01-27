@@ -14,21 +14,20 @@ import (
 	"github.com/sandctl/sandctl/internal/config"
 	"github.com/sandctl/sandctl/internal/hetzner"
 	"github.com/sandctl/sandctl/internal/provider"
-	"github.com/sandctl/sandctl/internal/repo"
-	"github.com/sandctl/sandctl/internal/repoconfig"
 	"github.com/sandctl/sandctl/internal/session"
 	"github.com/sandctl/sandctl/internal/sshexec"
+	"github.com/sandctl/sandctl/internal/templateconfig"
 	"github.com/sandctl/sandctl/internal/ui"
 )
 
 var (
-	newTimeout  string
-	noConsole   bool
-	repoFlag    string
-	providerArg string
-	regionArg   string
-	serverType  string
-	imageArg    string
+	newTimeout   string
+	noConsole    bool
+	templateFlag string
+	providerArg  string
+	regionArg    string
+	serverType   string
+	imageArg     string
 )
 
 var newCmd = &cobra.Command{
@@ -44,11 +43,8 @@ not a terminal).`,
 	Example: `  # Create a new session and connect automatically
   sandctl new
 
-  # Create with a GitHub repository cloned
-  sandctl new -R TryGhost/Ghost
-
-  # Clone from full GitHub URL
-  sandctl new --repo https://github.com/facebook/react
+  # Create with a template
+  sandctl new -T Ghost
 
   # Create with auto-destroy timeout
   sandctl new --timeout 2h
@@ -64,7 +60,7 @@ not a terminal).`,
 func init() {
 	newCmd.Flags().StringVarP(&newTimeout, "timeout", "t", "", "auto-destroy after duration (e.g., 1h, 30m)")
 	newCmd.Flags().BoolVar(&noConsole, "no-console", false, "skip automatic console connection after provisioning")
-	newCmd.Flags().StringVarP(&repoFlag, "repo", "R", "", "GitHub repository to clone (owner/repo or full URL)")
+	newCmd.Flags().StringVarP(&templateFlag, "template", "T", "", "template to use for initialization")
 	newCmd.Flags().StringVarP(&providerArg, "provider", "p", "", "provider to use (default: from config)")
 	newCmd.Flags().StringVar(&regionArg, "region", "", "datacenter region (overrides config default)")
 	newCmd.Flags().StringVar(&serverType, "server-type", "", "server hardware type (overrides config default)")
@@ -98,14 +94,18 @@ func runNew(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Parse repository specification if provided
-	var repoSpec *repo.Spec
-	if repoFlag != "" {
-		repoSpec, err = repo.Parse(repoFlag)
+	// Look up template if provided
+	var tmplConfig *templateconfig.TemplateConfig
+	if templateFlag != "" {
+		store := getTemplateStore()
+		tmplConfig, err = store.Get(templateFlag)
 		if err != nil {
-			return fmt.Errorf("invalid repository: %w", err)
+			if _, ok := err.(*templateconfig.NotFoundError); ok {
+				return fmt.Errorf("template '%s' not found. Use 'sandctl template list' to see available templates", templateFlag)
+			}
+			return fmt.Errorf("failed to load template: %w", err)
 		}
-		verboseLog("Repository: %s -> %s", repoSpec.String(), repoSpec.CloneURL)
+		verboseLog("Template: %s (normalized: %s)", tmplConfig.OriginalName, tmplConfig.Template)
 	}
 
 	// Parse timeout if provided
@@ -146,9 +146,6 @@ func runNew(cmd *cobra.Command, args []string) error {
 
 	// Build cloud-init script
 	userData := hetzner.CloudInitScript()
-	if repoSpec != nil {
-		userData = hetzner.CloudInitScriptWithRepo(repoSpec.CloneURL, repoSpec.TargetPath())
-	}
 
 	// Create VM
 	createOpts := provider.CreateOpts{
@@ -232,14 +229,14 @@ func runNew(cmd *cobra.Command, args []string) error {
 		return provisionErr
 	}
 
-	// Check for and run custom init script for the repository
+	// Check for and run custom init script for the template
 	var initScriptFailed bool
-	if repoSpec != nil {
-		repoStore := repoconfig.NewStore("")
-		if initScript, err := repoStore.GetInitScript(repoSpec.String()); err == nil && initScript != "" {
+	if tmplConfig != nil {
+		tmplStore := getTemplateStore()
+		if initScript, err := tmplStore.GetInitScript(tmplConfig.Template); err == nil && initScript != "" {
 			fmt.Println()
-			fmt.Println("Running repository init script...")
-			initErr := runInitScript(vm.IPAddress, repoSpec, initScript)
+			fmt.Println("Running template init script...")
+			initErr := runTemplateInitScript(vm.IPAddress, tmplConfig, initScript)
 			if initErr != nil {
 				initScriptFailed = true
 				fmt.Fprintln(os.Stderr)
@@ -414,9 +411,9 @@ func startSSHConsole(ipAddress string) error {
 	return client.Console(sshexec.ConsoleOptions{})
 }
 
-// runInitScript uploads and executes a custom init script on the VM.
-// The script runs from the home directory with repo info passed as environment variables.
-func runInitScript(ipAddress string, repoSpec *repo.Spec, scriptContent string) error {
+// runTemplateInitScript uploads and executes a custom init script on the VM.
+// The script runs from the home directory with template info passed as environment variables.
+func runTemplateInitScript(ipAddress string, tmplConfig *templateconfig.TemplateConfig, scriptContent string) error {
 	client, err := createSSHClient(ipAddress)
 	if err != nil {
 		return fmt.Errorf("failed to create SSH client: %w", err)
@@ -431,12 +428,11 @@ func runInitScript(ipAddress string, repoSpec *repo.Spec, scriptContent string) 
 		return fmt.Errorf("failed to upload init script: %w", err)
 	}
 
-	// Execute the script with repo info as environment variables
+	// Execute the script with template info as environment variables
 	execCmd := fmt.Sprintf(
-		"SANDCTL_REPO_URL=%s SANDCTL_REPO_PATH=%s SANDCTL_REPO=%s /tmp/sandctl-init.sh",
-		repoSpec.CloneURL,
-		repoSpec.TargetPath(),
-		repoSpec.String(),
+		"SANDCTL_TEMPLATE_NAME=%q SANDCTL_TEMPLATE_NORMALIZED=%q /tmp/sandctl-init.sh",
+		tmplConfig.OriginalName,
+		tmplConfig.Template,
 	)
 	err = client.ExecWithStreams(execCmd, nil, os.Stdout, os.Stderr)
 	if err != nil {
