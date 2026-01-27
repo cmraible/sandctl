@@ -67,7 +67,7 @@ func runTemplateRemove(cmd *cobra.Command, args []string) error {
 
 		response = strings.TrimSpace(strings.ToLower(response))
 		if response != "y" && response != "yes" {
-			fmt.Println("Cancelled.")
+			fmt.Println("Canceled.")
 			return nil
 		}
 	}

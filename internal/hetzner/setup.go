@@ -65,4 +65,3 @@ touch /var/lib/cloud/instance/boot-finished
 echo "sandctl setup complete" >> /var/log/cloud-init-output.log
 `
 }
-
