@@ -199,7 +199,7 @@ func TestRepoSpec_TargetPath(t *testing.T) {
 		Name:  "Ghost",
 	}
 
-	want := "/root/Ghost"
+	want := "/home/agent/Ghost"
 	if got := spec.TargetPath(); got != want {
 		t.Errorf("TargetPath() = %q, want %q", got, want)
 	}
