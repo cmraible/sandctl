@@ -337,7 +337,8 @@ func CheckConnection(host string, port int, timeout time.Duration) bool {
 // Returns error if transfer fails.
 //
 // Implementation uses base64 encoding to safely handle any file content:
-//   echo '{base64}' | base64 -d > {remotePath} && chmod {permissions} {remotePath}
+//
+//	echo '{base64}' | base64 -d > {remotePath} && chmod {permissions} {remotePath}
 func (c *Client) TransferFile(content []byte, remotePath string, permissions string) error {
 	// Base64 encode the content
 	encoded := base64.StdEncoding.EncodeToString(content)

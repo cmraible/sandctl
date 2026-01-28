@@ -241,7 +241,7 @@ func runNew(cmd *cobra.Command, args []string) error {
 				verboseLog("Warning: failed to connect for Git config transfer: %v", err)
 			} else {
 				defer client.Close()
-				if err := transferGitConfig(client, gitContent, "agent"); err != nil {
+				if err := transferGitConfig(client, gitContent); err != nil {
 					// Non-fatal error per FR-021
 					verboseLog("Warning: failed to transfer Git config: %v", err)
 				}

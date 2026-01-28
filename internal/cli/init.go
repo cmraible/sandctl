@@ -186,9 +186,9 @@ type GitConfigMethod int
 
 const (
 	MethodDefault   GitConfigMethod = iota // Use ~/.gitconfig
-	MethodCustom                            // Use custom path
-	MethodCreateNew                         // Generate from name/email
-	MethodSkip                              // Skip Git config
+	MethodCustom                           // Use custom path
+	MethodCreateNew                        // Generate from name/email
+	MethodSkip                             // Skip Git config
 )
 
 // GitIdentity holds user identity information for Git configuration.
@@ -645,7 +645,7 @@ func selectGitConfigMethod(prompter *ui.Prompter) (GitConfigMethod, error) {
 	hasDefaultConfig := false
 	if err == nil {
 		gitconfigPath := filepath.Join(home, ".gitconfig")
-		if _, err := os.Stat(gitconfigPath); err == nil {
+		if _, statErr := os.Stat(gitconfigPath); statErr == nil {
 			// Default option available (FR-003, FR-004)
 			options = append(options, ui.SelectOption{
 				Value:       "default",
@@ -723,11 +723,12 @@ func promptCustomGitConfigPath(prompter *ui.Prompter) (string, error) {
 		// Check if file exists
 		info, err := os.Stat(absPath)
 		if err != nil {
-			if os.IsNotExist(err) {
+			switch {
+			case os.IsNotExist(err):
 				fmt.Printf("File not found: %s. Please check the path and try again.\n\n", path)
-			} else if os.IsPermission(err) {
+			case os.IsPermission(err):
 				fmt.Printf("Cannot read file: %s (permission denied). Please check file permissions.\n\n", path)
-			} else {
+			default:
 				fmt.Printf("Error accessing file: %v\n\n", err)
 			}
 			continue
@@ -842,7 +843,7 @@ func promptGitConfig(prompter *ui.Prompter) (method GitConfigMethod, content []b
 // transferGitConfig uploads .gitconfig content to the VM via SSH.
 // Checks if VM already has .gitconfig and skips if present (FR-015).
 // Sets permissions to 0600 on transferred file (FR-018).
-func transferGitConfig(client *sshexec.Client, content []byte, user string) error {
+func transferGitConfig(client *sshexec.Client, content []byte) error {
 	// Check if .gitconfig already exists in VM (FR-014)
 	checkCmd := "test -f ~/.gitconfig && echo 'exists' || echo 'missing'"
 	result, err := client.Exec(checkCmd)
