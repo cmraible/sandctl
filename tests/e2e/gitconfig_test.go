@@ -147,7 +147,7 @@ func TestGitConfig_New_AutoApply(t *testing.T) {
 
 	// Verify Git config was transferred by running git config in the VM
 	t.Log("verifying Git config in VM...")
-	stdout, stderr, exitCode = runSandctlWithConfig(t, configPath, "exec", sessionName, "--", "git", "config", "--global", "user.name")
+	stdout, stderr, exitCode = runSandctlWithConfig(t, configPath, "exec", sessionName, "-c", "git config --global user.name")
 	if exitCode != 0 {
 		t.Fatalf("git config --global user.name failed (exit %d):\nstdout: %s\nstderr: %s", exitCode, stdout, stderr)
 	}
@@ -157,7 +157,7 @@ func TestGitConfig_New_AutoApply(t *testing.T) {
 		t.Errorf("git config user.name = %q, want 'E2E Test User'", gitName)
 	}
 
-	stdout, stderr, exitCode = runSandctlWithConfig(t, configPath, "exec", sessionName, "--", "git", "config", "--global", "user.email")
+	stdout, stderr, exitCode = runSandctlWithConfig(t, configPath, "exec", sessionName, "-c", "git config --global user.email")
 	if exitCode != 0 {
 		t.Fatalf("git config --global user.email failed (exit %d):\nstdout: %s\nstderr: %s", exitCode, stdout, stderr)
 	}
@@ -169,7 +169,7 @@ func TestGitConfig_New_AutoApply(t *testing.T) {
 
 	// Verify .gitconfig file exists with correct permissions
 	t.Log("verifying .gitconfig file permissions...")
-	stdout, stderr, exitCode = runSandctlWithConfig(t, configPath, "exec", sessionName, "--", "stat", "-c", "%a", "/home/agent/.gitconfig")
+	stdout, stderr, exitCode = runSandctlWithConfig(t, configPath, "exec", sessionName, "-c", "stat -c %a /home/agent/.gitconfig")
 	if exitCode != 0 {
 		t.Fatalf("stat .gitconfig failed (exit %d):\nstdout: %s\nstderr: %s", exitCode, stdout, stderr)
 	}
@@ -234,7 +234,7 @@ func TestGitConfig_New_Skip(t *testing.T) {
 
 	// Verify .gitconfig does NOT exist in VM
 	t.Log("verifying .gitconfig was not created...")
-	stdout, stderr, exitCode = runSandctlWithConfig(t, configPath, "exec", sessionName, "--", "test", "-f", "/home/agent/.gitconfig")
+	stdout, stderr, exitCode = runSandctlWithConfig(t, configPath, "exec", sessionName, "-c", "test -f /home/agent/.gitconfig")
 	if exitCode == 0 {
 		t.Error(".gitconfig should not exist when method is skip, but it does")
 	}
@@ -298,7 +298,7 @@ func TestGitConfig_New_CreateNew(t *testing.T) {
 
 	// Verify Git config values
 	t.Log("verifying generated Git config in VM...")
-	stdout, stderr, exitCode = runSandctlWithConfig(t, configPath, "exec", sessionName, "--", "git", "config", "--global", "user.name")
+	stdout, stderr, exitCode = runSandctlWithConfig(t, configPath, "exec", sessionName, "-c", "git config --global user.name")
 	if exitCode != 0 {
 		t.Fatalf("git config --global user.name failed (exit %d):\nstdout: %s\nstderr: %s", exitCode, stdout, stderr)
 	}
@@ -308,7 +308,7 @@ func TestGitConfig_New_CreateNew(t *testing.T) {
 		t.Errorf("git config user.name = %q, want 'Created User'", gitName)
 	}
 
-	stdout, stderr, exitCode = runSandctlWithConfig(t, configPath, "exec", sessionName, "--", "git", "config", "--global", "user.email")
+	stdout, stderr, exitCode = runSandctlWithConfig(t, configPath, "exec", sessionName, "-c", "git config --global user.email")
 	if exitCode != 0 {
 		t.Fatalf("git config --global user.email failed (exit %d):\nstdout: %s\nstderr: %s", exitCode, stdout, stderr)
 	}
@@ -378,7 +378,7 @@ func TestGitConfig_PreserveExisting(t *testing.T) {
 	// Manually create a .gitconfig with different values
 	t.Log("manually creating existing .gitconfig in VM...")
 	existingConfig := "[user]\n\tname = Existing User\n\temail = existing@example.com\n"
-	_, _, exitCode = runSandctlWithConfig(t, configPath, "exec", sessionName, "--", "bash", "-c",
+	_, _, exitCode = runSandctlWithConfig(t, configPath, "exec", sessionName, "-c",
 		"echo '"+existingConfig+"' > ~/.gitconfig && chmod 600 ~/.gitconfig")
 	if exitCode != 0 {
 		t.Fatal("failed to create existing .gitconfig in VM")
@@ -388,7 +388,7 @@ func TestGitConfig_PreserveExisting(t *testing.T) {
 	// In practice, sandctl new would try to transfer but should preserve existing
 	// For this test, we verify the existing config is not overwritten
 	t.Log("verifying existing config is preserved...")
-	stdout, stderr, exitCode = runSandctlWithConfig(t, configPath, "exec", sessionName, "--", "git", "config", "--global", "user.name")
+	stdout, stderr, exitCode = runSandctlWithConfig(t, configPath, "exec", sessionName, "-c", "git config --global user.name")
 	if exitCode != 0 {
 		t.Fatalf("git config --global user.name failed (exit %d):\nstdout: %s\nstderr: %s", exitCode, stdout, stderr)
 	}
