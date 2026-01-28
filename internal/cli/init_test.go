@@ -241,3 +241,194 @@ providers:
 		t.Error("config should NOT be detected as legacy")
 	}
 }
+
+// TestValidateEmail tests email validation logic.
+func TestValidateEmail(t *testing.T) {
+	tests := []struct {
+		name    string
+		email   string
+		wantErr bool
+	}{
+		{"valid simple", "user@example.com", false},
+		{"valid with subdomain", "user@mail.example.com", false},
+		{"valid with plus", "user+test@example.com", false},
+		{"empty", "", true},
+		{"whitespace only", "   ", true},
+		{"no @", "userexample.com", true},
+		{"multiple @", "user@@example.com", true},
+		{"no username", "@example.com", true},
+		{"no domain", "user@", true},
+		{"domain without dot", "user@domain", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateEmail(tt.email)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateEmail(%q) error = %v, wantErr %v", tt.email, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestGenerateGitConfig tests Git config generation.
+func TestGenerateGitConfig(t *testing.T) {
+	identity := GitIdentity{
+		Name:  "John Doe",
+		Email: "john@example.com",
+	}
+
+	result := generateGitConfig(identity)
+	resultStr := string(result)
+
+	// Check that the config contains the expected sections
+	if !strings.Contains(resultStr, "[user]") {
+		t.Error("generated config should contain [user] section")
+	}
+	if !strings.Contains(resultStr, "name = John Doe") {
+		t.Error("generated config should contain name")
+	}
+	if !strings.Contains(resultStr, "email = john@example.com") {
+		t.Error("generated config should contain email")
+	}
+}
+
+// TestReadGitConfig tests reading a Git config file.
+func TestReadGitConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, ".gitconfig")
+
+	content := "[user]\n\tname = Test User\n\temail = test@example.com\n"
+	if err := os.WriteFile(configPath, []byte(content), 0600); err != nil {
+		t.Fatalf("failed to create test .gitconfig: %v", err)
+	}
+
+	result, err := readGitConfig(configPath)
+	if err != nil {
+		t.Errorf("readGitConfig() error = %v, want nil", err)
+	}
+
+	if string(result) != content {
+		t.Errorf("readGitConfig() content = %q, want %q", string(result), content)
+	}
+}
+
+// TestReadGitConfig_NotFound tests reading a non-existent file.
+func TestReadGitConfig_NotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "nonexistent.gitconfig")
+
+	_, err := readGitConfig(configPath)
+	if err == nil {
+		t.Error("readGitConfig() should return error for non-existent file")
+	}
+	if !os.IsNotExist(err) {
+		t.Errorf("readGitConfig() error should be IsNotExist, got: %v", err)
+	}
+}
+
+// TestReadGitConfig_Directory tests reading a directory instead of file.
+func TestReadGitConfig_Directory(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	_, err := readGitConfig(tmpDir)
+	if err == nil {
+		t.Error("readGitConfig() should return error for directory")
+	}
+	if !strings.Contains(err.Error(), "directory") {
+		t.Errorf("error should mention directory, got: %v", err)
+	}
+}
+
+// TestReadDefaultGitConfig tests reading the default ~/.gitconfig.
+func TestReadDefaultGitConfig(t *testing.T) {
+	// This test checks if the function works, but may skip if no .gitconfig exists
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("could not get home directory")
+	}
+
+	gitconfigPath := filepath.Join(home, ".gitconfig")
+	_, statErr := os.Stat(gitconfigPath)
+
+	content, err := readDefaultGitConfig()
+
+	if statErr == nil {
+		// .gitconfig exists, should read successfully
+		if err != nil {
+			t.Errorf("readDefaultGitConfig() error = %v, want nil (file exists)", err)
+		}
+		if len(content) == 0 {
+			t.Error("readDefaultGitConfig() returned empty content")
+		}
+	} else if os.IsNotExist(statErr) {
+		// .gitconfig doesn't exist, should return error
+		if err == nil {
+			t.Error("readDefaultGitConfig() should return error when ~/.gitconfig doesn't exist")
+		}
+	}
+}
+
+// TestGitMethodConversion tests conversion between GitConfigMethod and string.
+func TestGitMethodConversion(t *testing.T) {
+	tests := []struct {
+		method GitConfigMethod
+		str    string
+	}{
+		{MethodDefault, "default"},
+		{MethodCustom, "custom"},
+		{MethodCreateNew, "create_new"},
+		{MethodSkip, "skip"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.str, func(t *testing.T) {
+			// Test method to string
+			result := gitMethodToString(tt.method)
+			if result != tt.str {
+				t.Errorf("gitMethodToString(%v) = %q, want %q", tt.method, result, tt.str)
+			}
+
+			// Test string to method
+			method := stringToGitMethod(tt.str)
+			if method != tt.method {
+				t.Errorf("stringToGitMethod(%q) = %v, want %v", tt.str, method, tt.method)
+			}
+		})
+	}
+
+	// Test unknown string defaults to skip
+	result := stringToGitMethod("unknown")
+	if result != MethodSkip {
+		t.Errorf("stringToGitMethod('unknown') = %v, want MethodSkip", result)
+	}
+}
+
+// TestGitConfigEncoding tests encoding and decoding Git config content.
+func TestGitConfigEncoding(t *testing.T) {
+	original := []byte("[user]\n\tname = Test User\n\temail = test@example.com\n")
+
+	// Encode
+	encoded := encodeGitConfig(original)
+	if encoded == "" {
+		t.Error("encodeGitConfig() returned empty string")
+	}
+
+	// Decode
+	decoded, err := decodeGitConfig(encoded)
+	if err != nil {
+		t.Errorf("decodeGitConfig() error = %v, want nil", err)
+	}
+
+	if string(decoded) != string(original) {
+		t.Errorf("decoded content = %q, want %q", string(decoded), string(original))
+	}
+}
+
+// TestGitConfigEncoding_InvalidBase64 tests decoding invalid base64.
+func TestGitConfigEncoding_InvalidBase64(t *testing.T) {
+	_, err := decodeGitConfig("invalid!@#$%")
+	if err == nil {
+		t.Error("decodeGitConfig() should return error for invalid base64")
+	}
+}

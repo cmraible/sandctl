@@ -31,6 +31,10 @@ type Config struct {
 	SSHPublicKeyInline string `yaml:"ssh_public_key_inline,omitempty"` // Agent mode: full public key
 	SSHKeyFingerprint  string `yaml:"ssh_key_fingerprint,omitempty"`   // Agent mode: SHA256 fingerprint
 
+	// Git configuration fields
+	GitConfigMethod  string `yaml:"git_config_method,omitempty"`  // "default", "custom", "create_new", or "skip"
+	GitConfigContent string `yaml:"git_config_content,omitempty"` // Base64-encoded .gitconfig content
+
 	// Legacy fields (for migration detection)
 	SpritesToken   string `yaml:"sprites_token,omitempty"`
 	OpencodeZenKey string `yaml:"opencode_zen_key,omitempty"`

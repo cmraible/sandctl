@@ -229,6 +229,26 @@ func runNew(cmd *cobra.Command, args []string) error {
 		return provisionErr
 	}
 
+	// Set up Git configuration in the VM (if configured during init)
+	if cfg.GitConfigMethod != "" && cfg.GitConfigMethod != "skip" {
+		gitContent, err := decodeGitConfig(cfg.GitConfigContent)
+		if err != nil {
+			verboseLog("Warning: failed to decode Git config: %v", err)
+		} else if len(gitContent) > 0 {
+			// Transfer the Git config to the VM
+			client, err := createSSHClient(vm.IPAddress)
+			if err != nil {
+				verboseLog("Warning: failed to connect for Git config transfer: %v", err)
+			} else {
+				defer client.Close()
+				if err := transferGitConfig(client, gitContent, "agent"); err != nil {
+					// Non-fatal error per FR-021
+					verboseLog("Warning: failed to transfer Git config: %v", err)
+				}
+			}
+		}
+	}
+
 	// Check for and run custom init script for the template
 	var initScriptFailed bool
 	if tmplConfig != nil {

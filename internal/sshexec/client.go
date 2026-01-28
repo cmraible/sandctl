@@ -2,6 +2,7 @@
 package sshexec
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net"
 	"os"
@@ -323,4 +324,29 @@ func CheckConnection(host string, port int, timeout time.Duration) bool {
 	}
 	conn.Close()
 	return true
+}
+
+// TransferFile uploads file content to the remote host via base64 encoding.
+// This is a general-purpose file transfer utility.
+//
+// Parameters:
+//   - content: file content as bytes
+//   - remotePath: target path on remote host
+//   - permissions: file permissions (e.g., "0600" for user read/write only)
+//
+// Returns error if transfer fails.
+//
+// Implementation uses base64 encoding to safely handle any file content:
+//   echo '{base64}' | base64 -d > {remotePath} && chmod {permissions} {remotePath}
+func (c *Client) TransferFile(content []byte, remotePath string, permissions string) error {
+	// Base64 encode the content
+	encoded := base64.StdEncoding.EncodeToString(content)
+
+	// Create command to decode and write file with permissions
+	// Use single quotes around base64 string to prevent shell expansion
+	cmd := fmt.Sprintf("echo '%s' | base64 -d > %s && chmod %s %s", encoded, remotePath, permissions, remotePath)
+
+	// Execute the command
+	_, err := c.Exec(cmd)
+	return err
 }

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/sandctl/sandctl/internal/config"
 	"github.com/sandctl/sandctl/internal/sshagent"
+	"github.com/sandctl/sandctl/internal/sshexec"
 	"github.com/sandctl/sandctl/internal/ui"
 )
 
@@ -179,6 +181,22 @@ type sshKeyConfig struct {
 	fingerprint string // For agent mode
 }
 
+// GitConfigMethod represents the user's chosen method for Git configuration.
+type GitConfigMethod int
+
+const (
+	MethodDefault   GitConfigMethod = iota // Use ~/.gitconfig
+	MethodCustom                            // Use custom path
+	MethodCreateNew                         // Generate from name/email
+	MethodSkip                              // Skip Git config
+)
+
+// GitIdentity holds user identity information for Git configuration.
+type GitIdentity struct {
+	Name  string
+	Email string
+}
+
 // runInitFlow runs the interactive init flow.
 func runInitFlow(configPath string, input io.Reader, output io.Writer) error {
 	prompter := ui.NewPrompter(input, output)
@@ -226,6 +244,16 @@ func runInitFlow(configPath string, input io.Reader, output io.Writer) error {
 		return err
 	}
 
+	// Prompt for Git configuration (optional)
+	gitMethod, gitContent, err := promptGitConfig(prompter)
+	if err != nil {
+		// Git config is optional, so don't fail the entire init if it errors
+		fmt.Fprintf(output, "\nWarning: Git configuration failed: %v\n", err)
+		fmt.Fprintln(output, "You can configure Git manually in VMs or re-run 'sandctl init' later.")
+		gitMethod = MethodSkip
+		gitContent = nil
+	}
+
 	// Build config
 	cfg := &config.Config{
 		DefaultProvider: "hetzner",
@@ -238,6 +266,13 @@ func runInitFlow(configPath string, input io.Reader, output io.Writer) error {
 				Image:      "ubuntu-24.04",
 			},
 		},
+	}
+
+	// Save Git config settings
+	cfg.GitConfigMethod = gitMethodToString(gitMethod)
+	if gitMethod != MethodSkip && len(gitContent) > 0 {
+		// Encode content as base64 for safe YAML storage
+		cfg.GitConfigContent = encodeGitConfig(gitContent)
 	}
 
 	// Set SSH key configuration based on source
@@ -598,6 +633,239 @@ func promptOpencodeZenKey(prompter *ui.Prompter, existingCfg *config.Config) (st
 	return key, nil
 }
 
+// selectGitConfigMethod prompts the user to choose how to configure Git.
+// The available options depend on whether ~/.gitconfig exists and is readable.
+func selectGitConfigMethod(prompter *ui.Prompter) (GitConfigMethod, error) {
+	var options []ui.SelectOption
+	methodMap := make(map[int]GitConfigMethod)
+	optionIndex := 0
+
+	// Check if ~/.gitconfig exists and is readable
+	home, err := os.UserHomeDir()
+	hasDefaultConfig := false
+	if err == nil {
+		gitconfigPath := filepath.Join(home, ".gitconfig")
+		if _, err := os.Stat(gitconfigPath); err == nil {
+			// Default option available (FR-003, FR-004)
+			options = append(options, ui.SelectOption{
+				Value:       "default",
+				Label:       "Default",
+				Description: "Use your ~/.gitconfig (recommended)",
+			})
+			methodMap[optionIndex] = MethodDefault
+			optionIndex++
+			hasDefaultConfig = true
+		}
+	}
+
+	// Always present custom and create options (FR-003)
+	options = append(options, ui.SelectOption{
+		Value:       "custom",
+		Label:       "Custom",
+		Description: "Specify path to different config file",
+	})
+	methodMap[optionIndex] = MethodCustom
+	optionIndex++
+
+	options = append(options, ui.SelectOption{
+		Value:       "create",
+		Label:       "Create New",
+		Description: "Enter name and email to generate config",
+	})
+	methodMap[optionIndex] = MethodCreateNew
+	optionIndex++
+
+	options = append(options, ui.SelectOption{
+		Value:       "skip",
+		Label:       "Skip",
+		Description: "Continue without Git configuration",
+	})
+	methodMap[optionIndex] = MethodSkip
+
+	// Default index: 0 if default available, else skip (last option)
+	defaultIndex := 0
+	if !hasDefaultConfig {
+		defaultIndex = len(options) - 1 // Skip option
+	}
+
+	choice, err := prompter.PromptSelect("How would you like to configure Git in the VM?", options, defaultIndex)
+	if err != nil {
+		return MethodSkip, err
+	}
+
+	return methodMap[choice], nil
+}
+
+// promptCustomGitConfigPath prompts the user for a path to a .gitconfig file
+// and validates that it exists and is readable.
+func promptCustomGitConfigPath(prompter *ui.Prompter) (string, error) {
+	for {
+		path, err := prompter.PromptString("Enter path to Git config file", "")
+		if err != nil {
+			return "", err
+		}
+
+		// Allow empty input to cancel
+		if strings.TrimSpace(path) == "" {
+			return "", errors.New("path cannot be empty")
+		}
+
+		// Expand path and validate
+		expandedPath := expandPath(path)
+
+		// Convert relative path to absolute
+		absPath, err := filepath.Abs(expandedPath)
+		if err != nil {
+			fmt.Printf("Invalid path: %v\n\n", err)
+			continue
+		}
+
+		// Check if file exists
+		info, err := os.Stat(absPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				fmt.Printf("File not found: %s. Please check the path and try again.\n\n", path)
+			} else if os.IsPermission(err) {
+				fmt.Printf("Cannot read file: %s (permission denied). Please check file permissions.\n\n", path)
+			} else {
+				fmt.Printf("Error accessing file: %v\n\n", err)
+			}
+			continue
+		}
+
+		// Check if it's a directory
+		if info.IsDir() {
+			fmt.Printf("%s is a directory. Please provide a path to a file.\n\n", path)
+			continue
+		}
+
+		return path, nil
+	}
+}
+
+// promptGitIdentity prompts the user for name and email to create a Git config.
+// Validates email format per FR-013.
+func promptGitIdentity(prompter *ui.Prompter) (GitIdentity, error) {
+	var identity GitIdentity
+
+	// Prompt for name with non-empty validation
+	for {
+		name, err := prompter.PromptString("Enter your full name", "")
+		if err != nil {
+			return identity, err
+		}
+
+		name = strings.TrimSpace(name)
+		if name == "" {
+			fmt.Println("Name cannot be empty. Please enter your full name.")
+			fmt.Println()
+			continue
+		}
+
+		identity.Name = name
+		break
+	}
+
+	// Prompt for email with validation
+	for {
+		email, err := prompter.PromptString("Enter your email address", "")
+		if err != nil {
+			return identity, err
+		}
+
+		email = strings.TrimSpace(email)
+		if err := validateEmail(email); err != nil {
+			fmt.Printf("Invalid email format: %v\n", err)
+			fmt.Println("Example: user@example.com")
+			fmt.Println()
+			continue
+		}
+
+		identity.Email = email
+		break
+	}
+
+	return identity, nil
+}
+
+// promptGitConfig prompts the user to configure Git in the VM and returns
+// the selected method and any necessary data for transfer.
+func promptGitConfig(prompter *ui.Prompter) (method GitConfigMethod, content []byte, err error) {
+	fmt.Println()
+	fmt.Println("Git Configuration")
+	fmt.Println()
+
+	// Select method
+	method, err = selectGitConfigMethod(prompter)
+	if err != nil {
+		return MethodSkip, nil, err
+	}
+
+	// Handle method selection
+	switch method {
+	case MethodDefault:
+		content, err = readDefaultGitConfig()
+		if err != nil {
+			return method, nil, fmt.Errorf("failed to read default Git config: %w", err)
+		}
+		return method, content, nil
+
+	case MethodCustom:
+		path, err := promptCustomGitConfigPath(prompter)
+		if err != nil {
+			return method, nil, err
+		}
+		content, err = readGitConfig(path)
+		if err != nil {
+			return method, nil, fmt.Errorf("failed to read Git config from %s: %w", path, err)
+		}
+		return method, content, nil
+
+	case MethodCreateNew:
+		identity, err := promptGitIdentity(prompter)
+		if err != nil {
+			return method, nil, err
+		}
+		content = generateGitConfig(identity)
+		return method, content, nil
+
+	case MethodSkip:
+		fmt.Println("Skipping Git configuration.")
+		fmt.Println()
+		return method, nil, nil
+
+	default:
+		return MethodSkip, nil, errors.New("invalid Git config method")
+	}
+}
+
+// transferGitConfig uploads .gitconfig content to the VM via SSH.
+// Checks if VM already has .gitconfig and skips if present (FR-015).
+// Sets permissions to 0600 on transferred file (FR-018).
+func transferGitConfig(client *sshexec.Client, content []byte, user string) error {
+	// Check if .gitconfig already exists in VM (FR-014)
+	checkCmd := "test -f ~/.gitconfig && echo 'exists' || echo 'missing'"
+	result, err := client.Exec(checkCmd)
+	if err != nil {
+		return fmt.Errorf("failed to check for existing .gitconfig: %w", err)
+	}
+
+	if strings.TrimSpace(result) == "exists" {
+		// Skip transfer - preserve existing config (FR-015)
+		fmt.Println("VM already has Git configuration - preserving existing .gitconfig")
+		return nil
+	}
+
+	// Transfer the config
+	fmt.Println("Transferring Git configuration to VM...")
+	if err := client.TransferFile(content, "~/.gitconfig", "0600"); err != nil {
+		return fmt.Errorf("failed to transfer Git config: %w", err)
+	}
+
+	fmt.Println("✓ Git configuration set up successfully")
+	return nil
+}
+
 // expandPath expands ~ to the user's home directory.
 func expandPath(path string) string {
 	if strings.HasPrefix(path, "~/") {
@@ -608,4 +876,114 @@ func expandPath(path string) string {
 		return filepath.Join(home, path[2:])
 	}
 	return path
+}
+
+// validateEmail checks if an email has basic valid format per FR-013.
+// Returns nil if valid, error with descriptive message if invalid.
+func validateEmail(email string) error {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return errors.New("email cannot be empty")
+	}
+
+	parts := strings.Split(email, "@")
+	if len(parts) != 2 {
+		return errors.New("email must contain exactly one @")
+	}
+
+	if len(parts[0]) == 0 {
+		return errors.New("email must have username before @")
+	}
+
+	if len(parts[1]) == 0 || !strings.Contains(parts[1], ".") {
+		return errors.New("email must have domain with . after @")
+	}
+
+	return nil
+}
+
+// readGitConfig reads a .gitconfig file from the specified path.
+// The path is expanded (~ → home directory) and validated.
+func readGitConfig(path string) ([]byte, error) {
+	expandedPath := expandPath(path)
+
+	// Check if file exists and is readable
+	info, err := os.Stat(expandedPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if it's a directory
+	if info.IsDir() {
+		return nil, fmt.Errorf("%s is a directory, not a file", path)
+	}
+
+	// Read the file
+	content, err := os.ReadFile(expandedPath)
+	if err != nil {
+		return nil, err
+	}
+
+	return content, nil
+}
+
+// readDefaultGitConfig is a convenience wrapper for readGitConfig
+// that uses the default ~/.gitconfig path.
+func readDefaultGitConfig() ([]byte, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	gitconfigPath := filepath.Join(home, ".gitconfig")
+	return readGitConfig(gitconfigPath)
+}
+
+// generateGitConfig creates a .gitconfig file content from a GitIdentity.
+// The generated config contains [user] section with name and email.
+func generateGitConfig(identity GitIdentity) []byte {
+	config := fmt.Sprintf("[user]\n\tname = %s\n\temail = %s\n", identity.Name, identity.Email)
+	return []byte(config)
+}
+
+// gitMethodToString converts a GitConfigMethod to a string for config storage.
+func gitMethodToString(method GitConfigMethod) string {
+	switch method {
+	case MethodDefault:
+		return "default"
+	case MethodCustom:
+		return "custom"
+	case MethodCreateNew:
+		return "create_new"
+	case MethodSkip:
+		return "skip"
+	default:
+		return "skip"
+	}
+}
+
+// stringToGitMethod converts a string from config to a GitConfigMethod.
+func stringToGitMethod(s string) GitConfigMethod {
+	switch s {
+	case "default":
+		return MethodDefault
+	case "custom":
+		return MethodCustom
+	case "create_new":
+		return MethodCreateNew
+	case "skip":
+		return MethodSkip
+	default:
+		return MethodSkip
+	}
+}
+
+// encodeGitConfig encodes Git config content as base64 for safe YAML storage.
+func encodeGitConfig(content []byte) string {
+	return base64.StdEncoding.EncodeToString(content)
+}
+
+// decodeGitConfig decodes base64-encoded Git config content from YAML storage.
+func decodeGitConfig(encoded string) ([]byte, error) {
+	return base64.StdEncoding.DecodeString(encoded)
 }
