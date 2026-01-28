@@ -32,11 +32,11 @@ func TestGitConfig_Init_Default(t *testing.T) {
 
 	// Create config with Git config fields
 	cfg := map[string]interface{}{
-		"default_provider":    "hetzner",
-		"ssh_public_key":      "~/.ssh/id_ed25519.pub",
-		"git_config_method":   "default",
-		"git_config_content":  gitconfigEncoded,
-		"opencode_zen_key":    "",
+		"default_provider":   "hetzner",
+		"ssh_public_key":     "~/.ssh/id_ed25519.pub",
+		"git_config_method":  "default",
+		"git_config_content": gitconfigEncoded,
+		"opencode_zen_key":   "",
 		"providers": map[string]interface{}{
 			"hetzner": map[string]interface{}{
 				"token":       "test-token",
