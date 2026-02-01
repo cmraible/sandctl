@@ -815,7 +815,7 @@ func maskGitHubToken(token string) string {
 	if len(token) <= 8 {
 		return "****"
 	}
-	prefix := token[:7]  // e.g., "ghp_xxx"
+	prefix := token[:7] // e.g., "ghp_xxx"
 	suffix := token[len(token)-4:]
 	return fmt.Sprintf("%s...%s", prefix, suffix)
 }
