@@ -10,6 +10,19 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// GitConfig holds git configuration to apply in sandbox.
+type GitConfig struct {
+	// Mode indicates how git config was provided ("file" or "manual")
+	Mode string
+
+	// File mode: content of user's gitconfig file
+	FileContent string
+
+	// Manual mode: individual values
+	UserName  string
+	UserEmail string
+}
+
 // ProviderConfig holds provider-specific configuration.
 type ProviderConfig struct {
 	Token      string `yaml:"token"`
@@ -34,6 +47,14 @@ type Config struct {
 	// Legacy fields (for migration detection)
 	SpritesToken   string `yaml:"sprites_token,omitempty"`
 	OpencodeZenKey string `yaml:"opencode_zen_key,omitempty"`
+
+	// Git configuration for sandbox
+	GitConfigPath string `yaml:"git_config_path,omitempty"` // Path to user's gitconfig file (e.g., ~/.gitconfig)
+	GitUserName   string `yaml:"git_user_name,omitempty"`   // Git user.name (if manually configured)
+	GitUserEmail  string `yaml:"git_user_email,omitempty"`  // Git user.email (if manually configured)
+
+	// GitHub configuration
+	GitHubToken string `yaml:"github_token,omitempty"` // GitHub personal access token (optional)
 }
 
 // IsLegacyConfig returns true if this is an old sprites-based config.
@@ -109,6 +130,114 @@ func (c *Config) GetSSHPublicKey() (string, error) {
 	}
 
 	return strings.TrimSpace(string(data)), nil
+}
+
+// HasGitConfig returns true if git configuration is present.
+func (c *Config) HasGitConfig() bool {
+	return c.GitConfigPath != "" || (c.GitUserName != "" && c.GitUserEmail != "")
+}
+
+// GetGitConfig returns the git configuration for sandbox setup.
+// Returns nil if no git configuration is present.
+func (c *Config) GetGitConfig() (*GitConfig, error) {
+	if !c.HasGitConfig() {
+		return nil, nil
+	}
+
+	// File mode - read user's gitconfig
+	if c.GitConfigPath != "" {
+		path := c.expandGitConfigPath()
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read gitconfig: %w", err)
+		}
+		return &GitConfig{
+			Mode:        "file",
+			FileContent: string(data),
+		}, nil
+	}
+
+	// Manual mode - use name/email
+	return &GitConfig{
+		Mode:      "manual",
+		UserName:  c.GitUserName,
+		UserEmail: c.GitUserEmail,
+	}, nil
+}
+
+// HasGitHubToken returns true if GitHub token is configured.
+func (c *Config) HasGitHubToken() bool {
+	return c.GitHubToken != ""
+}
+
+// ValidateGitConfig validates git-specific configuration.
+func (c *Config) ValidateGitConfig() error {
+	// Check mutual exclusivity
+	if c.GitConfigPath != "" && (c.GitUserName != "" || c.GitUserEmail != "") {
+		return &ValidationError{
+			Field:   "git_config_path",
+			Message: "cannot be used with git_user_name/git_user_email",
+		}
+	}
+
+	// If name is set, email must be set (and vice versa)
+	if c.GitUserName != "" && c.GitUserEmail == "" {
+		return &ValidationError{
+			Field:   "git_user_email",
+			Message: "is required when git_user_name is set",
+		}
+	}
+	if c.GitUserEmail != "" && c.GitUserName == "" {
+		return &ValidationError{
+			Field:   "git_user_name",
+			Message: "is required when git_user_email is set",
+		}
+	}
+
+	// Validate email format
+	if c.GitUserEmail != "" {
+		if !isValidGitEmail(c.GitUserEmail) {
+			return &ValidationError{
+				Field:   "git_user_email",
+				Message: "format invalid: must contain @",
+			}
+		}
+	}
+
+	// Validate gitconfig path exists
+	if c.GitConfigPath != "" {
+		path := c.expandGitConfigPath()
+		if _, err := os.Stat(path); err != nil {
+			return &ValidationError{
+				Field:   "git_config_path",
+				Message: fmt.Sprintf("file not found: %s", path),
+			}
+		}
+	}
+
+	return nil
+}
+
+// expandGitConfigPath expands ~ in the git config path.
+func (c *Config) expandGitConfigPath() string {
+	if c.GitConfigPath == "" {
+		return ""
+	}
+	if strings.HasPrefix(c.GitConfigPath, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return c.GitConfigPath
+		}
+		return filepath.Join(home, c.GitConfigPath[2:])
+	}
+	return c.GitConfigPath
+}
+
+// isValidGitEmail validates email format for git.
+// Must contain @ with content on both sides.
+func isValidGitEmail(email string) bool {
+	parts := strings.Split(email, "@")
+	return len(parts) == 2 && len(parts[0]) > 0 && len(parts[1]) > 0
 }
 
 // DefaultConfigPath returns the default config file path.
