@@ -135,6 +135,13 @@ func runNew(cmd *cobra.Command, args []string) error {
 	verboseLog("Provider: %s", prov.Name())
 	verboseLog("Timeout: %v", timeout)
 
+	// Warn if git config not set
+	if !cfg.HasGitConfig() {
+		fmt.Fprintln(os.Stderr, "Warning: Git configuration not found. Commits in sandbox will require manual git config.")
+		fmt.Fprintln(os.Stderr, "Use 'sandctl init' to configure git user name and email.")
+		fmt.Fprintln(os.Stderr)
+	}
+
 	fmt.Println("Creating new session...")
 
 	// Ensure SSH key is uploaded to provider
@@ -217,6 +224,26 @@ func runNew(cmd *cobra.Command, args []string) error {
 			Message: "Setting up OpenCode",
 			Action: func() error {
 				return setupOpenCodeViaSSH(vm.IPAddress, cfg)
+			},
+		})
+	}
+
+	// Add git config setup if configured
+	if cfg.HasGitConfig() {
+		steps = append(steps, ui.ProgressStep{
+			Message: "Configuring git",
+			Action: func() error {
+				return setupGitConfigViaSSH(vm.IPAddress, cfg)
+			},
+		})
+	}
+
+	// Add GitHub CLI authentication if token is configured
+	if cfg.HasGitHubToken() {
+		steps = append(steps, ui.ProgressStep{
+			Message: "Authenticating GitHub CLI",
+			Action: func() error {
+				return setupGitHubCLIViaSSH(vm.IPAddress, cfg)
 			},
 		})
 	}
@@ -441,6 +468,78 @@ func runTemplateInitScript(ipAddress string, tmplConfig *templateconfig.Template
 
 	// Clean up the temp script
 	_, _ = client.Exec("rm -f /tmp/sandctl-init.sh")
+
+	return nil
+}
+
+// setupGitConfigViaSSH configures git in the sandbox via SSH.
+func setupGitConfigViaSSH(ipAddress string, cfg *config.Config) error {
+	client, err := createSSHClient(ipAddress)
+	if err != nil {
+		return fmt.Errorf("failed to create SSH client: %w", err)
+	}
+	defer client.Close()
+
+	gitCfg, err := cfg.GetGitConfig()
+	if err != nil {
+		return fmt.Errorf("failed to get git config: %w", err)
+	}
+	if gitCfg == nil {
+		return nil // No git config to set up
+	}
+
+	var gitConfigContent string
+
+	if gitCfg.Mode == "file" {
+		// Use the file content directly
+		gitConfigContent = gitCfg.FileContent
+	} else {
+		// Generate minimal gitconfig
+		gitConfigContent = fmt.Sprintf("[user]\n\tname = %s\n\temail = %s\n", gitCfg.UserName, gitCfg.UserEmail)
+	}
+
+	// Base64 encode and transfer via SSH
+	encoded := base64.StdEncoding.EncodeToString([]byte(gitConfigContent))
+	writeCmd := fmt.Sprintf("echo '%s' | base64 -d > /home/agent/.gitconfig", encoded)
+	_, err = client.Exec(writeCmd)
+	if err != nil {
+		return fmt.Errorf("failed to write gitconfig: %w", err)
+	}
+
+	// Set correct ownership and permissions
+	_, err = client.Exec("chown agent:agent /home/agent/.gitconfig && chmod 644 /home/agent/.gitconfig")
+	if err != nil {
+		verboseLog("Warning: failed to set gitconfig permissions: %v", err)
+	}
+
+	return nil
+}
+
+// setupGitHubCLIViaSSH authenticates GitHub CLI in the sandbox via SSH.
+func setupGitHubCLIViaSSH(ipAddress string, cfg *config.Config) error {
+	if !cfg.HasGitHubToken() {
+		return nil // No token to set up
+	}
+
+	client, err := createSSHClient(ipAddress)
+	if err != nil {
+		return fmt.Errorf("failed to create SSH client: %w", err)
+	}
+	defer client.Close()
+
+	// Authenticate gh CLI by passing token via stdin
+	// Use a here-document to avoid exposing the token in process arguments
+	authCmd := fmt.Sprintf("echo '%s' | sudo -u agent gh auth login --with-token --hostname github.com", cfg.GitHubToken)
+	_, err = client.Exec(authCmd)
+	if err != nil {
+		return fmt.Errorf("failed to authenticate GitHub CLI: %w", err)
+	}
+
+	// Configure git to use gh for HTTPS credentials
+	_, err = client.Exec("sudo -u agent gh auth setup-git")
+	if err != nil {
+		verboseLog("Warning: failed to setup gh as git credential helper: %v", err)
+	}
 
 	return nil
 }

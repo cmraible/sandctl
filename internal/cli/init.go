@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -25,6 +26,10 @@ var (
 	initRegion            string
 	initServerType        string
 	initOpencodeZenKey    string
+	initGitConfigPath     string
+	initGitUserName       string
+	initGitUserEmail      string
+	initGitHubToken       string
 )
 
 // initCmd represents the init command.
@@ -63,6 +68,10 @@ func init() {
 	initCmd.Flags().StringVar(&initRegion, "region", "", "Default Hetzner region (ash, hel1, fsn1, nbg1)")
 	initCmd.Flags().StringVar(&initServerType, "server-type", "", "Default server type (cpx21, cpx31, cpx41)")
 	initCmd.Flags().StringVar(&initOpencodeZenKey, "opencode-zen-key", "", "Opencode Zen key for AI access (optional)")
+	initCmd.Flags().StringVar(&initGitConfigPath, "git-config-path", "", "Path to gitconfig file to copy to sandboxes")
+	initCmd.Flags().StringVar(&initGitUserName, "git-user-name", "", "Git user.name for commits")
+	initCmd.Flags().StringVar(&initGitUserEmail, "git-user-email", "", "Git user.email for commits")
+	initCmd.Flags().StringVar(&initGitHubToken, "github-token", "", "GitHub personal access token for PR creation")
 }
 
 // runInit executes the init command.
@@ -75,6 +84,26 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// Validate mutually exclusive flags
 	if initSSHAgent && initSSHPublicKey != "" {
 		return errors.New("--ssh-agent and --ssh-public-key are mutually exclusive")
+	}
+
+	// Validate git config flags
+	if initGitConfigPath != "" && (initGitUserName != "" || initGitUserEmail != "") {
+		return errors.New("--git-config-path and --git-user-name/--git-user-email are mutually exclusive")
+	}
+	if initGitUserName != "" && initGitUserEmail == "" {
+		return errors.New("--git-user-name requires --git-user-email to be set")
+	}
+	if initGitUserEmail != "" && initGitUserName == "" {
+		return errors.New("--git-user-email requires --git-user-name to be set")
+	}
+	if initGitUserEmail != "" && !isValidGitEmail(initGitUserEmail) {
+		return errors.New("git user email format invalid: must contain @")
+	}
+	if initGitConfigPath != "" {
+		path := expandPath(initGitConfigPath)
+		if _, err := os.Stat(path); err != nil {
+			return fmt.Errorf("git config file not found: %s", initGitConfigPath)
+		}
 	}
 
 	// Check if running non-interactively with flags
@@ -162,6 +191,19 @@ func runNonInteractiveInit(configPath string) error {
 		cfg.SSHPublicKey = initSSHPublicKey
 	}
 
+	// Handle git configuration
+	if initGitConfigPath != "" {
+		cfg.GitConfigPath = initGitConfigPath
+	} else if initGitUserName != "" && initGitUserEmail != "" {
+		cfg.GitUserName = initGitUserName
+		cfg.GitUserEmail = initGitUserEmail
+	}
+
+	// Handle GitHub token
+	if initGitHubToken != "" {
+		cfg.GitHubToken = initGitHubToken
+	}
+
 	// Save config
 	if err := config.Save(configPath, cfg); err != nil {
 		return fmt.Errorf("failed to save configuration: %w", err)
@@ -226,6 +268,18 @@ func runInitFlow(configPath string, input io.Reader, output io.Writer) error {
 		return err
 	}
 
+	// Prompt for git configuration (optional)
+	gitCfgPath, gitUserName, gitUserEmail, err := promptGitConfig(prompter, output, existingCfg)
+	if err != nil {
+		return err
+	}
+
+	// Prompt for GitHub token (optional)
+	githubToken, err := promptGitHubToken(prompter, existingCfg)
+	if err != nil {
+		return err
+	}
+
 	// Build config
 	cfg := &config.Config{
 		DefaultProvider: "hetzner",
@@ -247,6 +301,19 @@ func runInitFlow(configPath string, input io.Reader, output io.Writer) error {
 		cfg.SSHKeyFingerprint = sshCfg.fingerprint
 	} else {
 		cfg.SSHPublicKey = sshCfg.filePath
+	}
+
+	// Set git configuration
+	if gitCfgPath != "" {
+		cfg.GitConfigPath = gitCfgPath
+	} else if gitUserName != "" && gitUserEmail != "" {
+		cfg.GitUserName = gitUserName
+		cfg.GitUserEmail = gitUserEmail
+	}
+
+	// Set GitHub token
+	if githubToken != "" {
+		cfg.GitHubToken = githubToken
 	}
 
 	// Save config
@@ -326,6 +393,20 @@ func loadExistingConfig(path string) *config.Config {
 				c.Providers[name] = pc
 			}
 		}
+	}
+
+	// Git configuration fields
+	if gitConfigPath, ok := rawCfg["git_config_path"].(string); ok {
+		c.GitConfigPath = gitConfigPath
+	}
+	if gitUserName, ok := rawCfg["git_user_name"].(string); ok {
+		c.GitUserName = gitUserName
+	}
+	if gitUserEmail, ok := rawCfg["git_user_email"].(string); ok {
+		c.GitUserEmail = gitUserEmail
+	}
+	if githubToken, ok := rawCfg["github_token"].(string); ok {
+		c.GitHubToken = githubToken
 	}
 
 	// Only return if we found at least one field
@@ -598,6 +679,147 @@ func promptOpencodeZenKey(prompter *ui.Prompter, existingCfg *config.Config) (st
 	return key, nil
 }
 
+// promptGitConfig prompts for git configuration.
+// Returns gitConfigPath, gitUserName, gitUserEmail.
+func promptGitConfig(prompter *ui.Prompter, output io.Writer, existingCfg *config.Config) (string, string, string, error) {
+	fmt.Fprintln(output)
+	fmt.Fprintln(output, "Git Configuration (optional, for agent commits)")
+	fmt.Fprintln(output, "==============================================")
+	fmt.Fprintln(output)
+
+	// Check for existing config
+	if existingCfg != nil && existingCfg.HasGitConfig() {
+		if existingCfg.GitConfigPath != "" {
+			// Read name/email from the gitconfig file for display
+			name, _ := getGitConfig("user.name")
+			email, _ := getGitConfig("user.email")
+			fmt.Fprintln(output, "Current git config:")
+			fmt.Fprintf(output, "  Path:  %s\n", existingCfg.GitConfigPath)
+			if name != "" {
+				fmt.Fprintf(output, "  Name:  %s\n", name)
+			}
+			if email != "" {
+				fmt.Fprintf(output, "  Email: %s\n", email)
+			}
+			fmt.Fprintln(output)
+
+			keepExisting, err := prompter.PromptYesNo("Keep current git configuration?", true)
+			if err != nil {
+				return "", "", "", err
+			}
+			if keepExisting {
+				return existingCfg.GitConfigPath, "", "", nil
+			}
+		} else {
+			fmt.Fprintln(output, "Current git config:")
+			fmt.Fprintf(output, "  Name:  %s\n", existingCfg.GitUserName)
+			fmt.Fprintf(output, "  Email: %s\n", existingCfg.GitUserEmail)
+			fmt.Fprintln(output)
+
+			keepExisting, err := prompter.PromptYesNo("Keep current git configuration?", true)
+			if err != nil {
+				return "", "", "", err
+			}
+			if keepExisting {
+				return "", existingCfg.GitUserName, existingCfg.GitUserEmail, nil
+			}
+		}
+	}
+
+	// Try to detect existing gitconfig
+	detectedName, _ := getGitConfig("user.name")
+	detectedEmail, _ := getGitConfig("user.email")
+
+	if detectedName != "" && detectedEmail != "" {
+		// Find gitconfig path
+		home, _ := os.UserHomeDir()
+		gitConfigPath := filepath.Join(home, ".gitconfig")
+		if _, err := os.Stat(gitConfigPath); err == nil {
+			fmt.Fprintln(output, "Detected existing git config:")
+			fmt.Fprintf(output, "  Name:  %s\n", detectedName)
+			fmt.Fprintf(output, "  Email: %s\n", detectedEmail)
+			fmt.Fprintf(output, "  Path:  %s\n", gitConfigPath)
+			fmt.Fprintln(output)
+
+			useExisting, err := prompter.PromptYesNo("Use this configuration?", true)
+			if err != nil {
+				return "", "", "", err
+			}
+			if useExisting {
+				return "~/.gitconfig", "", "", nil
+			}
+		}
+	}
+
+	// Manual entry
+	fmt.Fprintln(output)
+	name, err := prompter.PromptString("Git user name (press Enter to skip)", "")
+	if err != nil {
+		return "", "", "", err
+	}
+	if name == "" {
+		return "", "", "", nil
+	}
+
+	email, err := prompter.PromptString("Git user email", "")
+	if err != nil {
+		return "", "", "", err
+	}
+	if email == "" {
+		return "", "", "", nil
+	}
+
+	// Validate email
+	if !isValidGitEmail(email) {
+		return "", "", "", errors.New("git user email format invalid: must contain @")
+	}
+
+	return "", name, email, nil
+}
+
+// promptGitHubToken prompts for the GitHub personal access token.
+func promptGitHubToken(prompter *ui.Prompter, existingCfg *config.Config) (string, error) {
+	fmt.Println()
+	fmt.Println("GitHub Integration (optional, for PR creation)")
+	fmt.Println("==============================================")
+
+	hasExisting := existingCfg != nil && existingCfg.HasGitHubToken()
+
+	if hasExisting {
+		// Mask the existing token for display
+		token := existingCfg.GitHubToken
+		masked := maskGitHubToken(token)
+		fmt.Printf("Current GitHub token: %s\n", masked)
+		fmt.Println()
+
+		keepExisting, err := prompter.PromptYesNo("Keep current GitHub token?", true)
+		if err != nil {
+			return "", err
+		}
+		if keepExisting {
+			return existingCfg.GitHubToken, nil
+		}
+	}
+
+	// Optional field - allow empty
+	token, err := prompter.PromptSecret("GitHub personal access token (press Enter to skip)")
+	if err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+// maskGitHubToken masks a GitHub token for display.
+// Shows format: ghp_xxxx...xxxx
+func maskGitHubToken(token string) string {
+	if len(token) <= 8 {
+		return "****"
+	}
+	prefix := token[:7] // e.g., "ghp_xxx"
+	suffix := token[len(token)-4:]
+	return fmt.Sprintf("%s...%s", prefix, suffix)
+}
+
 // expandPath expands ~ to the user's home directory.
 func expandPath(path string) string {
 	if strings.HasPrefix(path, "~/") {
@@ -608,4 +830,21 @@ func expandPath(path string) string {
 		return filepath.Join(home, path[2:])
 	}
 	return path
+}
+
+// getGitConfig reads a git config value using git config --global --get.
+func getGitConfig(key string) (string, error) {
+	cmd := exec.Command("git", "config", "--global", "--get", key)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+// isValidGitEmail validates email format for git.
+// Must contain @ with content on both sides.
+func isValidGitEmail(email string) bool {
+	parts := strings.Split(email, "@")
+	return len(parts) == 2 && len(parts[0]) > 0 && len(parts[1]) > 0
 }

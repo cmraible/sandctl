@@ -22,6 +22,8 @@ Auto-generated from all feature plans. Last updated: 2026-01-22
 - Go 1.24.0 + github.com/spf13/cobra v1.9.1 (CLI), golang.org/x/crypto/ssh (SSH client), gopkg.in/yaml.v3 (config) (017-cloud-init-agent-user)
 - Go 1.24.0 + github.com/spf13/cobra v1.9.1 (CLI), gopkg.in/yaml.v3 (config), golang.org/x/term (terminal detection) (018-rename-repo-to-template)
 - YAML files at `~/.sandctl/templates/<name>/config.yaml`, shell scripts at `~/.sandctl/templates/<name>/init.sh` (018-rename-repo-to-template)
+- Go 1.24.0 + github.com/spf13/cobra v1.9.1 (CLI), gopkg.in/yaml.v3 (config), golang.org/x/term (terminal), golang.org/x/crypto/ssh (SSH client) (019-sandbox-git-config)
+- YAML config file at `~/.sandctl/config` (0600 permissions), JSON session store at `~/.sandctl/sessions.json` (019-sandbox-git-config)
 
 - Go 1.22+ + Cobra (CLI framework), Viper (config), Fly.io Sprites SDK (001-sandbox-cli)
 
@@ -41,9 +43,9 @@ tests/
 Go 1.22+: Follow standard conventions
 
 ## Recent Changes
+- 019-sandbox-git-config: Added Go 1.24.0 + github.com/spf13/cobra v1.9.1 (CLI), gopkg.in/yaml.v3 (config), golang.org/x/term (terminal), golang.org/x/crypto/ssh (SSH client)
 - 018-rename-repo-to-template: Added Go 1.24.0 + github.com/spf13/cobra v1.9.1 (CLI), gopkg.in/yaml.v3 (config), golang.org/x/term (terminal detection)
 - 017-cloud-init-agent-user: Added Go 1.24.0 + github.com/spf13/cobra v1.9.1 (CLI), golang.org/x/crypto/ssh (SSH client), gopkg.in/yaml.v3 (config)
-- 016-ssh-agent-support: Added Go 1.24.0 + github.com/spf13/cobra v1.9.1 (CLI), golang.org/x/crypto/ssh (SSH client/agent), gopkg.in/yaml.v3 (config), golang.org/x/term (terminal detection)
 
 
 <!-- MANUAL ADDITIONS START -->
