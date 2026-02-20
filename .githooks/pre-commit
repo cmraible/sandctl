@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Pre-commit hook for sandctl
-# Runs formatting, static analysis, and linting checks on staged Go files
+# Runs formatting, static analysis, linting, and tests on staged Go files
 #
 
 set -euo pipefail
@@ -111,6 +111,15 @@ main() {
     else
         print_warning "golangci-lint not installed, skipping lint check"
         echo "Install with: brew install golangci-lint"
+    fi
+
+    # Check 4: tests
+    print_header "Running tests..."
+    if ! go test ./... 2>&1; then
+        print_error "Tests failed"
+        FAILED=1
+    else
+        print_success "Tests passed"
     fi
 
     # Final result
