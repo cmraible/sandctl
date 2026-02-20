@@ -43,6 +43,13 @@ const SERVER_TYPE_CHOICES = [
 	{ name: "CPX51 — 16 vCPU, 32 GB RAM, ~€0.07/hr (cpx51)", value: "cpx51" },
 ] as const;
 
+const VIM_SELECT_THEME = {
+	keybindings: ["vim" as const],
+	style: {
+		keysHelpTip: () => "up/down/j/k navigate • enter select",
+	},
+};
+
 async function pathExists(targetPath: string): Promise<boolean> {
 	try {
 		await access(targetPath);
@@ -134,6 +141,7 @@ export async function runInit(
 	const sshMode = await select({
 		message: "SSH key mode",
 		default: existing?.ssh_key_source === "agent" ? "agent" : "file",
+		theme: VIM_SELECT_THEME,
 		choices: [
 			{ name: "SSH key file", value: "file" },
 			{ name: "SSH agent", value: "agent" },
@@ -159,12 +167,14 @@ export async function runInit(
 	const region = await select({
 		message: "Default region",
 		default: existing?.providers?.hetzner?.region ?? DEFAULT_REGION,
+		theme: VIM_SELECT_THEME,
 		choices: REGION_CHOICES,
 	});
 
 	const serverType = await select({
 		message: "Default server type",
 		default: existing?.providers?.hetzner?.server_type ?? DEFAULT_SERVER_TYPE,
+		theme: VIM_SELECT_THEME,
 		choices: SERVER_TYPE_CHOICES,
 	});
 
