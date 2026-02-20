@@ -9,12 +9,12 @@ You own the cloud provider abstraction and the VM provisioning workflow:
 
 | Module | Files |
 |--------|-------|
-| Provider interface | `src/provider/interface.ts`, `src/provider/types.ts`, `src/provider/errors.ts`, `src/provider/registry.ts` |
-| Hetzner client | `src/hetzner/client.ts` |
-| Hetzner provider | `src/hetzner/provider.ts` |
-| Hetzner SSH keys | `src/hetzner/ssh-keys.ts` |
-| Hetzner setup | `src/hetzner/setup.ts` |
-| New command | `src/commands/new.ts` |
+| Provider interface | `sandctl-ts/src/provider/interface.ts`, `sandctl-ts/src/provider/types.ts`, `sandctl-ts/src/provider/errors.ts`, `sandctl-ts/src/provider/registry.ts` |
+| Hetzner client | `sandctl-ts/src/hetzner/client.ts` |
+| Hetzner provider | `sandctl-ts/src/hetzner/provider.ts` |
+| Hetzner SSH keys | `sandctl-ts/src/hetzner/ssh-keys.ts` |
+| Hetzner setup | `sandctl-ts/src/hetzner/setup.ts` |
+| New command | `sandctl-ts/src/commands/new.ts` |
 
 ---
 
@@ -25,7 +25,7 @@ You own the cloud provider abstraction and the VM provisioning workflow:
 
 ### What to Build
 
-#### 1. Provider Interface (`src/provider/interface.ts`)
+#### 1. Provider Interface (`sandctl-ts/src/provider/interface.ts`)
 
 ```typescript
 export interface Provider {
@@ -42,7 +42,7 @@ export interface SSHKeyManager {
 }
 ```
 
-#### 2. Provider Types (`src/provider/types.ts`)
+#### 2. Provider Types (`sandctl-ts/src/provider/types.ts`)
 
 ```typescript
 export type VMStatus =
@@ -69,7 +69,7 @@ export interface CreateOpts {
 }
 ```
 
-#### 3. Provider Errors (`src/provider/errors.ts`)
+#### 3. Provider Errors (`sandctl-ts/src/provider/errors.ts`)
 
 ```typescript
 export class ErrNotFound extends Error { }
@@ -79,7 +79,7 @@ export class ErrProvisionFailed extends Error { }
 export class ErrTimeout extends Error { }
 ```
 
-#### 4. Provider Registry (`src/provider/registry.ts`)
+#### 4. Provider Registry (`sandctl-ts/src/provider/registry.ts`)
 
 ```typescript
 type ProviderFactory = (config: ProviderConfig) => Provider & SSHKeyManager;
@@ -89,7 +89,7 @@ export function get(name: string, config: ProviderConfig): Provider & SSHKeyMana
 export function available(): string[];
 ```
 
-#### 5. Hetzner API Client (`src/hetzner/client.ts`)
+#### 5. Hetzner API Client (`sandctl-ts/src/hetzner/client.ts`)
 
 Use `fetch` (Bun built-in) for direct REST API calls against `https://api.hetzner.cloud/v1`:
 
@@ -120,7 +120,7 @@ All API calls:
 - 404 → `ErrNotFound`
 - 429/quota → `ErrQuotaExceeded`
 
-#### 6. Hetzner Provider (`src/hetzner/provider.ts`)
+#### 6. Hetzner Provider (`sandctl-ts/src/hetzner/provider.ts`)
 
 Implement `Provider` and `SSHKeyManager` interfaces:
 
@@ -138,7 +138,7 @@ Implement `Provider` and `SSHKeyManager` interfaces:
 **`list()`**:
 - Filter by label `managed-by=sandctl`
 
-#### 7. SSH Key Management (`src/hetzner/ssh-keys.ts`)
+#### 7. SSH Key Management (`sandctl-ts/src/hetzner/ssh-keys.ts`)
 
 **`ensureSSHKey(name, publicKey)`**:
 - Calculate MD5 fingerprint of public key
@@ -147,7 +147,7 @@ Implement `Provider` and `SSHKeyManager` interfaces:
 - If not found, create new key
 - Handle race conditions (key created between list and create → retry)
 
-#### 8. Cloud-Init Script (`src/hetzner/setup.ts`)
+#### 8. Cloud-Init Script (`sandctl-ts/src/hetzner/setup.ts`)
 
 Generate the cloud-init bash script. **Must produce identical VM setup as Go version**:
 
@@ -191,7 +191,7 @@ import { register } from "../provider/registry";
 register("hetzner", (config) => new HetznerProvider(config));
 ```
 
-Import this module in `src/index.ts` to ensure registration happens at startup.
+Import this module in `sandctl-ts/src/index.ts` to ensure registration happens at startup.
 
 ### How to Verify
 
@@ -248,7 +248,7 @@ This is the most complex command. It orchestrates all modules together.
 
 ### What to Build
 
-#### 1. Main Flow (`src/commands/new.ts`)
+#### 1. Main Flow (`sandctl-ts/src/commands/new.ts`)
 
 `sandctl new` — Full provisioning workflow:
 

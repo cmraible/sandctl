@@ -9,13 +9,13 @@ You own session state management and the commands that read/delete sessions:
 
 | Module | Files |
 |--------|-------|
-| Session types | `src/session/types.ts` |
-| Session store | `src/session/store.ts` |
-| Session names | `src/session/names.ts` |
-| Session ID | `src/session/id.ts` |
-| List command | `src/commands/list.ts` |
-| Destroy command | `src/commands/destroy.ts` |
-| Unit tests | `tests/unit/session/` |
+| Session types | `sandctl-ts/src/session/types.ts` |
+| Session store | `sandctl-ts/src/session/store.ts` |
+| Session names | `sandctl-ts/src/session/names.ts` |
+| Session ID | `sandctl-ts/src/session/id.ts` |
+| List command | `sandctl-ts/src/commands/list.ts` |
+| Destroy command | `sandctl-ts/src/commands/destroy.ts` |
+| Unit tests | `sandctl-ts/tests/unit/session/` |
 
 ---
 
@@ -26,7 +26,7 @@ You own session state management and the commands that read/delete sessions:
 
 ### What to Build
 
-#### 1. Session Types (`src/session/types.ts`)
+#### 1. Session Types (`sandctl-ts/src/session/types.ts`)
 
 Define types matching Go structs exactly (see `data-model.md`):
 
@@ -56,7 +56,7 @@ Custom `Duration` type with JSON serialization matching Go format (e.g., `"1h0m0
 
 Custom `NotFoundError` type.
 
-#### 2. Name Pool (`src/session/names.ts`)
+#### 2. Name Pool (`sandctl-ts/src/session/names.ts`)
 
 Port the exact 250-name array from `internal/session/names.go`. These must be **identical** to maintain compatibility with existing sessions.
 
@@ -74,13 +74,13 @@ Implement `getRandomName(existingNames: string[])`:
 - Fall back to linear search if retries exhausted
 - Throw error if all 250 names are in use
 
-#### 3. ID Generation (`src/session/id.ts`)
+#### 3. ID Generation (`sandctl-ts/src/session/id.ts`)
 
 - `generateID(existingNames: string[])` → calls `getRandomName()`
 - `validateID(id: string)` → must be 2-15 lowercase letters only (`/^[a-z]{2,15}$/`)
 - `normalizeName(name: string)` → `name.toLowerCase()` (case-insensitive matching)
 
-#### 4. Session Store (`src/session/store.ts`)
+#### 4. Session Store (`sandctl-ts/src/session/store.ts`)
 
 JSON file at `~/.sandctl/sessions.json`. Implement:
 
@@ -96,22 +96,22 @@ All operations:
 - Case-insensitive ID matching throughout
 - Handle empty/missing file gracefully (return empty array)
 
-#### 5. Unit Tests (`tests/unit/session/`)
+#### 5. Unit Tests (`sandctl-ts/tests/unit/session/`)
 
-**`tests/unit/session/id.test.ts`**:
+**`sandctl-ts/tests/unit/session/id.test.ts`**:
 - Generated IDs are 2-15 lowercase letters
 - `validateID` accepts valid names ("alice", "bob")
 - `validateID` rejects: uppercase ("Alice"), numbers ("abc123"), too short ("a"), too long (16+ chars)
 - `normalizeName` lowercases input
 
-**`tests/unit/session/names.test.ts`**:
+**`sandctl-ts/tests/unit/session/names.test.ts`**:
 - Name pool has exactly 250 entries
 - All names match `validateID` format
 - `getRandomName` avoids collisions
 - `getRandomName` throws when all names are in use
 - Random selection is not deterministic (run 10 times, get >1 unique name)
 
-**`tests/unit/session/store.test.ts`**:
+**`sandctl-ts/tests/unit/session/store.test.ts`**:
 - `add` persists to JSON file
 - `add` rejects duplicate IDs
 - `get` is case-insensitive ("Alice" finds "alice")
@@ -123,7 +123,7 @@ All operations:
 - Empty file returns empty array
 - Missing file returns empty array
 
-**`tests/unit/session/types.test.ts`**:
+**`sandctl-ts/tests/unit/session/types.test.ts`**:
 - `isActive` returns true for "provisioning" and "running"
 - `isTerminal` returns true for "stopped" and "failed"
 - `timeoutRemaining` calculates correctly for active timeouts
@@ -167,7 +167,7 @@ bun run lint
 
 ### What to Build
 
-#### 1. List Command (`src/commands/list.ts`)
+#### 1. List Command (`sandctl-ts/src/commands/list.ts`)
 
 Implement `sandctl list` (alias: `ls`):
 
@@ -202,7 +202,7 @@ Timeout display logic:
 -a, --all               Include stopped and failed sessions
 ```
 
-#### 2. Destroy Command (`src/commands/destroy.ts`)
+#### 2. Destroy Command (`sandctl-ts/src/commands/destroy.ts`)
 
 Implement `sandctl destroy <name>` (aliases: `rm`, `delete`):
 

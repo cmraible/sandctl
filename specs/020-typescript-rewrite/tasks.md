@@ -13,29 +13,31 @@
 
 ## Path Conventions
 
-- **TypeScript source**: `src/` at repository root
-- **Tests**: `tests/` at repository root
+- **TypeScript project root**: `sandctl-ts/` at repository root
+- **TypeScript source**: `sandctl-ts/src/`
+- **Tests**: `sandctl-ts/tests/`
+- **Go implementation**: Remains at repository root (`cmd/`, `internal/`, `go.mod`, etc.)
 - Paths follow the project structure defined in plan.md
 
 ---
 
 ## Phase 1: Project Scaffold & Build System
 
-**Purpose**: Set up the TypeScript/Bun project, build system, and development tooling. Remove Go source files.
+**Purpose**: Set up the TypeScript/Bun project, build system, and development tooling in the `sandctl-ts/` subdirectory. The Go implementation remains untouched.
 
-- [ ] T001 [P] [US1] Initialize Bun project: create `package.json` with name, version, type "module", and scripts (build, test, lint, fmt) at repository root
-- [ ] T002 [P] [US1] Create `tsconfig.json` with strict mode, ESNext target, module resolution for Bun, path aliases, and include/exclude patterns
-- [ ] T003 [P] [US1] Create `bunfig.toml` with test configuration (preload, coverage settings)
-- [ ] T004 [P] [US1] Create `biome.json` with linter and formatter rules (replacing golangci-lint)
-- [ ] T005 [US1] Install core dependencies: `commander`, `yaml`, `ssh2`, `ora`, `chalk`, `inquirer` and their type definitions
-- [ ] T006 [US1] Create `src/index.ts` entry point with CLI program setup (name, description, version) and global flags (`--config`, `--verbose`)
-- [ ] T007 [US1] Update `Makefile` with Bun build targets: `build`, `build-all` (cross-compile for darwin-arm64, darwin-x64, linux-x64, linux-arm64), `test`, `lint`, `fmt`, `clean`, `install`
-- [ ] T008 [US1] Create `scripts/build-all.sh` for cross-platform compilation using `bun build --compile --target`
-- [ ] T009 [US1] Update `.gitignore` to include `node_modules/`, `*.tsbuildinfo`, `dist/`, and Bun-specific artifacts; remove Go-specific entries
-- [ ] T010 [US1] Remove Go source files: `go.mod`, `go.sum`, `tools.go`, `cmd/`, `internal/`, and Go test files. Keep `specs/`, `tests/e2e/` (to be rewritten), `README.md`, `.github/`
-- [ ] T011 [US1] Verify project builds: run `bun build src/index.ts --compile --outfile sandctl` and test `./sandctl --help` produces output
+- [ ] T001 [P] [US1] Create `sandctl-ts/` directory at repository root
+- [ ] T002 [P] [US1] Initialize Bun project: create `sandctl-ts/package.json` with name, version, type "module", and scripts (build, test, lint, fmt)
+- [ ] T003 [P] [US1] Create `sandctl-ts/tsconfig.json` with strict mode, ESNext target, module resolution for Bun, path aliases, and include/exclude patterns
+- [ ] T004 [P] [US1] Create `sandctl-ts/bunfig.toml` with test configuration (preload, coverage settings)
+- [ ] T005 [P] [US1] Create `sandctl-ts/biome.json` with linter and formatter rules (replacing golangci-lint)
+- [ ] T006 [US1] Install core dependencies in `sandctl-ts/`: `commander`, `yaml`, `ssh2`, `ora`, `chalk`, `inquirer` and their type definitions
+- [ ] T007 [US1] Create `sandctl-ts/src/index.ts` entry point with CLI program setup (name, description, version) and global flags (`--config`, `--verbose`)
+- [ ] T008 [US1] Create `sandctl-ts/Makefile` with Bun build targets: `build`, `build-all` (cross-compile for darwin-arm64, darwin-x64, linux-x64, linux-arm64), `test`, `lint`, `fmt`, `clean`, `install`
+- [ ] T009 [US1] Create `sandctl-ts/scripts/build-all.sh` for cross-platform compilation using `bun build --compile --target`
+- [ ] T010 [US1] Create `sandctl-ts/.gitignore` with `node_modules/`, `*.tsbuildinfo`, `dist/`, compiled binaries, and Bun-specific artifacts
+- [ ] T011 [US1] Verify project builds: run `cd sandctl-ts && bun build src/index.ts --compile --outfile sandctl` and test `./sandctl --help` produces output
 
-**Checkpoint**: TypeScript project skeleton compiles to a native binary that shows help text.
+**Checkpoint**: TypeScript project skeleton in `sandctl-ts/` compiles to a native binary that shows help text. Go implementation remains unchanged.
 
 ---
 
@@ -45,33 +47,33 @@
 
 ### Config Module
 
-- [ ] T012 [P] [US2] Define TypeScript types/interfaces in `src/config/config.ts`: `Config`, `ProviderConfig`, `GitConfig`, `NotFoundError`, `InsecurePermissionsError`, `ValidationError`
-- [ ] T013 [P] [US2] Implement `load()` function in `src/config/config.ts`: read YAML file, validate permissions (0600), parse into Config type, handle legacy format migration
-- [ ] T014 [P] [US2] Implement `validate()` function in `src/config/config.ts`: check required fields (default_provider, SSH key config), validate email format
-- [ ] T015 [US2] Implement `src/config/writer.ts`: atomic write (temp file + rename), enforce 0600 file permissions and 0700 directory permissions, create directory if needed
+- [ ] T012 [P] [US2] Define TypeScript types/interfaces in `sandctl-ts/src/config/config.ts`: `Config`, `ProviderConfig`, `GitConfig`, `NotFoundError`, `InsecurePermissionsError`, `ValidationError`
+- [ ] T013 [P] [US2] Implement `load()` function in `sandctl-ts/src/config/config.ts`: read YAML file, validate permissions (0600), parse into Config type, handle legacy format migration
+- [ ] T014 [P] [US2] Implement `validate()` function in `sandctl-ts/src/config/config.ts`: check required fields (default_provider, SSH key config), validate email format
+- [ ] T015 [US2] Implement `sandctl-ts/src/config/writer.ts`: atomic write (temp file + rename), enforce 0600 file permissions and 0700 directory permissions, create directory if needed
 - [ ] T016 [US2] Implement helper methods: `getProviderConfig()`, `setProviderSSHKeyID()`, `getSSHPublicKey()`, `getGitConfig()`, `hasGitConfig()`, `hasGitHubToken()`
-- [ ] T017 [US2] Write unit tests in `tests/unit/config/config.test.ts`: loading, validation, error types, permission checks, legacy migration
-- [ ] T018 [US2] Write unit tests in `tests/unit/config/writer.test.ts`: atomic writes, permission enforcement, directory creation
+- [ ] T017 [US2] Write unit tests in `sandctl-ts/tests/unit/config/config.test.ts`: loading, validation, error types, permission checks, legacy migration
+- [ ] T018 [US2] Write unit tests in `sandctl-ts/tests/unit/config/writer.test.ts`: atomic writes, permission enforcement, directory creation
 
 ### Session Module
 
-- [ ] T019 [P] [US4] Define types in `src/session/types.ts`: `Session`, `Status` (provisioning, running, stopped, failed), `Duration` (custom JSON serialization), `NotFoundError`
-- [ ] T020 [P] [US4] Implement `src/session/names.ts`: port the 250-name pool from Go, implement `getRandomName()` with collision avoidance
-- [ ] T021 [P] [US4] Implement `src/session/id.ts`: `generateID()` (picks from name pool), `validateID()` (2-15 lowercase letters), `normalizeName()` (case-insensitive)
-- [ ] T022 [US4] Implement `src/session/store.ts`: JSON file CRUD (`add`, `update`, `remove`, `get`, `list`, `listActive`), case-insensitive lookups, duplicate detection
-- [ ] T023 [US4] Write unit tests in `tests/unit/session/`: test ID generation, name pool, store CRUD, case-insensitive matching, collision avoidance
+- [ ] T019 [P] [US4] Define types in `sandctl-ts/src/session/types.ts`: `Session`, `Status` (provisioning, running, stopped, failed), `Duration` (custom JSON serialization), `NotFoundError`
+- [ ] T020 [P] [US4] Implement `sandctl-ts/src/session/names.ts`: port the 250-name pool from Go, implement `getRandomName()` with collision avoidance
+- [ ] T021 [P] [US4] Implement `sandctl-ts/src/session/id.ts`: `generateID()` (picks from name pool), `validateID()` (2-15 lowercase letters), `normalizeName()` (case-insensitive)
+- [ ] T022 [US4] Implement `sandctl-ts/src/session/store.ts`: JSON file CRUD (`add`, `update`, `remove`, `get`, `list`, `listActive`), case-insensitive lookups, duplicate detection
+- [ ] T023 [US4] Write unit tests in `sandctl-ts/tests/unit/session/`: test ID generation, name pool, store CRUD, case-insensitive matching, collision avoidance
 
 ### UI Module
 
-- [ ] T024 [P] [US1] Implement `src/ui/errors.ts`: `formatError()` mapping error types to exit codes (0, 2, 3, 4, 5) and helpful messages with `[error]` prefix
-- [ ] T025 [P] [US1] Implement `src/ui/progress.ts`: Spinner wrapper (start, update, success, fail), `runSteps()` for multi-step operations, `printSuccess`, `printError`, `printWarning`, `printInfo`
-- [ ] T026 [P] [US1] Implement `src/ui/table.ts`: Table formatting with column alignment, padding, separator (2-space), unicode support
-- [ ] T027 [P] [US2] Implement `src/ui/prompt.ts`: `promptString`, `promptSecret` (masked input), `promptSelect`, `promptYesNo` (with defaults), TTY detection
-- [ ] T028 [US1] Write unit tests in `tests/unit/ui/`: test error formatting, table output, exit code mapping
+- [ ] T024 [P] [US1] Implement `sandctl-ts/src/ui/errors.ts`: `formatError()` mapping error types to exit codes (0, 2, 3, 4, 5) and helpful messages with `[error]` prefix
+- [ ] T025 [P] [US1] Implement `sandctl-ts/src/ui/progress.ts`: Spinner wrapper (start, update, success, fail), `runSteps()` for multi-step operations, `printSuccess`, `printError`, `printWarning`, `printInfo`
+- [ ] T026 [P] [US1] Implement `sandctl-ts/src/ui/table.ts`: Table formatting with column alignment, padding, separator (2-space), unicode support
+- [ ] T027 [P] [US2] Implement `sandctl-ts/src/ui/prompt.ts`: `promptString`, `promptSecret` (masked input), `promptSelect`, `promptYesNo` (with defaults), TTY detection
+- [ ] T028 [US1] Write unit tests in `sandctl-ts/tests/unit/ui/`: test error formatting, table output, exit code mapping
 
 ### Utility Module
 
-- [ ] T029 [P] Implement `src/utils/paths.ts`: tilde expansion (`~` → home directory), path resolution
+- [ ] T029 [P] Implement `sandctl-ts/src/utils/paths.ts`: tilde expansion (`~` → home directory), path resolution
 
 **Checkpoint**: All shared infrastructure is tested and ready for command implementations.
 
@@ -83,17 +85,17 @@
 
 ### Provider Interface
 
-- [ ] T030 [P] Define `src/provider/interface.ts`: `Provider` interface (name, create, get, delete, list, waitReady), `SSHKeyManager` interface (ensureSSHKey)
-- [ ] T031 [P] Define `src/provider/types.ts`: `VM` type, `CreateOpts`, `VMStatus` enum (provisioning, starting, running, stopping, stopped, deleting, failed)
-- [ ] T032 [P] Define `src/provider/errors.ts`: `ErrNotFound`, `ErrAuthFailed`, `ErrQuotaExceeded`, `ErrProvisionFailed`, `ErrTimeout`
-- [ ] T033 Implement `src/provider/registry.ts`: `register()`, `get()`, `available()` — provider factory registry
+- [ ] T030 [P] Define `sandctl-ts/src/provider/interface.ts`: `Provider` interface (name, create, get, delete, list, waitReady), `SSHKeyManager` interface (ensureSSHKey)
+- [ ] T031 [P] Define `sandctl-ts/src/provider/types.ts`: `VM` type, `CreateOpts`, `VMStatus` enum (provisioning, starting, running, stopping, stopped, deleting, failed)
+- [ ] T032 [P] Define `sandctl-ts/src/provider/errors.ts`: `ErrNotFound`, `ErrAuthFailed`, `ErrQuotaExceeded`, `ErrProvisionFailed`, `ErrTimeout`
+- [ ] T033 Implement `sandctl-ts/src/provider/registry.ts`: `register()`, `get()`, `available()` — provider factory registry
 
 ### Hetzner Provider
 
-- [ ] T034 [US3] Implement `src/hetzner/client.ts`: Hetzner API client using REST `fetch` calls (or `@hetznercloud/hcloud-js` if Bun-compatible) — create server, get server, delete server, list servers, list datacenters
-- [ ] T035 [US3] Implement `src/hetzner/provider.ts`: Provider interface implementation — `create()` (with cloud-init, labels, defaults), `get()`, `delete()`, `list()`, `waitReady()` (poll every 5s, check IP + SSH)
-- [ ] T036 [US3] Implement `src/hetzner/ssh-keys.ts`: `ensureSSHKey()` — idempotent key creation with fingerprint deduplication and race condition handling
-- [ ] T037 [US3] Implement `src/hetzner/setup.ts`: Cloud-init script generation — Docker install, agent user creation, SSH key copy, GitHub CLI install, boot-finished marker
+- [ ] T034 [US3] Implement `sandctl-ts/src/hetzner/client.ts`: Hetzner API client using REST `fetch` calls (or `@hetznercloud/hcloud-js` if Bun-compatible) — create server, get server, delete server, list servers, list datacenters
+- [ ] T035 [US3] Implement `sandctl-ts/src/hetzner/provider.ts`: Provider interface implementation — `create()` (with cloud-init, labels, defaults), `get()`, `delete()`, `list()`, `waitReady()` (poll every 5s, check IP + SSH)
+- [ ] T036 [US3] Implement `sandctl-ts/src/hetzner/ssh-keys.ts`: `ensureSSHKey()` — idempotent key creation with fingerprint deduplication and race condition handling
+- [ ] T037 [US3] Implement `sandctl-ts/src/hetzner/setup.ts`: Cloud-init script generation — Docker install, agent user creation, SSH key copy, GitHub CLI install, boot-finished marker
 - [ ] T038 [US3] Register Hetzner provider in registry, auto-register on import
 
 **Checkpoint**: Hetzner provider can create, get, list, and delete VMs via API.
@@ -104,10 +106,10 @@
 
 **Purpose**: Implement SSH client for command execution, interactive console, and agent discovery.
 
-- [ ] T039 [P] [US5] Implement `src/ssh/client.ts`: SSH client wrapper using `ssh2` — connect (with agent or key file), close, connection options (port, user, timeout)
-- [ ] T040 [US6] Implement `src/ssh/exec.ts`: `exec()` (run command, return stdout/stderr/exit code), `execWithStreams()` (custom I/O), `checkConnection()` (TCP probe)
-- [ ] T041 [US5] Implement `src/ssh/console.ts`: Interactive PTY terminal — raw mode, window resize handling (SIGWINCH), terminal passthrough
-- [ ] T042 [US9] Implement `src/ssh/agent.ts`: SSH agent discovery — check `~/.ssh/config` IdentityAgent, 1Password socket, `SSH_AUTH_SOCK`; list keys, get key by fingerprint, get signer
+- [ ] T039 [P] [US5] Implement `sandctl-ts/src/ssh/client.ts`: SSH client wrapper using `ssh2` — connect (with agent or key file), close, connection options (port, user, timeout)
+- [ ] T040 [US6] Implement `sandctl-ts/src/ssh/exec.ts`: `exec()` (run command, return stdout/stderr/exit code), `execWithStreams()` (custom I/O), `checkConnection()` (TCP probe)
+- [ ] T041 [US5] Implement `sandctl-ts/src/ssh/console.ts`: Interactive PTY terminal — raw mode, window resize handling (SIGWINCH), terminal passthrough
+- [ ] T042 [US9] Implement `sandctl-ts/src/ssh/agent.ts`: SSH agent discovery — check `~/.ssh/config` IdentityAgent, 1Password socket, `SSH_AUTH_SOCK`; list keys, get key by fingerprint, get signer
 
 **Checkpoint**: SSH client can execute commands and open interactive terminals on remote hosts.
 
@@ -119,18 +121,18 @@
 
 ### Version Command
 
-- [ ] T043 [US1] Implement `src/commands/version.ts`: Print version, commit, build time. Wire build info from compile-time constants or package.json version.
+- [ ] T043 [US1] Implement `sandctl-ts/src/commands/version.ts`: Print version, commit, build time. Wire build info from compile-time constants or package.json version.
 
 ### Init Command
 
-- [ ] T044 [US2] Implement `src/commands/init.ts` interactive mode: detect existing config, prompt for Hetzner token (secret), SSH key config (select agent vs file), region (select from ash/hel1/fsn1/nbg1), server type (select), git config (detect existing ~/.gitconfig), GitHub token (optional, secret)
-- [ ] T045 [US2] Implement `src/commands/init.ts` non-interactive mode: require `--hetzner-token` + (`--ssh-agent` OR `--ssh-public-key`), validate all flag values, reject conflicting flags
+- [ ] T044 [US2] Implement `sandctl-ts/src/commands/init.ts` interactive mode: detect existing config, prompt for Hetzner token (secret), SSH key config (select agent vs file), region (select from ash/hel1/fsn1/nbg1), server type (select), git config (detect existing ~/.gitconfig), GitHub token (optional, secret)
+- [ ] T045 [US2] Implement `sandctl-ts/src/commands/init.ts` non-interactive mode: require `--hetzner-token` + (`--ssh-agent` OR `--ssh-public-key`), validate all flag values, reject conflicting flags
 - [ ] T046 [US2] Implement all `init` flags: `--hetzner-token`, `--ssh-public-key`, `--ssh-agent`, `--ssh-key-fingerprint`, `--region`, `--server-type`, `--opencode-zen-key`, `--git-config-path`, `--git-user-name`, `--git-user-email`, `--github-token`
 - [ ] T047 [US2] Write unit tests for init command: flag validation, mutual exclusivity, email validation, path expansion
 
 ### New Command
 
-- [ ] T048 [US3] Implement `src/commands/new.ts`: Load config, get provider, generate session ID, provision VM with progress steps (ensure SSH key, provision VM, wait ready, setup opencode, setup git, setup GitHub CLI, run template script)
+- [ ] T048 [US3] Implement `sandctl-ts/src/commands/new.ts`: Load config, get provider, generate session ID, provision VM with progress steps (ensure SSH key, provision VM, wait ready, setup opencode, setup git, setup GitHub CLI, run template script)
 - [ ] T049 [US3] Implement new command flags: `-t/--timeout`, `--no-console`, `-T/--template`, `-p/--provider`, `--region`, `--server-type`, `--image`
 - [ ] T050 [US3] Implement provisioning error cleanup: delete VM on failure, mark session as failed, print recovery instructions
 - [ ] T051 [US3] Implement auto-console: detect TTY, connect to console after successful provisioning (unless `--no-console`)
@@ -140,21 +142,21 @@
 
 ### List Command
 
-- [ ] T055 [US4] Implement `src/commands/list.ts`: Load sessions, sync with provider API, display table (ID, PROVIDER, STATUS, CREATED, TIMEOUT) or JSON output
+- [ ] T055 [US4] Implement `sandctl-ts/src/commands/list.ts`: Load sessions, sync with provider API, display table (ID, PROVIDER, STATUS, CREATED, TIMEOUT) or JSON output
 - [ ] T056 [US4] Implement list flags: `-f/--format` (table/json), `-a/--all` (include stopped/failed)
 - [ ] T057 [US4] Implement timeout display: "Xh remaining", "Xm remaining", "expired", or "-"
 
 ### Console Command
 
-- [ ] T058 [US5] Implement `src/commands/console.ts`: Validate TTY, normalize session name, get session, check status, open interactive SSH console with "Connecting to..." message
+- [ ] T058 [US5] Implement `sandctl-ts/src/commands/console.ts`: Validate TTY, normalize session name, get session, check status, open interactive SSH console with "Connecting to..." message
 
 ### Exec Command
 
-- [ ] T059 [US6] Implement `src/commands/exec.ts`: Normalize session name, get session, check status; with `-c` flag run single command; without flag open interactive shell
+- [ ] T059 [US6] Implement `sandctl-ts/src/commands/exec.ts`: Normalize session name, get session, check status; with `-c` flag run single command; without flag open interactive shell
 
 ### Destroy Command
 
-- [ ] T060 [US7] Implement `src/commands/destroy.ts`: Normalize session name, get session, confirm (unless `--force`), delete VM from provider, remove session from local store
+- [ ] T060 [US7] Implement `sandctl-ts/src/commands/destroy.ts`: Normalize session name, get session, confirm (unless `--force`), delete VM from provider, remove session from local store
 - [ ] T061 [US7] Implement destroy aliases: `rm`, `delete`
 - [ ] T062 [US7] Handle legacy sessions and provider deletion failures gracefully
 
@@ -166,13 +168,13 @@
 
 **Purpose**: Implement template management subcommands.
 
-- [ ] T063 [P] [US8] Implement `src/commands/template/index.ts`: Template parent command with subcommand registration
-- [ ] T064 [P] [US8] Port template store from Go to TypeScript: `src/` already has templateconfig equivalent — implement template types, normalize function, store (add, get, list, remove, getInitScript, getInitScriptPath)
-- [ ] T065 [US8] Implement `src/commands/template/add.ts`: Create template dir, generate init.sh stub, detect and launch editor (EDITOR → VISUAL → vim → vi → nano)
-- [ ] T066 [US8] Implement `src/commands/template/list.ts`: List templates in table format (NAME, CREATED)
-- [ ] T067 [US8] Implement `src/commands/template/show.ts`: Print init script content to stdout
-- [ ] T068 [US8] Implement `src/commands/template/edit.ts`: Open init script in detected editor
-- [ ] T069 [US8] Implement `src/commands/template/remove.ts`: Confirm (unless `--force`), delete template directory
+- [ ] T063 [P] [US8] Implement `sandctl-ts/src/commands/template/index.ts`: Template parent command with subcommand registration
+- [ ] T064 [P] [US8] Port template store from Go to TypeScript: implement template types, normalize function, store (add, get, list, remove, getInitScript, getInitScriptPath)
+- [ ] T065 [US8] Implement `sandctl-ts/src/commands/template/add.ts`: Create template dir, generate init.sh stub, detect and launch editor (EDITOR → VISUAL → vim → vi → nano)
+- [ ] T066 [US8] Implement `sandctl-ts/src/commands/template/list.ts`: List templates in table format (NAME, CREATED)
+- [ ] T067 [US8] Implement `sandctl-ts/src/commands/template/show.ts`: Print init script content to stdout
+- [ ] T068 [US8] Implement `sandctl-ts/src/commands/template/edit.ts`: Open init script in detected editor
+- [ ] T069 [US8] Implement `sandctl-ts/src/commands/template/remove.ts`: Confirm (unless `--force`), delete template directory
 
 **Checkpoint**: Template CRUD workflow works: add → list → show → edit → remove.
 
@@ -182,7 +184,7 @@
 
 **Purpose**: Implement SSH agent discovery and forwarding.
 
-- [ ] T070 [US9] Port SSH agent discovery logic to `src/ssh/agent.ts`: Parse `~/.ssh/config` for IdentityAgent, check 1Password socket paths, fall back to `SSH_AUTH_SOCK`
+- [ ] T070 [US9] Port SSH agent discovery logic to `sandctl-ts/src/ssh/agent.ts`: Parse `~/.ssh/config` for IdentityAgent, check 1Password socket paths, fall back to `SSH_AUTH_SOCK`
 - [ ] T071 [US9] Implement agent key listing: list keys with type, fingerprint (SHA256), comment
 - [ ] T072 [US9] Implement key selection by fingerprint for multi-key agents
 - [ ] T073 [US9] Test agent discovery with mock socket paths
@@ -193,13 +195,13 @@
 
 ## Phase 8: CI/CD & Build Pipeline
 
-**Purpose**: Update GitHub Actions workflows for the TypeScript project.
+**Purpose**: Add GitHub Actions workflows for the TypeScript project (Go workflows remain unchanged).
 
-- [ ] T074 [P] Update `.github/workflows/ci.yml`: Replace Go jobs with Bun jobs — lint (biome check), test (bun test), build (bun build --compile)
-- [ ] T075 [P] Add E2E test job to CI: build binary, generate SSH key, run E2E tests with Hetzner credentials
-- [ ] T076 Update Makefile build targets for version/commit/build-time injection into TypeScript binary (via build-time environment variables or generated version file)
+- [ ] T074 [P] Create `.github/workflows/ts-ci.yml`: Bun jobs for TypeScript version — lint (biome check), test (bun test), build (bun build --compile) in `sandctl-ts/` directory
+- [ ] T075 [P] Add E2E test job to TypeScript CI: build binary, generate SSH key, run E2E tests with Hetzner credentials
+- [ ] T076 Create `sandctl-ts/Makefile` with build targets for version/commit/build-time injection into TypeScript binary (via build-time environment variables or generated version file)
 
-**Checkpoint**: CI pipeline passes with lint, test, and build jobs.
+**Checkpoint**: TypeScript CI pipeline passes with lint, test, and build jobs. Go CI remains operational.
 
 ---
 
@@ -207,7 +209,7 @@
 
 **Purpose**: Rewrite E2E tests in TypeScript using Bun's test runner.
 
-- [ ] T077 Implement `tests/e2e/cli.test.ts`: Port all E2E scenarios from Go — version, init, new, list, exec, destroy, console, full workflow lifecycle
+- [ ] T077 Implement `sandctl-ts/tests/e2e/cli.test.ts`: Port all E2E scenarios from Go — version, init, new, list, exec, destroy, console, full workflow lifecycle
 - [ ] T078 Implement E2E test helpers: binary execution wrapper, temp config file management, cleanup utilities
 - [ ] T079 Add E2E test scenarios for templates: add, list, show, remove, use with `new -T`
 
@@ -219,13 +221,13 @@
 
 **Purpose**: Final cleanup, documentation updates, and backward compatibility verification.
 
-- [ ] T080 Update `README.md`: Replace Go installation instructions with Bun/TypeScript build instructions, update prerequisites
-- [ ] T081 Update `CLAUDE.md`: Replace Go-specific development guidelines with TypeScript/Bun guidelines
+- [ ] T080 Create `sandctl-ts/README.md`: Document TypeScript build/installation instructions, prerequisites (Bun), development workflow
+- [ ] T081 Add note to root `README.md`: Document that both Go and TypeScript versions exist, explain status and how to build each
 - [ ] T082 Verify backward compatibility: load existing Go-generated `~/.sandctl/config` and `~/.sandctl/sessions.json` files
 - [ ] T083 Verify error messages match existing format: `[error]` prefix, helpful suggestions, exit codes
 - [ ] T084 Verify binary size is within 2x of Go binary
 - [ ] T085 Verify startup time is under 200ms
-- [ ] T086 Remove Go-specific files: `.golangci.yml`, Go CI workflow references
+- [ ] T086 Document parity status: create `sandctl-ts/PARITY.md` listing feature parity status with Go implementation
 
 ---
 
@@ -318,11 +320,11 @@ Work is split into **6 parallel streams** optimized for minimal blocking. Each s
 | Stream | Engineer | Owns | Primary Modules |
 |--------|----------|------|-----------------|
 | **A** | Eng 1 (Lead) | Scaffold + CI/CD + Polish | Phase 1, Phase 8, Phase 10, Version cmd |
-| **B** | Eng 2 | Config + Init | `src/config/`, `src/commands/init.ts`, `src/utils/` |
-| **C** | Eng 3 | Session + List + Destroy | `src/session/`, `src/commands/list.ts`, `src/commands/destroy.ts` |
-| **D** | Eng 4 | UI + Templates | `src/ui/`, `src/commands/template/` |
-| **E** | Eng 5 | Provider + Hetzner + New | `src/provider/`, `src/hetzner/`, `src/commands/new.ts` |
-| **F** | Eng 6 | SSH + Console + Exec + Agent | `src/ssh/`, `src/commands/console.ts`, `src/commands/exec.ts` |
+| **B** | Eng 2 | Config + Init | `sandctl-ts/src/config/`, `sandctl-ts/src/commands/init.ts`, `sandctl-ts/src/utils/` |
+| **C** | Eng 3 | Session + List + Destroy | `sandctl-ts/src/session/`, `sandctl-ts/src/commands/list.ts`, `sandctl-ts/src/commands/destroy.ts` |
+| **D** | Eng 4 | UI + Templates | `sandctl-ts/src/ui/`, `sandctl-ts/src/commands/template/` |
+| **E** | Eng 5 | Provider + Hetzner + New | `sandctl-ts/src/provider/`, `sandctl-ts/src/hetzner/`, `sandctl-ts/src/commands/new.ts` |
+| **F** | Eng 6 | SSH + Console + Exec + Agent | `sandctl-ts/src/ssh/`, `sandctl-ts/src/commands/console.ts`, `sandctl-ts/src/commands/exec.ts` |
 
 ### Week-by-Week Execution Plan
 
@@ -379,8 +381,8 @@ Each PR is scoped to one module or command for fast review (~200─500 lines of 
 | **PR-14** | `feat: console command` | T058 | Eng 6 | PR-03, PR-11 | ~150 lines |
 | **PR-15** | `feat: exec command` | T059 | Eng 6 | PR-03, PR-11 | ~150 lines |
 | **PR-16** | `test: E2E test suite` | T077─T079 | Eng 1 | PR-05─PR-07, PR-13─PR-15 | ~500 lines |
-| **PR-17** | `docs: update README + CLAUDE.md` | T080─T081 | Eng 2 | PR-13 | ~200 lines |
-| **PR-18** | `chore: final polish, compat verification, cleanup` | T082─T086 | Eng 1 | PR-16, PR-17 | ~100 lines |
+| **PR-17** | `docs: TypeScript README + root README updates` | T080─T081 | Eng 2 | PR-13 | ~200 lines |
+| **PR-18** | `chore: parity documentation and verification` | T082─T086 | Eng 1 | PR-16, PR-17 | ~100 lines |
 
 ### PR Merge Order (Critical Path)
 
@@ -425,8 +427,8 @@ All other PRs can be developed and reviewed in parallel alongside the critical p
 
 - [P] tasks = different files or modules, no dependencies between them
 - [Story] label maps task to specific user story for traceability
-- The 250-name pool in `src/session/names.ts` must be copied exactly from Go source to maintain compatibility
-- Cloud-init script in `src/hetzner/setup.ts` must produce identical VM setup as the Go version
+- The 250-name pool in `sandctl-ts/src/session/names.ts` must be copied exactly from Go source to maintain compatibility
+- Cloud-init script in `sandctl-ts/src/hetzner/setup.ts` must produce identical VM setup as the Go version
 - All existing config/session files from Go version must load without modification
 - Secrets (Hetzner token, GitHub token) must never appear in logs or console output
 - Use `fetch` for Hetzner API if `@hetznercloud/hcloud-js` has Bun compatibility issues

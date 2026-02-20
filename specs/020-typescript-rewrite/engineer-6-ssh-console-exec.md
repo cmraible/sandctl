@@ -9,12 +9,12 @@ You own all SSH connectivity — the bridge between the local CLI and remote san
 
 | Module | Files |
 |--------|-------|
-| SSH client | `src/ssh/client.ts` |
-| SSH exec | `src/ssh/exec.ts` |
-| SSH console | `src/ssh/console.ts` |
-| SSH agent | `src/ssh/agent.ts` |
-| Console command | `src/commands/console.ts` |
-| Exec command | `src/commands/exec.ts` |
+| SSH client | `sandctl-ts/src/ssh/client.ts` |
+| SSH exec | `sandctl-ts/src/ssh/exec.ts` |
+| SSH console | `sandctl-ts/src/ssh/console.ts` |
+| SSH agent | `sandctl-ts/src/ssh/agent.ts` |
+| Console command | `sandctl-ts/src/commands/console.ts` |
+| Exec command | `sandctl-ts/src/commands/exec.ts` |
 
 ---
 
@@ -25,7 +25,7 @@ You own all SSH connectivity — the bridge between the local CLI and remote san
 
 ### What to Build
 
-#### 1. SSH Client (`src/ssh/client.ts`)
+#### 1. SSH Client (`sandctl-ts/src/ssh/client.ts`)
 
 Wrapper around the `ssh2` library:
 
@@ -62,7 +62,7 @@ Connection logic:
 4. Set connection timeout
 5. Handle connection errors with clear messages
 
-#### 2. SSH Command Execution (`src/ssh/exec.ts`)
+#### 2. SSH Command Execution (`sandctl-ts/src/ssh/exec.ts`)
 
 ```typescript
 interface ExecResult {
@@ -101,7 +101,7 @@ export async function checkConnection(host: string, port?: number, timeout?: num
 - Return true if connection established within timeout
 - Return false on any error (don't throw)
 
-#### 3. Interactive Console (`src/ssh/console.ts`)
+#### 3. Interactive Console (`sandctl-ts/src/ssh/console.ts`)
 
 This is the most complex SSH feature — interactive PTY terminal:
 
@@ -236,7 +236,7 @@ bun run lint
 
 ### What to Build
 
-#### SSH Agent (`src/ssh/agent.ts`)
+#### SSH Agent (`sandctl-ts/src/ssh/agent.ts`)
 
 Port the agent discovery logic from Go's `internal/sshagent/agent.go`:
 

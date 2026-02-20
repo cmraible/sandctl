@@ -5,6 +5,8 @@
 **Status**: Draft
 **Input**: Rewrite the existing Go CLI (`sandctl`) in TypeScript using the Bun runtime, shipping it as a native executable. All existing user-facing behavior must be preserved.
 
+> **Implementation Strategy**: The TypeScript version will be developed in a `sandctl-ts/` subdirectory alongside the existing Go implementation. The Go implementation will remain untouched and operational until the TypeScript version reaches full parity. Only after parity is confirmed will the TypeScript version replace the Go implementation.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Install and Run sandctl Binary (Priority: P1)

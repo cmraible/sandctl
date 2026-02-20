@@ -7,6 +7,8 @@
 
 Rewrite the `sandctl` CLI from Go to TypeScript using the Bun runtime, compiled to native executables via `bun build --compile`. The rewrite preserves all user-facing behavior, command structure, config/session file formats, and error handling. The architecture mirrors the Go codebase's modular package structure using TypeScript modules.
 
+**Implementation Strategy**: The TypeScript version will be developed in a `sandctl-ts/` subdirectory at the repository root. The existing Go implementation (`cmd/`, `internal/`, `go.mod`, etc.) will remain untouched and continue to be the primary implementation. Once the TypeScript version reaches full feature parity with the Go implementation and all tests pass, a future decision can be made about replacing the Go version.
+
 ## Technical Context
 
 **Language/Version**: TypeScript 5.x on Bun 1.x runtime
@@ -74,87 +76,91 @@ specs/020-typescript-rewrite/
 └── checklists/          # Verification checklists
 ```
 
-### Source Code (repository root — replaces Go source)
+### Source Code (sandctl-ts/ subdirectory at repository root)
 
 ```text
-src/
-├── index.ts                    # CLI entry point (replaces cmd/sandctl/main.go)
-├── commands/                   # Command implementations (replaces internal/cli/)
-│   ├── init.ts                 # sandctl init
-│   ├── new.ts                  # sandctl new
-│   ├── list.ts                 # sandctl list
-│   ├── console.ts              # sandctl console
-│   ├── exec.ts                 # sandctl exec
-│   ├── destroy.ts              # sandctl destroy
-│   ├── version.ts              # sandctl version
-│   └── template/               # sandctl template subcommands
-│       ├── index.ts            # template parent command
-│       ├── add.ts              # template add
-│       ├── list.ts             # template list
-│       ├── show.ts             # template show
-│       ├── edit.ts             # template edit
-│       └── remove.ts           # template remove
-├── config/                     # Configuration management (replaces internal/config/)
-│   ├── config.ts               # Config types, load, validate
-│   └── writer.ts               # Atomic config write with permissions
-├── session/                    # Session management (replaces internal/session/)
-│   ├── types.ts                # Session types, status
-│   ├── store.ts                # JSON session store CRUD
-│   ├── id.ts                   # Human-readable ID generation
-│   └── names.ts                # 250-name pool
-├── provider/                   # Provider plugin system (replaces internal/provider/)
-│   ├── interface.ts            # Provider & SSHKeyManager interfaces
-│   ├── registry.ts             # Provider factory registry
-│   ├── types.ts                # VM, CreateOpts, VMStatus types
-│   └── errors.ts               # Provider error types
-├── hetzner/                    # Hetzner provider (replaces internal/hetzner/)
-│   ├── client.ts               # Hetzner API client (REST or SDK)
-│   ├── provider.ts             # Provider interface implementation
-│   ├── ssh-keys.ts             # SSH key management
-│   └── setup.ts                # Cloud-init script generation
-├── ssh/                        # SSH execution (replaces internal/sshexec/ + sshagent/)
-│   ├── client.ts               # SSH client wrapper
-│   ├── exec.ts                 # Command execution via SSH
-│   ├── console.ts              # Interactive PTY console
-│   └── agent.ts                # SSH agent discovery & integration
-├── ui/                         # User interface utilities (replaces internal/ui/)
-│   ├── errors.ts               # Error formatting with exit codes
-│   ├── progress.ts             # Spinner and progress steps
-│   ├── prompt.ts               # Interactive prompts
-│   └── table.ts                # Table formatting
-└── utils/                      # Shared utilities
-    └── paths.ts                # Path expansion (~ handling)
-
-tests/
-├── unit/                       # Unit tests (mirror src/ structure)
-│   ├── config/
-│   │   ├── config.test.ts
-│   │   └── writer.test.ts
-│   ├── session/
-│   │   ├── id.test.ts
-│   │   ├── names.test.ts
-│   │   ├── store.test.ts
-│   │   └── types.test.ts
-│   ├── ui/
-│   │   ├── errors.test.ts
-│   │   ├── progress.test.ts
-│   │   ├── prompt.test.ts
-│   │   └── table.test.ts
-│   └── commands/
-│       └── init.test.ts
-└── e2e/
-    └── cli.test.ts             # E2E tests with compiled binary
-
-package.json                    # Project manifest
-tsconfig.json                   # TypeScript configuration
-bunfig.toml                     # Bun configuration
-biome.json                      # Linter/formatter config (Biome replaces ESLint+Prettier)
-Makefile                        # Build automation (updated for Bun)
+sandctl-ts/                         # New TypeScript implementation subdirectory
+├── src/
+│   ├── index.ts                    # CLI entry point (replaces cmd/sandctl/main.go)
+│   ├── commands/                   # Command implementations (replaces internal/cli/)
+│   │   ├── init.ts                 # sandctl init
+│   │   ├── new.ts                  # sandctl new
+│   │   ├── list.ts                 # sandctl list
+│   │   ├── console.ts              # sandctl console
+│   │   ├── exec.ts                 # sandctl exec
+│   │   ├── destroy.ts              # sandctl destroy
+│   │   ├── version.ts              # sandctl version
+│   │   └── template/               # sandctl template subcommands
+│   │       ├── index.ts            # template parent command
+│   │       ├── add.ts              # template add
+│   │       ├── list.ts             # template list
+│   │       ├── show.ts             # template show
+│   │       ├── edit.ts             # template edit
+│   │       └── remove.ts           # template remove
+│   ├── config/                     # Configuration management (replaces internal/config/)
+│   │   ├── config.ts               # Config types, load, validate
+│   │   └── writer.ts               # Atomic config write with permissions
+│   ├── session/                    # Session management (replaces internal/session/)
+│   │   ├── types.ts                # Session types, status
+│   │   ├── store.ts                # JSON session store CRUD
+│   │   ├── id.ts                   # Human-readable ID generation
+│   │   └── names.ts                # 250-name pool
+│   ├── provider/                   # Provider plugin system (replaces internal/provider/)
+│   │   ├── interface.ts            # Provider & SSHKeyManager interfaces
+│   │   ├── registry.ts             # Provider factory registry
+│   │   ├── types.ts                # VM, CreateOpts, VMStatus types
+│   │   └── errors.ts               # Provider error types
+│   ├── hetzner/                    # Hetzner provider (replaces internal/hetzner/)
+│   │   ├── client.ts               # Hetzner API client (REST or SDK)
+│   │   ├── provider.ts             # Provider interface implementation
+│   │   ├── ssh-keys.ts             # SSH key management
+│   │   └── setup.ts                # Cloud-init script generation
+│   ├── ssh/                        # SSH execution (replaces internal/sshexec/ + sshagent/)
+│   │   ├── client.ts               # SSH client wrapper
+│   │   ├── exec.ts                 # Command execution via SSH
+│   │   ├── console.ts              # Interactive PTY console
+│   │   └── agent.ts                # SSH agent discovery & integration
+│   ├── ui/                         # User interface utilities (replaces internal/ui/)
+│   │   ├── errors.ts               # Error formatting with exit codes
+│   │   ├── progress.ts             # Spinner and progress steps
+│   │   ├── prompt.ts               # Interactive prompts
+│   │   └── table.ts                # Table formatting
+│   └── utils/                      # Shared utilities
+│       └── paths.ts                # Path expansion (~ handling)
+├── tests/
+│   ├── unit/                       # Unit tests (mirror src/ structure)
+│   │   ├── config/
+│   │   │   ├── config.test.ts
+│   │   │   └── writer.test.ts
+│   │   ├── session/
+│   │   │   ├── id.test.ts
+│   │   │   ├── names.test.ts
+│   │   │   ├── store.test.ts
+│   │   │   └── types.test.ts
+│   │   ├── ui/
+│   │   │   ├── errors.test.ts
+│   │   │   ├── progress.test.ts
+│   │   │   ├── prompt.test.ts
+│   │   │   └── table.test.ts
+│   │   └── commands/
+│   │       └── init.test.ts
+│   └── e2e/
+│       └── cli.test.ts             # E2E tests with compiled binary
+├── package.json                    # Project manifest
+├── tsconfig.json                   # TypeScript configuration
+├── bunfig.toml                     # Bun configuration
+├── biome.json                      # Linter/formatter config (Biome replaces ESLint+Prettier)
+├── Makefile                        # Build automation for TypeScript version
+├── scripts/
+│   └── build-all.sh                # Cross-platform compilation script
+└── README.md                       # TypeScript version documentation
 ```
+
+**Note**: The existing Go implementation at the repository root (`cmd/`, `internal/`, `go.mod`, etc.) remains unchanged. The TypeScript version lives entirely within `sandctl-ts/` until it reaches parity.
 
 ### Build Configuration
 
-**package.json** key fields:
+**package.json** key fields (in `sandctl-ts/package.json`):
 ```json
 {
   "name": "sandctl",
@@ -172,7 +178,7 @@ Makefile                        # Build automation (updated for Bun)
 }
 ```
 
-**Cross-compilation targets** (in build-all script):
+**Cross-compilation targets** (in `sandctl-ts/scripts/build-all.sh`):
 - `bun build --compile --target=bun-darwin-arm64`
 - `bun build --compile --target=bun-darwin-x64`
 - `bun build --compile --target=bun-linux-x64`

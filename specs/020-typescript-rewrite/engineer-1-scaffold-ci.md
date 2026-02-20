@@ -9,12 +9,12 @@ You own the project foundation and integration layers:
 
 | Module | Files |
 |--------|-------|
-| Project scaffold | `package.json`, `tsconfig.json`, `bunfig.toml`, `biome.json`, `Makefile`, `scripts/`, `.gitignore` |
-| CLI entry point | `src/index.ts` |
-| Version command | `src/commands/version.ts` |
-| CI/CD | `.github/workflows/ci.yml` |
-| E2E tests | `tests/e2e/cli.test.ts` |
-| Polish & docs | `README.md`, `CLAUDE.md` |
+| Project scaffold | `sandctl-ts/package.json`, `sandctl-ts/tsconfig.json`, `sandctl-ts/bunfig.toml`, `sandctl-ts/biome.json`, `sandctl-ts/Makefile`, `sandctl-ts/scripts/`, `sandctl-ts/.gitignore` |
+| CLI entry point | `sandctl-ts/src/index.ts` |
+| Version command | `sandctl-ts/src/commands/version.ts` |
+| CI/CD | `.github/workflows/ts-ci.yml` |
+| E2E tests | `sandctl-ts/tests/e2e/cli.test.ts` |
+| Polish & docs | `sandctl-ts/README.md`, root `README.md` updates |
 
 ---
 
@@ -25,22 +25,22 @@ You own the project foundation and integration layers:
 
 ### What to Build
 
-Initialize the Bun/TypeScript project from scratch. This PR replaces the Go build system entirely.
+Initialize the Bun/TypeScript project from scratch in the `sandctl-ts/` subdirectory. This PR creates the TypeScript project alongside the existing Go implementation.
 
-1. **`package.json`** — Create with:
+1. **`sandctl-ts/package.json`** — Create with:
    - `"name": "sandctl"`, `"type": "module"`
    - Scripts: `build`, `build-all`, `test`, `test:unit`, `test:e2e`, `lint`, `fmt`, `check-fmt`
    - See `plan.md` → Build Configuration for exact script definitions
 
-2. **`tsconfig.json`** — Strict mode, ESNext target, Bun module resolution, path aliases (`@/` → `src/`), include `src/` and `tests/`
+2. **`sandctl-ts/tsconfig.json`** — Strict mode, ESNext target, Bun module resolution, path aliases (`@/` → `sandctl-ts/src/`), include `sandctl-ts/src/` and `sandctl-ts/tests/`
 
-3. **`bunfig.toml`** — Test runner config (preload, coverage settings)
+3. **`sandctl-ts/bunfig.toml`** — Test runner config (preload, coverage settings)
 
-4. **`biome.json`** — Linter and formatter rules (recommended preset). This replaces `.golangci.yml`
+4. **`sandctl-ts/biome.json`** — Linter and formatter rules (recommended preset)
 
-5. **Install dependencies** — `commander`, `yaml`, `ssh2`, `ora`, `chalk`, `@inquirer/prompts` and their `@types/*` packages
+5. **Install dependencies** — In `sandctl-ts/`, run `bun add commander yaml ssh2 ora chalk @inquirer/prompts` and their `@types/*` packages
 
-6. **`src/index.ts`** — Minimal CLI entry point:
+6. **`sandctl-ts/src/index.ts`** — Minimal CLI entry point:
    ```typescript
    import { Command } from "commander";
    const program = new Command()
@@ -51,17 +51,20 @@ Initialize the Bun/TypeScript project from scratch. This PR replaces the Go buil
    program.parse();
    ```
 
-7. **`Makefile`** — Update with Bun targets: `build`, `build-all`, `test`, `lint`, `fmt`, `clean`, `install`
+7. **`sandctl-ts/Makefile`** — Create with Bun targets: `build`, `build-all`, `test`, `lint`, `fmt`, `clean`, `install`
 
-8. **`scripts/build-all.sh`** — Cross-compile for darwin-arm64, darwin-x64, linux-x64, linux-arm64
+8. **`sandctl-ts/scripts/build-all.sh`** — Cross-compile for darwin-arm64, darwin-x64, linux-x64, linux-arm64
 
-9. **`.gitignore`** — Add `node_modules/`, `*.tsbuildinfo`, `dist/`, `sandctl` (binary). Remove Go-specific entries (`*.test` binary, `vendor/`)
+9. **`sandctl-ts/.gitignore`** — Add `node_modules/`, `*.tsbuildinfo`, `dist/`, `sandctl` (binary), `.env*`
 
-10. **Remove Go files** — Delete `go.mod`, `go.sum`, `tools.go`, `cmd/`, `internal/`. Keep `specs/`, `tests/` (to be rewritten), `README.md`, `.github/`, `.specify/`
+10. **Keep Go files untouched** — The existing Go implementation (`cmd/`, `internal/`, `go.mod`, etc.) remains at the repository root
 
 ### How to Verify
 
 ```bash
+# Navigate to TypeScript project
+cd sandctl-ts
+
 # Project builds to native binary
 bun build src/index.ts --compile --outfile sandctl
 
@@ -95,18 +98,21 @@ bun test
 
 ### What to Build
 
-Replace Go CI jobs with Bun equivalents in `.github/workflows/ci.yml`:
+Create a new CI workflow for the TypeScript version at `.github/workflows/ts-ci.yml` (Go CI remains unchanged):
 
-1. **Lint job**: Install Bun → `bun run lint`
-2. **Test job**: Install Bun → `bun test`
-3. **Build job**: Install Bun → `bun run build` → upload artifact
+1. **Lint job**: Install Bun → `cd sandctl-ts && bun run lint`
+2. **Test job**: Install Bun → `cd sandctl-ts && bun test`
+3. **Build job**: Install Bun → `cd sandctl-ts && bun run build` → upload artifact
 4. **E2E job** (conditional): Build binary → generate SSH key → run E2E tests with `HETZNER_API_TOKEN` secret
 
-Update `Makefile` to inject version/commit/build-time into the binary via a generated `src/version.ts` file.
+Update `sandctl-ts/Makefile` to inject version/commit/build-time into the binary via a generated `sandctl-ts/src/version.ts` file.
 
 ### How to Verify
 
 ```bash
+# Navigate to TypeScript project
+cd sandctl-ts
+
 # Lint job would pass
 bun run lint
 
@@ -136,7 +142,7 @@ ls -la sandctl  # binary exists
 
 ### What to Build
 
-Implement `src/commands/version.ts`:
+Implement `sandctl-ts/src/commands/version.ts`:
 
 ```typescript
 // Output format must match Go version exactly:
@@ -145,11 +151,14 @@ Implement `src/commands/version.ts`:
 //   built:  <BUILD_TIME>
 ```
 
-Wire build info from a generated `src/version.ts` (created by Makefile at build time) or `package.json` version as fallback.
+Wire build info from a generated `sandctl-ts/src/version.ts` (created by Makefile at build time) or `package.json` version as fallback.
 
 ### How to Verify
 
 ```bash
+# Navigate to TypeScript project
+cd sandctl-ts
+
 # Build with version injection
 make build
 
@@ -175,9 +184,9 @@ bun run src/index.ts version
 
 ### What to Build
 
-Port all E2E test scenarios from Go (`tests/e2e/cli_test.go`) to TypeScript:
+Port all E2E test scenarios from Go (`sandctl-ts/tests/e2e/cli_test.go`) to TypeScript:
 
-1. **`tests/e2e/cli.test.ts`** — Test scenarios:
+1. **`sandctl-ts/tests/e2e/cli.test.ts`** — Test scenarios:
    - `sandctl version` prints version info
    - `sandctl init` creates config with correct permissions (0600)
    - `sandctl new` provisions a VM (requires Hetzner token)
@@ -186,7 +195,7 @@ Port all E2E test scenarios from Go (`tests/e2e/cli_test.go`) to TypeScript:
    - `sandctl destroy <name> --force` removes the session
    - Full workflow lifecycle: init → new → list → exec → destroy
 
-2. **`tests/e2e/helpers.ts`** — Test utilities:
+2. **`sandctl-ts/tests/e2e/helpers.ts`** — Test utilities:
    - Binary execution wrapper (spawn process, capture stdout/stderr/exit code)
    - Temp config file management (isolated `--config` per test)
    - Cleanup utilities (destroy any sessions created during tests)
@@ -201,6 +210,9 @@ Port all E2E test scenarios from Go (`tests/e2e/cli_test.go`) to TypeScript:
 ### How to Verify
 
 ```bash
+# Navigate to TypeScript project
+cd sandctl-ts
+
 # Run E2E tests (requires HETZNER_API_TOKEN env var)
 HETZNER_API_TOKEN=<token> bun test tests/e2e/
 
@@ -235,9 +247,27 @@ grep -r "sessions.json" tests/e2e/  # Should find NOTHING (use CLI output only)
 3. Verify exit codes: 0, 2, 3, 4, 5 match spec
 4. Verify binary size is within 2x of Go binary
 5. Verify startup time under 200ms
-6. Remove `.golangci.yml` and any remaining Go references
+6. Create `sandctl-ts/PARITY.md` documenting feature parity status with Go implementation
 
 ### How to Verify
+
+```bash
+# Navigate to TypeScript project
+cd sandctl-ts
+
+# Compare binary sizes
+ls -lh ../sandctl sandctl
+# TypeScript binary should be <2x Go binary
+
+# Measure startup time
+time ./sandctl --help
+# Should be <200ms
+
+# Test backward compat with Go config
+cp ~/.sandctl/config ~/.sandctl/config.backup
+./sandctl init --hetzner-token test --ssh-public-key ~/.ssh/id_rsa.pub
+# Config loads and validates correctly
+```
 
 ```bash
 # Backward compat: create a config with Go binary, load with TS binary

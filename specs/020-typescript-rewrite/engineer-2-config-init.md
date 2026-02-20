@@ -9,11 +9,11 @@ You own configuration management and the init command:
 
 | Module | Files |
 |--------|-------|
-| Config | `src/config/config.ts`, `src/config/writer.ts` |
-| Utils | `src/utils/paths.ts` |
-| Init command | `src/commands/init.ts` |
-| Unit tests | `tests/unit/config/`, `tests/unit/commands/init.test.ts` |
-| Docs (later) | `README.md`, `CLAUDE.md` |
+| Config | `sandctl-ts/src/config/config.ts`, `sandctl-ts/src/config/writer.ts` |
+| Utils | `sandctl-ts/src/utils/paths.ts` |
+| Init command | `sandctl-ts/src/commands/init.ts` |
+| Unit tests | `sandctl-ts/tests/unit/config/`, `sandctl-ts/tests/unit/commands/init.test.ts` |
+| Docs (later) | `sandctl-ts/README.md`, root `README.md` updates |
 
 ---
 
@@ -24,7 +24,7 @@ You own configuration management and the init command:
 
 ### What to Build
 
-#### 1. Config Types (`src/config/config.ts`)
+#### 1. Config Types (`sandctl-ts/src/config/config.ts`)
 
 Define TypeScript interfaces matching the Go structs exactly (see `data-model.md`):
 
@@ -55,7 +55,7 @@ interface ProviderConfig {
 
 Custom error types: `NotFoundError`, `InsecurePermissionsError`, `ValidationError`.
 
-#### 2. Config Loading (`src/config/config.ts`)
+#### 2. Config Loading (`sandctl-ts/src/config/config.ts`)
 
 Implement `load(configPath?: string)`:
 - Default path: `~/.sandctl/config`
@@ -64,14 +64,14 @@ Implement `load(configPath?: string)`:
 - Handle legacy format migration (old `sprites_token` field)
 - Throw `NotFoundError` if file doesn't exist
 
-#### 3. Config Validation (`src/config/config.ts`)
+#### 3. Config Validation (`sandctl-ts/src/config/config.ts`)
 
 Implement `validate(config: Config)`:
 - Check `default_provider` is set
 - Check SSH key is configured (either `ssh_public_key` path or `ssh_key_source: "agent"`)
 - Validate email format if `git_user_email` is set (must contain `@` with non-empty parts)
 
-#### 4. Config Writer (`src/config/writer.ts`)
+#### 4. Config Writer (`sandctl-ts/src/config/writer.ts`)
 
 Implement `save(configPath: string, config: Config)`:
 - Create directory with 0700 permissions if needed
@@ -79,7 +79,7 @@ Implement `save(configPath: string, config: Config)`:
 - Enforce 0600 file permissions
 - Serialize using `yaml` package with `omitempty` behavior (omit undefined fields)
 
-#### 5. Helper Methods (`src/config/config.ts`)
+#### 5. Helper Methods (`sandctl-ts/src/config/config.ts`)
 
 - `getProviderConfig(config, providerName)` → `ProviderConfig | undefined`
 - `setProviderSSHKeyID(config, providerName, keyID)` → mutates config
@@ -88,13 +88,13 @@ Implement `save(configPath: string, config: Config)`:
 - `hasGitConfig(config)` → boolean
 - `hasGitHubToken(config)` → boolean
 
-#### 6. Path Utils (`src/utils/paths.ts`)
+#### 6. Path Utils (`sandctl-ts/src/utils/paths.ts`)
 
 Implement `expandTilde(path: string)`: Replace leading `~` with `os.homedir()`.
 
 #### 7. Unit Tests
 
-**`tests/unit/config/config.test.ts`**:
+**`sandctl-ts/tests/unit/config/config.test.ts`**:
 - Loading a valid YAML config produces correct types
 - Loading with wrong permissions (0644) throws `InsecurePermissionsError`
 - Loading non-existent file throws `NotFoundError`
@@ -104,7 +104,7 @@ Implement `expandTilde(path: string)`: Replace leading `~` with `os.homedir()`.
 - Legacy config migration handles `sprites_token`
 - Helper methods return expected values
 
-**`tests/unit/config/writer.test.ts`**:
+**`sandctl-ts/tests/unit/config/writer.test.ts`**:
 - Writes YAML with correct content
 - Creates directory if missing (0700 permissions)
 - File has 0600 permissions after write
@@ -157,7 +157,7 @@ bun run lint
 
 ### What to Build
 
-#### 1. Interactive Mode (`src/commands/init.ts`)
+#### 1. Interactive Mode (`sandctl-ts/src/commands/init.ts`)
 
 When run in a TTY without required flags:
 
@@ -203,7 +203,7 @@ When `--hetzner-token` is provided:
 --github-token <token>         GitHub personal access token
 ```
 
-#### 4. Unit Tests (`tests/unit/commands/init.test.ts`)
+#### 4. Unit Tests (`sandctl-ts/tests/unit/commands/init.test.ts`)
 
 - `--ssh-agent` + `--ssh-public-key` returns error
 - `--git-user-name` without `--git-user-email` returns error
@@ -253,26 +253,33 @@ stat -c '%a' ~/.sandctl/config  # Linux: should be 600
 
 ### What to Build
 
-1. **`README.md`**: Replace Go prerequisites/installation with:
+1. **`sandctl-ts/README.md`**: Create TypeScript-specific README with:
    - Prerequisites: Bun 1.x
-   - Build: `bun install && bun run build`
+   - Build: `cd sandctl-ts && bun install && bun run build`
    - Install: `make install`
    - Cross-compile: `make build-all`
    - Quick start: same commands, just different build steps
 
-2. **`CLAUDE.md`**: Replace Go development guidelines with TypeScript/Bun:
-   - Active tech: TypeScript 5.x, Bun, commander, ssh2, yaml
-   - Commands: `bun test`, `bun run lint`, `bun run build`
-   - Code style: Biome-enforced, strict TypeScript
+2. **Root `README.md`**: Add a section explaining both implementations exist:
+   - Go implementation (current, stable) at repository root
+   - TypeScript implementation (in development) in `sandctl-ts/` subdirectory
+   - Instructions to build/use each version
 
 ### How to Verify
 
 ```bash
-# Follow README instructions from scratch
+# Follow sandctl-ts/README instructions from scratch
+cd sandctl-ts
 bun install
 bun run build
 ./sandctl --help
 # Should work as documented
+
+# Verify Go version still works
+cd ..
+make build
+./sandctl --help
+# Both versions functional
 
 # Verify links in README are valid
 # Verify command examples actually work

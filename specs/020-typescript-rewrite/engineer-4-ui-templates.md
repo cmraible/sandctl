@@ -9,13 +9,13 @@ You own all user-facing output formatting and the template management system:
 
 | Module | Files |
 |--------|-------|
-| Error formatting | `src/ui/errors.ts` |
-| Progress/spinners | `src/ui/progress.ts` |
-| Table formatting | `src/ui/table.ts` |
-| Interactive prompts | `src/ui/prompt.ts` |
-| Template store | Inline in `src/commands/template/` or a shared `src/templateconfig/` |
-| Template commands | `src/commands/template/index.ts`, `add.ts`, `list.ts`, `show.ts`, `edit.ts`, `remove.ts` |
-| Unit tests | `tests/unit/ui/` |
+| Error formatting | `sandctl-ts/src/ui/errors.ts` |
+| Progress/spinners | `sandctl-ts/src/ui/progress.ts` |
+| Table formatting | `sandctl-ts/src/ui/table.ts` |
+| Interactive prompts | `sandctl-ts/src/ui/prompt.ts` |
+| Template store | Inline in `sandctl-ts/src/commands/template/` or a shared `sandctl-ts/src/templateconfig/` |
+| Template commands | `sandctl-ts/src/commands/template/index.ts`, `add.ts`, `list.ts`, `show.ts`, `edit.ts`, `remove.ts` |
+| Unit tests | `sandctl-ts/tests/unit/ui/` |
 
 ---
 
@@ -26,7 +26,7 @@ You own all user-facing output formatting and the template management system:
 
 ### What to Build
 
-#### 1. Error Formatting (`src/ui/errors.ts`)
+#### 1. Error Formatting (`sandctl-ts/src/ui/errors.ts`)
 
 Map error types to exit codes and user-friendly messages:
 
@@ -52,7 +52,7 @@ All error messages:
 - Include helpful next-step suggestions
 - Printed to stderr
 
-#### 2. Progress & Spinners (`src/ui/progress.ts`)
+#### 2. Progress & Spinners (`sandctl-ts/src/ui/progress.ts`)
 
 Wrapper around `ora` spinner library:
 
@@ -86,7 +86,7 @@ function printWarning(message: string): void;    // Yellow ⚠ prefix
 function printInfo(message: string): void;       // Blue ℹ prefix
 ```
 
-#### 3. Table Formatting (`src/ui/table.ts`)
+#### 3. Table Formatting (`sandctl-ts/src/ui/table.ts`)
 
 Implement table display with column alignment:
 
@@ -112,7 +112,7 @@ alice    hetzner   running  2026-02-20 10:30:00  2h remaining
 bob      hetzner   stopped  2026-02-19 14:00:00  -
 ```
 
-#### 4. Interactive Prompts (`src/ui/prompt.ts`)
+#### 4. Interactive Prompts (`sandctl-ts/src/ui/prompt.ts`)
 
 Wrapper around `@inquirer/prompts`:
 
@@ -125,9 +125,9 @@ async function promptYesNo(message: string, defaultValue?: boolean): Promise<boo
 
 TTY detection: check `process.stdin.isTTY` before prompting. If not a TTY, throw an error suggesting non-interactive flags.
 
-#### 5. Unit Tests (`tests/unit/ui/`)
+#### 5. Unit Tests (`sandctl-ts/tests/unit/ui/`)
 
-**`tests/unit/ui/errors.test.ts`**:
+**`sandctl-ts/tests/unit/ui/errors.test.ts`**:
 - Config `NotFoundError` → exit code 2
 - Session `NotFoundError` → exit code 4
 - `InsecurePermissionsError` → exit code 2
@@ -137,7 +137,7 @@ TTY detection: check `process.stdin.isTTY` before prompting. If not a TTY, throw
 - All messages start with `[error]`
 - Messages include helpful suggestions
 
-**`tests/unit/ui/table.test.ts`**:
+**`sandctl-ts/tests/unit/ui/table.test.ts`**:
 - Single row table formats correctly
 - Multi-row table aligns columns
 - Column widths adapt to content
@@ -145,7 +145,7 @@ TTY detection: check `process.stdin.isTTY` before prompting. If not a TTY, throw
 - Empty table returns headers only
 - Unicode characters don't break alignment
 
-**`tests/unit/ui/progress.test.ts`**:
+**`sandctl-ts/tests/unit/ui/progress.test.ts`**:
 - `printSuccess` outputs with green checkmark
 - `printError` outputs with red cross
 - `printWarning` outputs with yellow warning
@@ -225,11 +225,11 @@ Implement store operations:
 
 Custom errors: `NotFoundError`, `AlreadyExistsError`.
 
-#### 2. Template Parent Command (`src/commands/template/index.ts`)
+#### 2. Template Parent Command (`sandctl-ts/src/commands/template/index.ts`)
 
 Register subcommands: add, list, show, edit, remove.
 
-#### 3. Template Add (`src/commands/template/add.ts`)
+#### 3. Template Add (`sandctl-ts/src/commands/template/add.ts`)
 
 `sandctl template add <name>`:
 
@@ -242,7 +242,7 @@ Register subcommands: add, list, show, edit, remove.
 
 If no editor found: print warning with path to manually edit.
 
-#### 4. Template List (`src/commands/template/list.ts`)
+#### 4. Template List (`sandctl-ts/src/commands/template/list.ts`)
 
 `sandctl template list`:
 
@@ -255,13 +255,13 @@ backend   2026-02-19 14:00:00
 
 Empty state: "No templates configured." + "Create one with: sandctl template add <name>"
 
-#### 5. Template Show (`src/commands/template/show.ts`)
+#### 5. Template Show (`sandctl-ts/src/commands/template/show.ts`)
 
 `sandctl template show <name>`:
 
 Print init script content to stdout (raw, no formatting). Error if not found: "template '<name>' not found. Use 'sandctl template list' to see available templates"
 
-#### 6. Template Edit (`src/commands/template/edit.ts`)
+#### 6. Template Edit (`sandctl-ts/src/commands/template/edit.ts`)
 
 `sandctl template edit <name>`:
 
@@ -269,7 +269,7 @@ Open init.sh in detected editor. Same editor detection as add. Errors:
 - Not found: "template '<name>' not found. Use 'sandctl template list' to see available templates"
 - No editor: "no editor found. Set the EDITOR environment variable"
 
-#### 7. Template Remove (`src/commands/template/remove.ts`)
+#### 7. Template Remove (`sandctl-ts/src/commands/template/remove.ts`)
 
 `sandctl template remove <name>`:
 
