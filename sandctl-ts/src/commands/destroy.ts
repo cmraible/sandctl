@@ -28,7 +28,7 @@ export async function runDestroy(
 	const session = await store.get(normalized).catch((error: unknown) => {
 		if (error instanceof NotFoundError) {
 			throw new CommandExitError(
-				`[error] Session '${normalized}' not found. Use 'sandctl list' to see available sessions.`,
+				`Session '${normalized}' not found. Use 'sandctl list' to see available sessions.`,
 				4,
 			);
 		}
