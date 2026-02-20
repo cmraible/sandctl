@@ -4,6 +4,18 @@ A CLI tool for managing sandboxed AI web development agents.
 
 sandctl provisions isolated VM environments using [Fly.io Sprites](https://sprites.dev) where AI coding agents (Claude, OpenCode, Codex) can work on development tasks safely.
 
+## TypeScript Rewrite (Experimental)
+
+An in-progress TypeScript/Bun rewrite lives in `sandctl-ts/`.
+To try it locally:
+
+```bash
+cd sandctl-ts
+bun install
+bun run build
+./sandctl --help
+```
+
 ## Requirements
 
 - Go 1.22 or later

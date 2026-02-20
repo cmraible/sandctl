@@ -1,0 +1,74 @@
+name: TypeScript CI
+
+on:
+  push:
+    paths:
+      - "sandctl-ts/**"
+      - ".github/workflows/ts-ci.yml"
+  pull_request:
+    paths:
+      - "sandctl-ts/**"
+      - ".github/workflows/ts-ci.yml"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        working-directory: sandctl-ts
+        run: bun install
+      - name: Lint
+        working-directory: sandctl-ts
+        run: bun run lint
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        working-directory: sandctl-ts
+        run: bun install
+      - name: Test
+        working-directory: sandctl-ts
+        run: bun test
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        working-directory: sandctl-ts
+        run: bun install
+      - name: Build
+        working-directory: sandctl-ts
+        run: bun run build
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: sandctl-ts-binary
+          path: sandctl-ts/sandctl
+
+  e2e:
+    runs-on: ubuntu-latest
+    if: ${{ secrets.HETZNER_API_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        working-directory: sandctl-ts
+        run: bun install
+      - name: Build binary
+        working-directory: sandctl-ts
+        run: bun run build
+      - name: Generate SSH key
+        run: ssh-keygen -t ed25519 -N '' -f /tmp/id_ed25519
+      - name: Run E2E tests
+        working-directory: sandctl-ts
+        env:
+          HETZNER_API_TOKEN: ${{ secrets.HETZNER_API_TOKEN }}
+          SSH_PUBLIC_KEY: /tmp/id_ed25519.pub
+        run: bun test tests/e2e/
