@@ -259,11 +259,11 @@ export function registerInitCommand(): Command {
 		.option("--ssh-key-fingerprint <fingerprint>", "SSH key fingerprint")
 		.option(
 			"--region <region>",
-			"Default region (ash/Ashburn, hel1/Helsinki, fsn1/Falkenstein, nbg1/Nuremberg, hil/Hillsboro, sin/Singapore)",
+			"Default region (ash (Ashburn, VA), hel1 (Helsinki), fsn1 (Falkenstein), nbg1 (Nuremberg), hil (Hillsboro, OR), sin (Singapore))",
 		)
 		.option(
 			"--server-type <serverType>",
-			"Default server type (cpx11:2vCPU/2GB, cpx21:3vCPU/4GB, cpx31:4vCPU/8GB, cpx41:8vCPU/16GB, cpx51:16vCPU/32GB)",
+			"Default server type (cpx11 (2 vCPU, 2 GB RAM), cpx21 (3 vCPU, 4 GB RAM), cpx31 (4 vCPU, 8 GB RAM), cpx41 (8 vCPU, 16 GB RAM), cpx51 (16 vCPU, 32 GB RAM))",
 		)
 		.option("--opencode-zen-key <key>", "Opencode Zen key")
 		.option("--git-config-path <path>", "Path to gitconfig file")
