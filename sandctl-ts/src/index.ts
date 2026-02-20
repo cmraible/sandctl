@@ -1,11 +1,35 @@
 import { Command } from "commander";
+
+import { registerDestroyCommand } from "@/commands/destroy";
+import { registerListCommand } from "@/commands/list";
 import { registerVersionCommand } from "@/commands/version";
 
-const program = new Command()
+export const program = new Command()
 	.name("sandctl")
 	.description("Manage sandboxed AI web development agents")
 	.option("--config <path>", "Config file path", "~/.sandctl/config")
 	.option("-v, --verbose", "Enable verbose debug output");
 
 program.addCommand(registerVersionCommand());
-program.parse();
+program.addCommand(registerListCommand());
+program.addCommand(registerDestroyCommand());
+
+if (import.meta.main) {
+	program.parseAsync().catch((error: unknown) => {
+		if (
+			error &&
+			typeof error === "object" &&
+			"exitCode" in error &&
+			typeof error.exitCode === "number"
+		) {
+			const message =
+				"message" in error ? String(error.message) : String(error);
+			console.error(message);
+			process.exitCode = error.exitCode;
+			return;
+		}
+
+		console.error(error instanceof Error ? error.message : String(error));
+		process.exitCode = 1;
+	});
+}
