@@ -32,7 +32,7 @@ Initialize the Bun/TypeScript project from scratch in the `sandctl-ts/` subdirec
    - Scripts: `build`, `build-all`, `test`, `test:unit`, `test:e2e`, `lint`, `fmt`, `check-fmt`
    - See `plan.md` → Build Configuration for exact script definitions
 
-2. **`sandctl-ts/tsconfig.json`** — Strict mode, ESNext target, Bun module resolution, path aliases (`@/` → `sandctl-ts/src/`), include `sandctl-ts/src/` and `sandctl-ts/tests/`
+2. **`sandctl-ts/tsconfig.json`** — Strict mode, ESNext target, Bun module resolution, path aliases (`@/` → `src/`), include `src/` and `tests/`
 
 3. **`sandctl-ts/bunfig.toml`** — Test runner config (preload, coverage settings)
 
@@ -105,7 +105,7 @@ Create a new CI workflow for the TypeScript version at `.github/workflows/ts-ci.
 3. **Build job**: Install Bun → `cd sandctl-ts && bun run build` → upload artifact
 4. **E2E job** (conditional): Build binary → generate SSH key → run E2E tests with `HETZNER_API_TOKEN` secret
 
-Update `sandctl-ts/Makefile` to inject version/commit/build-time into the binary via a generated `sandctl-ts/src/version.ts` file.
+Update `sandctl-ts/Makefile` to inject version/commit/build-time into the binary via a generated `src/version.ts` file.
 
 ### How to Verify
 
