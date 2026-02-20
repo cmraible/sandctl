@@ -346,7 +346,7 @@ Work is split into **6 parallel streams** optimized for minimal blocking. Each s
 | Day | Eng 1 (A) | Eng 2 (B) | Eng 3 (C) | Eng 4 (D) | Eng 5 (E) | Eng 6 (F) |
 |-----|-----------|-----------|-----------|-----------|-----------|-----------|
 | D1─D3 | Reviews + integration testing | Reviews + bugfixes | Reviews + bugfixes | Reviews + bugfixes | PR-13: New cmd (T048─T054) | PR-14: Console cmd (T058) + PR-15: Exec cmd (T059) |
-| D4─D5 | PR-16: E2E tests (T077─T079) | PR-16 support | PR-16 support | PR-16 support | PR-13 cont'd | Reviews + bugfixes |
+| D4─D5 | PR-16: E2E tests (T077─T079) | Own-module bugfixes | Own-module bugfixes | Own-module bugfixes | PR-13 cont'd | Reviews + bugfixes |
 
 #### Week 4: E2E, Polish, Ship
 
@@ -401,6 +401,8 @@ PR-03 + PR-04 → PR-07 ──────────────────�
 ```
 
 **Critical path**: PR-01 → PR-02 → PR-10 → PR-13 → PR-16 → PR-18 (6 sequential PRs)
+
+PR-05 (init cmd) is **not** on the critical path — it develops in parallel alongside PR-10, since PR-13 (new cmd) depends on PR-02 (config) and PR-10 (provider) but not on PR-05 (init).
 
 All other PRs can be developed and reviewed in parallel alongside the critical path.
 
