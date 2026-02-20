@@ -229,61 +229,193 @@
 
 ---
 
-## Dependencies & Execution Order
+## Task Dependency Graph
 
-### Phase Dependencies
+Each task lists what it blocks and what it requires. This drives the parallel execution plan below.
 
-- **Phase 1 (Scaffold)**: No dependencies — start immediately
-- **Phase 2 (Infrastructure)**: Depends on Phase 1 — BLOCKS all commands
-- **Phase 3 (Provider)**: Depends on Phase 2 (config, session types)
-- **Phase 4 (SSH)**: Depends on Phase 2 (config for keys)
-- **Phase 5 (Core Commands)**: Depends on Phases 2, 3, 4
-- **Phase 6 (Templates)**: Depends on Phase 2 (store patterns)
-- **Phase 7 (SSH Agent)**: Depends on Phase 4 (SSH module)
-- **Phase 8 (CI/CD)**: Can start after Phase 1, finalized after Phase 5
-- **Phase 9 (E2E)**: Depends on Phase 5 (core commands working)
-- **Phase 10 (Polish)**: Depends on all prior phases
+```
+T001─T004 ──┐
+T005 ───────┤ (Phase 1: scaffold)
+T006─T011 ──┘
+      │
+      ▼
+┌─────────────────────────────────────────────────────┐
+│ Phase 2: four independent work streams              │
+│                                                     │
+│  Config          Session        UI          Utils   │
+│  T012─T014 ──┐   T019─T021 ─┐  T024─T027 ─┐  T029 │
+│  T015─T016   │   T022        │  T028        │       │
+│  T017─T018   │   T023        │              │       │
+└──────┬───────┴───────┬───────┴──────┬───────┴───────┘
+       │               │              │
+       ▼               ▼              ▼
+┌──────────────┐ ┌──────────────┐ ┌──────────────────┐
+│ Phase 3:     │ │ Phase 4:     │ │ Phase 6:         │
+│ Provider +   │ │ SSH module   │ │ Template store + │
+│ Hetzner      │ │ T039─T041   │ │ commands         │
+│ T030─T038    │ │              │ │ T063─T069        │
+└──────┬───────┘ └──────┬───────┘ └────────┬─────────┘
+       │                │                  │
+       │                ├─── T042 ─────────┤
+       │                │  (SSH Agent,     │
+       │                │   Phase 7:       │
+       │                │   T070─T073)     │
+       │                │                  │
+       ▼                ▼                  │
+┌─────────────────────────────────────┐    │
+│ Phase 5: CLI Commands               │    │
+│                                     │    │
+│  Version: T043 (no deps beyond P1)  │    │
+│  Init:    T044─T047 (config + UI)   │    │
+│  New:     T048─T054 (all modules)   │    │
+│  List:    T055─T057 (session + prov)│    │
+│  Console: T058 (SSH + session)      │    │
+│  Exec:    T059 (SSH + session)      │    │
+│  Destroy: T060─T062 (prov + session)│    │
+└──────────────┬──────────────────────┘    │
+               │                           │
+               ▼                           ▼
+┌──────────────────────────────────────────────────┐
+│ Phase 8: CI/CD (T074─T076)                       │
+│ Phase 9: E2E Tests (T077─T079)                   │
+│ Phase 10: Polish & Docs (T080─T086)              │
+└──────────────────────────────────────────────────┘
+```
 
-### Parallel Opportunities
+### Detailed Task Dependencies
 
-- Within Phase 2: Config, Session, UI, and Utils modules can be built in parallel (T012-T029)
-- Within Phase 3: Provider interface types (T030-T032) can be built in parallel
-- Phase 3 and Phase 4 can be built in parallel (provider and SSH are independent)
-- Phase 6 (Templates) and Phase 7 (SSH Agent) can be built in parallel
-- Phase 8 (CI/CD) linting/testing jobs can start as soon as Phase 1 is complete
-
-### Within Each Phase
-
-- Types and interfaces before implementations
-- Implementations before tests
-- Tests before dependent phases
+| Task(s) | Requires | Blocks |
+|---------|----------|--------|
+| T001─T011 (Scaffold) | Nothing | Everything |
+| T012─T018 (Config) | T001─T011 | T044─T047 (init cmd), T048 (new cmd), T055 (list cmd) |
+| T019─T023 (Session) | T001─T011 | T048 (new cmd), T055 (list cmd), T058─T062 (console/exec/destroy) |
+| T024─T028 (UI) | T001─T011 | T044 (init prompts), T048 (new spinners), T055 (list table), T060 (destroy confirm) |
+| T029 (Utils) | T001─T011 | T013 (config load), T044 (init paths) |
+| T030─T033 (Provider iface) | T012 (config types) | T034─T038 (Hetzner) |
+| T034─T038 (Hetzner) | T030─T033 | T048 (new cmd), T055 (list sync), T060 (destroy) |
+| T039─T041 (SSH client/exec/console) | T012 (config types) | T048 (new cmd), T058 (console), T059 (exec) |
+| T042, T070─T073 (SSH Agent) | T039 (SSH client) | T048 (new cmd with agent), T058 (console with agent) |
+| T043 (Version cmd) | T006 (entry point) | None |
+| T044─T047 (Init cmd) | T012─T018, T024─T028 | T048 (new needs config) |
+| T048─T054 (New cmd) | T012─T042 (all infra) | T077 (E2E) |
+| T055─T057 (List cmd) | T019─T023, T030─T038 | T077 (E2E) |
+| T058 (Console cmd) | T019─T023, T039─T041 | T077 (E2E) |
+| T059 (Exec cmd) | T019─T023, T039─T041 | T077 (E2E) |
+| T060─T062 (Destroy cmd) | T019─T023, T030─T038, T024─T028 | T077 (E2E) |
+| T063─T069 (Templates) | T019─T023, T024─T028 | T079 (E2E templates) |
+| T074─T076 (CI/CD) | T001─T011 (scaffold) | None (can iterate) |
+| T077─T079 (E2E) | Phase 5 commands, T063─T069 | T080 (docs) |
+| T080─T086 (Polish) | All prior phases | None |
 
 ---
 
-## Implementation Strategy
+## Engineer Assignment Plan (6 Engineers)
 
-### MVP First (Phases 1-5)
+Work is split into **6 parallel streams** optimized for minimal blocking. Each stream is assigned to one engineer who owns those modules end-to-end, reducing context switching and merge conflicts.
 
-1. Complete Phase 1: Project skeleton builds to native binary
-2. Complete Phase 2: Config, session, UI modules tested
-3. Complete Phases 3 & 4 in parallel: Provider and SSH working
-4. Complete Phase 5: Core commands working end-to-end
-5. **STOP and VALIDATE**: Run `sandctl init → new → list → exec → destroy` manually
-6. If stable, proceed to Phases 6-10
+### Stream Assignments
 
-### Incremental Delivery
+| Stream | Engineer | Owns | Primary Modules |
+|--------|----------|------|-----------------|
+| **A** | Eng 1 (Lead) | Scaffold + CI/CD + Polish | Phase 1, Phase 8, Phase 10, Version cmd |
+| **B** | Eng 2 | Config + Init | `src/config/`, `src/commands/init.ts`, `src/utils/` |
+| **C** | Eng 3 | Session + List + Destroy | `src/session/`, `src/commands/list.ts`, `src/commands/destroy.ts` |
+| **D** | Eng 4 | UI + Templates | `src/ui/`, `src/commands/template/` |
+| **E** | Eng 5 | Provider + Hetzner + New | `src/provider/`, `src/hetzner/`, `src/commands/new.ts` |
+| **F** | Eng 6 | SSH + Console + Exec + Agent | `src/ssh/`, `src/commands/console.ts`, `src/commands/exec.ts` |
 
-1. Phase 1 → Binary shows help text
-2. Phase 2 → Infrastructure tested
-3. Phases 3+4 → Can create and connect to VMs
-4. Phase 5 → **Full core workflow** (init → new → list → exec → destroy)
-5. Phase 6 → Templates working
-6. Phase 7 → SSH agent working
-7. Phase 8 → CI pipeline green
-8. Phase 9 → E2E tests passing
-9. Phase 10 → Documentation updated, polish complete
+### Week-by-Week Execution Plan
 
-Each phase adds value without breaking previous phases.
+#### Week 1: Scaffold + Infrastructure (all engineers unblocked by end of week)
+
+| Day | Eng 1 (A) | Eng 2 (B) | Eng 3 (C) | Eng 4 (D) | Eng 5 (E) | Eng 6 (F) |
+|-----|-----------|-----------|-----------|-----------|-----------|-----------|
+| D1─D2 | PR-01: Scaffold (T001─T011) | — blocked — | — blocked — | — blocked — | — blocked — | — blocked — |
+| D3─D4 | PR-08: CI lint+test (T074) | PR-02: Config types+load+write (T012─T018) | PR-03: Session types+store+names (T019─T023) | PR-04: UI errors+progress+table+prompt (T024─T028) | Review PRs | Review PRs |
+| D5 | PR-09: Version cmd (T043) | PR-02 cont'd + T029 (utils) | PR-03 cont'd | PR-04 cont'd | Review PRs | Review PRs |
+
+#### Week 2: Provider, SSH, Templates (parallel streams)
+
+| Day | Eng 1 (A) | Eng 2 (B) | Eng 3 (C) | Eng 4 (D) | Eng 5 (E) | Eng 6 (F) |
+|-----|-----------|-----------|-----------|-----------|-----------|-----------|
+| D1─D3 | Reviews + PR-08 updates | PR-05: Init cmd interactive (T044─T046) | PR-06a: List cmd (T055─T057) | PR-07: Template store+cmds (T063─T069) | PR-10: Provider iface+Hetzner client (T030─T038) | PR-11: SSH client+exec+console (T039─T041) |
+| D4─D5 | Reviews | PR-05b: Init non-interactive+tests (T045, T047) | PR-06b: Destroy cmd (T060─T062) | PR-07 cont'd | PR-10 cont'd | PR-12: SSH Agent (T042, T070─T073) |
+
+#### Week 3: Core commands + Integration
+
+| Day | Eng 1 (A) | Eng 2 (B) | Eng 3 (C) | Eng 4 (D) | Eng 5 (E) | Eng 6 (F) |
+|-----|-----------|-----------|-----------|-----------|-----------|-----------|
+| D1─D3 | Reviews + integration testing | Reviews + bugfixes | Reviews + bugfixes | Reviews + bugfixes | PR-13: New cmd (T048─T054) | PR-14: Console cmd (T058) + PR-15: Exec cmd (T059) |
+| D4─D5 | PR-16: E2E tests (T077─T079) | PR-16 support | PR-16 support | PR-16 support | PR-13 cont'd | Reviews + bugfixes |
+
+#### Week 4: E2E, Polish, Ship
+
+| Day | Eng 1 (A) | Eng 2 (B) | Eng 3 (C) | Eng 4 (D) | Eng 5 (E) | Eng 6 (F) |
+|-----|-----------|-----------|-----------|-----------|-----------|-----------|
+| D1─D2 | PR-16 cont'd | PR-17: Docs (T080─T081) | Compat testing (T082─T083) | Perf testing (T084─T085) | Bugfixes | Bugfixes |
+| D3─D5 | PR-18: Final polish (T086) | Bugfixes | Bugfixes | Bugfixes | Bugfixes | Bugfixes |
+
+---
+
+## PR Plan (18 PRs, ordered by merge sequence)
+
+Each PR is scoped to one module or command for fast review (~200─500 lines of implementation + tests).
+
+| PR | Title | Tasks | Engineer | Blocked By | ~Size |
+|----|-------|-------|----------|------------|-------|
+| **PR-01** | `scaffold: init Bun project, build system, entry point` | T001─T011 | Eng 1 | None | ~300 lines |
+| **PR-02** | `feat: config module (load, validate, write, tests)` | T012─T018, T029 | Eng 2 | PR-01 | ~500 lines |
+| **PR-03** | `feat: session module (store, names, ID gen, tests)` | T019─T023 | Eng 3 | PR-01 | ~500 lines |
+| **PR-04** | `feat: UI module (errors, progress, table, prompt, tests)` | T024─T028 | Eng 4 | PR-01 | ~500 lines |
+| **PR-05** | `feat: init command (interactive + non-interactive)` | T044─T047 | Eng 2 | PR-02, PR-04 | ~450 lines |
+| **PR-06** | `feat: list + destroy commands` | T055─T057, T060─T062 | Eng 3 | PR-03, PR-10 | ~400 lines |
+| **PR-07** | `feat: template store + template commands` | T063─T069 | Eng 4 | PR-03, PR-04 | ~500 lines |
+| **PR-08** | `ci: Bun lint + test + build workflow` | T074─T076 | Eng 1 | PR-01 | ~150 lines |
+| **PR-09** | `feat: version command` | T043 | Eng 1 | PR-01 | ~50 lines |
+| **PR-10** | `feat: provider interface + Hetzner client` | T030─T038 | Eng 5 | PR-02 | ~600 lines |
+| **PR-11** | `feat: SSH client, exec, console` | T039─T041 | Eng 6 | PR-02 | ~500 lines |
+| **PR-12** | `feat: SSH agent discovery + key selection` | T042, T070─T073 | Eng 6 | PR-11 | ~350 lines |
+| **PR-13** | `feat: new command (provisioning workflow)` | T048─T054 | Eng 5 | PR-02─PR-04, PR-10, PR-11 | ~600 lines |
+| **PR-14** | `feat: console command` | T058 | Eng 6 | PR-03, PR-11 | ~150 lines |
+| **PR-15** | `feat: exec command` | T059 | Eng 6 | PR-03, PR-11 | ~150 lines |
+| **PR-16** | `test: E2E test suite` | T077─T079 | Eng 1 | PR-05─PR-07, PR-13─PR-15 | ~500 lines |
+| **PR-17** | `docs: update README + CLAUDE.md` | T080─T081 | Eng 2 | PR-13 | ~200 lines |
+| **PR-18** | `chore: final polish, compat verification, cleanup` | T082─T086 | Eng 1 | PR-16, PR-17 | ~100 lines |
+
+### PR Merge Order (Critical Path)
+
+The longest dependency chain determines the minimum timeline:
+
+```
+PR-01 → PR-02 → PR-05 ─────────────────────────────────────┐
+PR-01 → PR-03 ──────────────────────────────────────────────┤
+PR-01 → PR-04 ──────────────────────────────────────────────┤
+PR-01 → PR-10 → PR-06 ─────────────────────────────────────┤
+PR-01 → PR-11 → PR-12 ─────────────────────────────────────┤
+PR-01 → PR-11 → PR-14 ─────────────────────────────────────┤
+PR-01 → PR-11 → PR-15 ─────────────────────────────────────┤
+PR-02 + PR-04 + PR-10 + PR-11 → PR-13 ─────────────────────┤
+PR-03 + PR-04 → PR-07 ─────────────────────────────────────┤
+                                                            ▼
+                                              PR-16 (E2E) → PR-18 (ship)
+```
+
+**Critical path**: PR-01 → PR-02 → PR-10 → PR-13 → PR-16 → PR-18 (6 sequential PRs)
+
+All other PRs can be developed and reviewed in parallel alongside the critical path.
+
+### Scaling to 4 or 8 Engineers
+
+**4 engineers** — merge streams:
+- Combine B+D (Config/UI + Init + Templates → 1 engineer)
+- Combine C+E (Session/Provider + List/Destroy/New → 1 engineer)
+- Combine A as-is (Scaffold/CI/E2E)
+- Combine F as-is (SSH/Console/Exec)
+
+**8 engineers** — split streams:
+- Split E into Provider interface (1 eng) + Hetzner implementation (1 eng)
+- Split A into Scaffold (1 eng) + CI/E2E (1 eng)
+- All other streams remain as-is
 
 ---
 
@@ -296,3 +428,5 @@ Each phase adds value without breaking previous phases.
 - All existing config/session files from Go version must load without modification
 - Secrets (Hetzner token, GitHub token) must never appear in logs or console output
 - Use `fetch` for Hetzner API if `@hetznercloud/hcloud-js` has Bun compatibility issues
+- Each PR should include implementation + tests for the module it covers
+- Engineers should review each other's PRs — each engineer reviews ~3 PRs total
