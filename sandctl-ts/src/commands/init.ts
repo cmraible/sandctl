@@ -46,7 +46,7 @@ const SERVER_TYPE_CHOICES = [
 const VIM_SELECT_THEME = {
 	keybindings: ["vim" as const],
 	style: {
-		keysHelpTip: () => "up/down/j/k navigate • enter select",
+		keysHelpTip: () => undefined,
 	},
 };
 
