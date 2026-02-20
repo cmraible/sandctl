@@ -4,6 +4,10 @@ import { getProvider, type VMStatus } from "@/provider";
 import { SessionStore } from "@/session/store";
 import { type Session, type Status, timeoutRemaining } from "@/session/types";
 
+function assertNever(value: never): never {
+	throw new Error(`unknown VM status: ${String(value)}`);
+}
+
 function mapVMStatusToSession(status: VMStatus): Status {
 	switch (status) {
 		case "running":
@@ -18,8 +22,7 @@ function mapVMStatusToSession(status: VMStatus): Status {
 		case "failed":
 			return "failed";
 	}
-	const exhaustiveStatus: never = status;
-	throw new Error(`unknown VM status: ${exhaustiveStatus}`);
+	return assertNever(status);
 }
 
 export function formatTimeout(remaining: number | null): string {
