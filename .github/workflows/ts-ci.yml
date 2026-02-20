@@ -57,21 +57,28 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    if: ${{ secrets.HETZNER_API_TOKEN != '' }}
+    env:
+      HETZNER_API_TOKEN: ${{ secrets.HETZNER_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+        if: ${{ env.HETZNER_API_TOKEN != '' }}
       - uses: oven-sh/setup-bun@v2
+        if: ${{ env.HETZNER_API_TOKEN != '' }}
       - name: Install dependencies
+        if: ${{ env.HETZNER_API_TOKEN != '' }}
         working-directory: sandctl-ts
         run: bun install
       - name: Build binary
+        if: ${{ env.HETZNER_API_TOKEN != '' }}
         working-directory: sandctl-ts
         run: bun run build
       - name: Generate SSH key
+        if: ${{ env.HETZNER_API_TOKEN != '' }}
         run: ssh-keygen -t ed25519 -N '' -f /tmp/id_ed25519
       - name: Run E2E tests
+        if: ${{ env.HETZNER_API_TOKEN != '' }}
         working-directory: sandctl-ts
         env:
-          HETZNER_API_TOKEN: ${{ secrets.HETZNER_API_TOKEN }}
+          HETZNER_API_TOKEN: ${{ env.HETZNER_API_TOKEN }}
           SSH_PUBLIC_KEY: /tmp/id_ed25519.pub
         run: bun test tests/e2e/
