@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "build": "make build",
+    "build": "scripts/build.sh",
     "build-all": "scripts/build-all.sh",
     "test": "bun test",
     "test:unit": "bun test tests/unit/",
