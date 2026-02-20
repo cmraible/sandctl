@@ -33,7 +33,12 @@ export function formatTimeout(remaining: number | null): string {
 		return "expired";
 	}
 	if (remaining >= 60 * 60 * 1000) {
-		return `${Math.floor(remaining / (60 * 60 * 1000))}h remaining`;
+		const hours = Math.floor(remaining / (60 * 60 * 1000));
+		const minutes = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000));
+		if (minutes > 0) {
+			return `${hours}h${minutes}m remaining`;
+		}
+		return `${hours}h remaining`;
 	}
 	return `${Math.floor(remaining / (60 * 1000))}m remaining`;
 }
