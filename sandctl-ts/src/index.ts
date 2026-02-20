@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { registerInitCommand } from "@/commands/init";
 import { registerVersionCommand } from "@/commands/version";
 
 const program = new Command()
@@ -8,4 +9,5 @@ const program = new Command()
 	.option("-v, --verbose", "Enable verbose debug output");
 
 program.addCommand(registerVersionCommand());
+program.addCommand(registerInitCommand());
 program.parse();
