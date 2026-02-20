@@ -53,7 +53,9 @@ export async function runInit(
 	}
 
 	if (options.gitUserEmail && !isValidEmail(options.gitUserEmail)) {
-		throw new Error("git user email format invalid: must contain @");
+		throw new Error(
+			"git user email format invalid: must contain @ with non-empty parts",
+		);
 	}
 
 	if (
@@ -182,7 +184,9 @@ export async function runInit(
 				default: existing?.git_user_email,
 			});
 	if (gitUserEmail && !isValidEmail(gitUserEmail)) {
-		throw new Error("git user email format invalid: must contain @");
+		throw new Error(
+			"git user email format invalid: must contain @ with non-empty parts",
+		);
 	}
 
 	const gitConfigPath = useGitConfigPath

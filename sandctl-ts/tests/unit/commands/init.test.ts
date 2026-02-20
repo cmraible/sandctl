@@ -48,7 +48,9 @@ describe("init command (non-interactive)", () => {
 				},
 				"/tmp/config.yaml",
 			),
-		).rejects.toThrow("git user email format invalid: must contain @");
+		).rejects.toThrow(
+			"git user email format invalid: must contain @ with non-empty parts",
+		);
 	});
 
 	test("rejects non-existent ssh key path", async () => {
