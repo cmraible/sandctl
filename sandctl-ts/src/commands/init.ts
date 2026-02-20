@@ -6,6 +6,7 @@ import { Command } from "commander";
 import type { Config } from "@/config/config";
 import { load, NotFoundError } from "@/config/config";
 import { save } from "@/config/writer";
+import { isValidEmail } from "@/utils/email";
 import { expandTilde } from "@/utils/paths";
 
 interface InitOptions {
@@ -22,10 +23,25 @@ interface InitOptions {
 	githubToken?: string;
 }
 
-function isValidEmail(email: string): boolean {
-	const parts = email.split("@");
-	return parts.length === 2 && parts[0].length > 0 && parts[1].length > 0;
-}
+const DEFAULT_REGION = "ash";
+const DEFAULT_SERVER_TYPE = "cpx31";
+
+const REGION_CHOICES = [
+	{ name: "Ashburn, Virginia, US (ash)", value: "ash" },
+	{ name: "Helsinki, Finland (hel1)", value: "hel1" },
+	{ name: "Falkenstein, Germany (fsn1)", value: "fsn1" },
+	{ name: "Nuremberg, Germany (nbg1)", value: "nbg1" },
+	{ name: "Hillsboro, Oregon, US (hil)", value: "hil" },
+	{ name: "Singapore (sin)", value: "sin" },
+] as const;
+
+const SERVER_TYPE_CHOICES = [
+	{ name: "CPX11 — 2 vCPU, 2 GB RAM, ~€0.01/hr (cpx11)", value: "cpx11" },
+	{ name: "CPX21 — 3 vCPU, 4 GB RAM, ~€0.01/hr (cpx21)", value: "cpx21" },
+	{ name: "CPX31 — 4 vCPU, 8 GB RAM, ~€0.02/hr (cpx31)", value: "cpx31" },
+	{ name: "CPX41 — 8 vCPU, 16 GB RAM, ~€0.04/hr (cpx41)", value: "cpx41" },
+	{ name: "CPX51 — 16 vCPU, 32 GB RAM, ~€0.07/hr (cpx51)", value: "cpx51" },
+] as const;
 
 async function pathExists(targetPath: string): Promise<boolean> {
 	try {
@@ -142,24 +158,14 @@ export async function runInit(
 
 	const region = await select({
 		message: "Default region",
-		default: existing?.providers?.hetzner?.region ?? "ash",
-		choices: [
-			{ name: "ash", value: "ash" },
-			{ name: "hel1", value: "hel1" },
-			{ name: "fsn1", value: "fsn1" },
-			{ name: "nbg1", value: "nbg1" },
-		],
+		default: existing?.providers?.hetzner?.region ?? DEFAULT_REGION,
+		choices: REGION_CHOICES,
 	});
 
 	const serverType = await select({
 		message: "Default server type",
-		default: existing?.providers?.hetzner?.server_type ?? "cpx31",
-		choices: [
-			{ name: "cpx21", value: "cpx21" },
-			{ name: "cpx31", value: "cpx31" },
-			{ name: "cpx41", value: "cpx41" },
-			{ name: "cpx51", value: "cpx51" },
-		],
+		default: existing?.providers?.hetzner?.server_type ?? DEFAULT_SERVER_TYPE,
+		choices: SERVER_TYPE_CHOICES,
 	});
 
 	const gitConfigDetected = await pathExists(expandTilde("~/.gitconfig"));
@@ -231,8 +237,8 @@ function buildConfig(options: InitOptions): Config {
 		providers: {
 			hetzner: {
 				token: options.hetznerToken ?? "",
-				region: options.region ?? "ash",
-				server_type: options.serverType ?? "cpx31",
+				region: options.region ?? DEFAULT_REGION,
+				server_type: options.serverType ?? DEFAULT_SERVER_TYPE,
 				image: "ubuntu-24.04",
 			},
 		},
@@ -251,10 +257,13 @@ export function registerInitCommand(): Command {
 		.option("--ssh-public-key <path>", "Path to SSH public key file")
 		.option("--ssh-agent", "Use SSH agent for key management")
 		.option("--ssh-key-fingerprint <fingerprint>", "SSH key fingerprint")
-		.option("--region <region>", "Default region (ash, hel1, fsn1, nbg1)")
+		.option(
+			"--region <region>",
+			"Default region (ash/Ashburn, hel1/Helsinki, fsn1/Falkenstein, nbg1/Nuremberg, hil/Hillsboro, sin/Singapore)",
+		)
 		.option(
 			"--server-type <serverType>",
-			"Default server type (cpx21, cpx31, cpx41, cpx51)",
+			"Default server type (cpx11:2vCPU/2GB, cpx21:3vCPU/4GB, cpx31:4vCPU/8GB, cpx41:8vCPU/16GB, cpx51:16vCPU/32GB)",
 		)
 		.option("--opencode-zen-key <key>", "Opencode Zen key")
 		.option("--git-config-path <path>", "Path to gitconfig file")

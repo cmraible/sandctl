@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { parse } from "yaml";
 
+import { isValidEmail } from "@/utils/email";
 import { expandTilde } from "@/utils/paths";
 
 export interface ProviderConfig {
@@ -99,11 +100,6 @@ export async function load(configPath = defaultConfigPath()): Promise<Config> {
 	const config = migrateLegacyConfig(parsed ?? {});
 	validate(config);
 	return config;
-}
-
-function isValidEmail(email: string): boolean {
-	const parts = email.split("@");
-	return parts.length === 2 && parts[0].length > 0 && parts[1].length > 0;
 }
 
 export function validate(config: Config): void {
