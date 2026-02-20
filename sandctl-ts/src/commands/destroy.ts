@@ -25,10 +25,7 @@ export async function runDestroy(
 		throw new Error(`invalid session name format: ${name}`);
 	}
 
-	let session = null as Awaited<ReturnType<SessionStore["get"]>> | null;
-	try {
-		session = await store.get(normalized);
-	} catch (error) {
+	const session = await store.get(normalized).catch((error: unknown) => {
 		if (error instanceof NotFoundError) {
 			throw new CommandExitError(
 				`[error] Session '${normalized}' not found. Use 'sandctl list' to see available sessions.`,
@@ -36,10 +33,7 @@ export async function runDestroy(
 			);
 		}
 		throw error;
-	}
-	if (!session) {
-		return;
-	}
+	});
 
 	if (!session.provider_id) {
 		if (!options.force) {

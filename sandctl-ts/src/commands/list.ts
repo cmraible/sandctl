@@ -17,9 +17,9 @@ function mapVMStatusToSession(status: VMStatus): Status {
 			return "stopped";
 		case "failed":
 			return "failed";
-		default:
-			return "provisioning";
 	}
+	const exhaustiveStatus: never = status;
+	throw new Error(`unknown VM status: ${exhaustiveStatus}`);
 }
 
 export function formatTimeout(remaining: number | null): string {
@@ -60,7 +60,9 @@ export async function runList(
 	options: { format: string; all: boolean },
 	store = new SessionStore(),
 ): Promise<void> {
-	let sessions = options.all ? await store.list() : await store.listActive();
+	let sessions = (
+		options.all ? await store.list() : await store.listActive()
+	).map((session) => ({ ...session }));
 
 	for (const session of sessions) {
 		if (!session.provider_id) {

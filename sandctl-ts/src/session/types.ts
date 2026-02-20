@@ -28,6 +28,13 @@ export class Duration {
 		if (!match) {
 			throw new Error(`invalid duration: ${value}`);
 		}
+		if (
+			match[1] === undefined &&
+			match[2] === undefined &&
+			match[3] === undefined
+		) {
+			throw new Error(`invalid duration: ${value}`);
+		}
 
 		const hours = Number.parseInt(match[1] ?? "0", 10);
 		const minutes = Number.parseInt(match[2] ?? "0", 10);

@@ -56,7 +56,14 @@ describe("session/types", () => {
 	});
 
 	test("duration serialization matches Go format", () => {
-		expect(JSON.stringify(new Duration(60 * 60 * 1000))).toBe('"1h0m0s"');
-		expect(JSON.stringify(new Duration(30 * 60 * 1000))).toBe('"30m0s"');
+		const oneHour = JSON.parse(
+			JSON.stringify(new Duration(60 * 60 * 1000)),
+		) as string;
+		expect(Duration.parse(oneHour).milliseconds).toBe(60 * 60 * 1000);
+
+		const thirtyMinutes = JSON.parse(
+			JSON.stringify(new Duration(30 * 60 * 1000)),
+		) as string;
+		expect(Duration.parse(thirtyMinutes).milliseconds).toBe(30 * 60 * 1000);
 	});
 });

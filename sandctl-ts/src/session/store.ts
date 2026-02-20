@@ -24,7 +24,13 @@ export class SessionStore {
 			return [];
 		}
 
-		const parsed = JSON.parse(raw) as unknown;
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(raw) as unknown;
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			throw new Error(`failed to parse sessions file: ${message}`);
+		}
 		if (Array.isArray(parsed)) {
 			return parsed as Session[];
 		}
@@ -37,7 +43,7 @@ export class SessionStore {
 			return (parsed as { sessions: Session[] }).sessions;
 		}
 
-		throw new Error("invalid sessions file format");
+		throw new Error("invalid sessions file structure");
 	}
 
 	private async save(sessions: Session[]): Promise<void> {

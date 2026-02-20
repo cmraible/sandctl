@@ -46,10 +46,21 @@ describe("commands/list", () => {
 			provider: "",
 			provider_id: "",
 		});
+		const events: string[] = [];
+		const update = store.update.bind(store);
+		store.update = async (...args) => {
+			events.push("update");
+			return update(...args);
+		};
+		logSpy.mockImplementation((message: unknown) => {
+			events.push(`log:${String(message)}`);
+		});
 		await runList({ format: "table", all: false }, store);
 		const updated = await store.get("legacy");
 		expect(updated.status).toBe("stopped");
 		expect(logSpy).toHaveBeenCalledWith("No active sessions.");
+		expect(events[0]).toBe("update");
+		expect(events).toContain("log:No active sessions.");
 	});
 
 	test("provider sync updates session status", async () => {
@@ -62,6 +73,12 @@ describe("commands/list", () => {
 		});
 		await runList({ format: "table", all: true }, store);
 		expect((await store.get("alice")).status).toBe("failed");
+	});
+
+	test("unknown providers are handled without failing", async () => {
+		await store.add({ ...runningSession, provider: "unknown" });
+		await runList({ format: "table", all: true }, store);
+		expect((await store.get("alice")).status).toBe("running");
 	});
 
 	test("formatTimeout handles nil, expired, hours, and minutes", () => {

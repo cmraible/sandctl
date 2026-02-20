@@ -4,7 +4,7 @@ import { registerDestroyCommand } from "@/commands/destroy";
 import { registerListCommand } from "@/commands/list";
 import { registerVersionCommand } from "@/commands/version";
 
-export const program = new Command()
+const program = new Command()
 	.name("sandctl")
 	.description("Manage sandboxed AI web development agents")
 	.option("--config <path>", "Config file path", "~/.sandctl/config")

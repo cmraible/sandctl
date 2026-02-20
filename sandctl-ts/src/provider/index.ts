@@ -14,7 +14,9 @@ export interface VM {
 }
 
 export interface Provider {
+	// Returns null when providerId is not found; throws for provider/API errors.
 	getVM(providerId: string): Promise<VM | null>;
+	// Throws when the provider delete operation fails.
 	deleteVM(providerId: string): Promise<void>;
 }
 

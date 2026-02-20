@@ -84,4 +84,11 @@ describe("commands/destroy", () => {
 		expect(warnSpy).toHaveBeenCalled();
 		await expect(store.get("alice")).rejects.toBeDefined();
 	});
+
+	test("sessions with unknown providers are still removed locally", async () => {
+		await store.add({ ...session, provider: "unknown" });
+		await runDestroy("alice", { force: true }, store);
+		await expect(store.get("alice")).rejects.toBeDefined();
+		expect(warnSpy).not.toHaveBeenCalled();
+	});
 });

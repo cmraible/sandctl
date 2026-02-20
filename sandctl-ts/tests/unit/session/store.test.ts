@@ -98,4 +98,9 @@ describe("session/store", () => {
 	test("missing file returns empty array", async () => {
 		expect(await store.list()).toEqual([]);
 	});
+
+	test("malformed file returns parse error", async () => {
+		await writeFile(storePath, "{not json");
+		await expect(store.list()).rejects.toThrow("failed to parse sessions file");
+	});
 });
