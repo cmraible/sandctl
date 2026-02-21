@@ -1,8 +1,8 @@
 import { Command } from "commander";
 
 import { registerDestroyCommand } from "@/commands/destroy";
-import { registerListCommand } from "@/commands/list";
 import { registerInitCommand } from "@/commands/init";
+import { registerListCommand } from "@/commands/list";
 import { registerVersionCommand } from "@/commands/version";
 
 const program = new Command()
@@ -12,6 +12,7 @@ const program = new Command()
 	.option("-v, --verbose", "Enable verbose debug output");
 
 program.addCommand(registerVersionCommand());
+program.addCommand(registerInitCommand());
 program.addCommand(registerListCommand());
 program.addCommand(registerDestroyCommand());
 
@@ -34,5 +35,3 @@ if (import.meta.main) {
 		process.exitCode = 1;
 	});
 }
-program.addCommand(registerInitCommand());
-program.parse();
