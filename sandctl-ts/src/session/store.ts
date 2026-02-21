@@ -7,6 +7,23 @@ import { z } from "zod";
 import { normalizeName } from "@/session/id";
 import { isActive, NotFoundError, type Session } from "@/session/types";
 
+const statusSchema = z.enum(["provisioning", "running", "stopped", "failed"]);
+const sessionSchema = z.object({
+	id: z.string(),
+	status: statusSchema,
+	provider: z.string(),
+	provider_id: z.string(),
+	ip_address: z.string(),
+	region: z.string().optional(),
+	server_type: z.string().optional(),
+	created_at: z.string(),
+	timeout: z.string().optional(),
+});
+const fileSchema = z.union([
+	z.array(sessionSchema),
+	z.object({ sessions: z.array(sessionSchema) }),
+]);
+
 export function defaultStorePath(): string {
 	return join(homedir(), ".sandctl", "sessions.json");
 }
@@ -44,27 +61,6 @@ export class SessionStore {
 			const message = error instanceof Error ? error.message : String(error);
 			throw new Error(`failed to parse sessions file: ${message}`);
 		}
-		const statusSchema = z.enum([
-			"provisioning",
-			"running",
-			"stopped",
-			"failed",
-		]);
-		const sessionSchema = z.object({
-			id: z.string(),
-			status: statusSchema,
-			provider: z.string(),
-			provider_id: z.string(),
-			ip_address: z.string(),
-			region: z.string().optional(),
-			server_type: z.string().optional(),
-			created_at: z.string(),
-			timeout: z.string().optional(),
-		});
-		const fileSchema = z.union([
-			z.array(sessionSchema),
-			z.object({ sessions: z.array(sessionSchema) }),
-		]);
 		const validated = fileSchema.safeParse(parsed);
 		if (!validated.success) {
 			throw new Error(
