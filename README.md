@@ -6,14 +6,25 @@ sandctl provisions isolated VM environments using [Fly.io Sprites](https://sprit
 
 ## TypeScript Rewrite (Experimental)
 
-An in-progress TypeScript/Bun rewrite lives in `sandctl-ts/`.
-To try it locally:
+This repository currently includes two implementations:
+
+- Go implementation (stable) at repository root
+- TypeScript/Bun implementation (in development) in `sandctl-ts/`
+
+To build and run the TypeScript implementation locally:
 
 ```bash
 cd sandctl-ts
 bun install
 bun run build
 ./sandctl --help
+```
+
+To build the Go implementation:
+
+```bash
+make build
+./build/sandctl --help
 ```
 
 ## Requirements

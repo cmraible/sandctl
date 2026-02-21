@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Pre-commit hook for sandctl
-# Runs formatting, static analysis, and linting checks on staged Go files
+# Runs linting and tests on staged TypeScript files in sandctl-ts
 #
 
 set -euo pipefail
@@ -30,87 +30,54 @@ print_header() {
 }
 
 # Check for required tools
-check_go() {
-    if ! command -v go &> /dev/null; then
-        print_error "Go is not installed or not in PATH"
-        echo "Please install Go from https://go.dev/dl/"
+check_bun() {
+    if ! command -v bun &> /dev/null; then
+        print_error "bun is not installed or not in PATH"
+        echo "Please install Bun from https://bun.sh/"
         exit 1
     fi
 }
 
-check_golangci_lint() {
-    if ! command -v golangci-lint &> /dev/null; then
-        print_error "golangci-lint is not installed"
-        echo ""
-        echo "Install with one of:"
-        echo "  brew install golangci-lint"
-        echo "  go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"
-        echo ""
-        echo "See: https://golangci-lint.run/welcome/install/"
-        exit 1
-    fi
-}
-
-# Get staged Go files (Added, Copied, Modified - not Deleted)
-get_staged_go_files() {
-    git diff --cached --name-only --diff-filter=ACM | grep '\.go$' || true
+# Get staged TypeScript files in sandctl-ts (Added, Copied, Modified - not Deleted)
+get_staged_ts_files() {
+    git diff --cached --name-only --diff-filter=ACM | grep '^sandctl-ts/.*\.ts$' || true
 }
 
 # Main execution
 main() {
-    # Check for required tools
-    check_go
+    # Get staged TypeScript files
+    STAGED_TS_FILES=$(get_staged_ts_files)
 
-    # Get staged Go files
-    STAGED_GO_FILES=$(get_staged_go_files)
-
-    # Exit early if no Go files are staged
-    if [ -z "$STAGED_GO_FILES" ]; then
-        echo "No Go files staged, skipping checks"
+    # Exit early if no TypeScript files are staged
+    if [ -z "$STAGED_TS_FILES" ]; then
+        echo "No sandctl-ts TypeScript files staged, skipping checks"
         exit 0
     fi
 
-    echo "Running pre-commit checks on staged Go files..."
+    # Check for required tools
+    check_bun
+
+    echo "Running pre-commit checks on staged sandctl-ts TypeScript files..."
 
     # Track if any check fails
     FAILED=0
 
-    # Check 1: gofmt
-    print_header "Checking formatting (gofmt)..."
-    # shellcheck disable=SC2086
-    UNFORMATTED=$(gofmt -l $STAGED_GO_FILES)
-    if [ -n "$UNFORMATTED" ]; then
-        print_error "The following files are not formatted:"
-        echo "$UNFORMATTED"
-        echo ""
-        echo "Run 'make fmt' to fix formatting"
+    # Check 1: TypeScript lint
+    print_header "Running linters (sandctl-ts)..."
+    if ! (cd sandctl-ts && bun run lint) 2>&1; then
+        print_error "sandctl-ts lint found issues"
         FAILED=1
     else
-        print_success "Formatting check passed"
+        print_success "Linting passed"
     fi
 
-    # Check 2: go vet
-    print_header "Running static analysis (go vet)..."
-    if ! go vet ./... 2>&1; then
-        print_error "go vet found issues"
+    # Check 2: TypeScript tests
+    print_header "Running tests (sandctl-ts)..."
+    if ! (cd sandctl-ts && bun run test) 2>&1; then
+        print_error "Tests failed"
         FAILED=1
     else
-        print_success "Static analysis passed"
-    fi
-
-    # Check 3: golangci-lint (only if installed)
-    if command -v golangci-lint &> /dev/null; then
-        print_header "Running linters (golangci-lint)..."
-        # shellcheck disable=SC2086
-        if ! golangci-lint run --new-from-rev=HEAD~ $STAGED_GO_FILES 2>&1; then
-            print_error "golangci-lint found issues"
-            FAILED=1
-        else
-            print_success "Linting passed"
-        fi
-    else
-        print_warning "golangci-lint not installed, skipping lint check"
-        echo "Install with: brew install golangci-lint"
+        print_success "Tests passed"
     fi
 
     # Final result

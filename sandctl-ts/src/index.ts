@@ -2,6 +2,7 @@ import { Command } from "commander";
 
 import { registerDestroyCommand } from "@/commands/destroy";
 import { registerListCommand } from "@/commands/list";
+import { registerInitCommand } from "@/commands/init";
 import { registerVersionCommand } from "@/commands/version";
 
 const program = new Command()
@@ -33,3 +34,5 @@ if (import.meta.main) {
 		process.exitCode = 1;
 	});
 }
+program.addCommand(registerInitCommand());
+program.parse();
