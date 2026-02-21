@@ -72,49 +72,63 @@ export async function runList(
 		options.all ? await store.list() : await store.listActive()
 	).map((session) => ({ ...session }));
 
+	const updatedSessions: Session[] = [];
 	for (const session of sessions) {
-		if (!session.provider_id) {
-			if (session.status !== "stopped") {
-				session.status = "stopped";
-				await store.update(session.id, { status: "stopped" });
+		const updatedSession: Session = { ...session };
+
+		if (!updatedSession.provider_id) {
+			if (updatedSession.status !== "stopped") {
+				updatedSession.status = "stopped";
+				await store.update(updatedSession.id, { status: "stopped" });
 			}
+			updatedSessions.push(updatedSession);
 			continue;
 		}
 
-		const provider = getProvider(session.provider);
+		const provider = getProvider(updatedSession.provider);
 		if (!provider) {
+			updatedSessions.push(updatedSession);
 			continue;
 		}
 
 		try {
-			const vm = await provider.getVM(session.provider_id);
+			const vm = await provider.getVM(updatedSession.provider_id);
 			if (!vm) {
-				if (session.status === "running" || session.status === "provisioning") {
-					session.status = "stopped";
-					await store.update(session.id, { status: "stopped" });
+				if (
+					updatedSession.status === "running" ||
+					updatedSession.status === "provisioning"
+				) {
+					updatedSession.status = "stopped";
+					await store.update(updatedSession.id, { status: "stopped" });
 				}
+				updatedSessions.push(updatedSession);
 				continue;
 			}
 
 			const nextStatus = mapVMStatusToSession(vm.status);
 			if (
-				nextStatus !== session.status ||
-				(vm.ip_address && vm.ip_address !== session.ip_address)
+				nextStatus !== updatedSession.status ||
+				(vm.ip_address && vm.ip_address !== updatedSession.ip_address)
 			) {
-				session.status = nextStatus;
+				updatedSession.status = nextStatus;
 				if (vm.ip_address) {
-					session.ip_address = vm.ip_address;
+					updatedSession.ip_address = vm.ip_address;
 				}
-				await store.update(session.id, {
-					status: session.status,
-					ip_address: session.ip_address,
+				await store.update(updatedSession.id, {
+					status: updatedSession.status,
+					ip_address: updatedSession.ip_address,
 				});
 			}
 		} catch (error) {
-			console.warn(`[warn] Failed to sync session '${session.id}': ${error}`);
+			console.warn(
+				`[warn] Failed to sync session '${updatedSession.id}': ${error}`,
+			);
 		}
+
+		updatedSessions.push(updatedSession);
 	}
 
+	sessions = updatedSessions;
 	if (!options.all) {
 		sessions = sessions.filter(
 			(session) =>
