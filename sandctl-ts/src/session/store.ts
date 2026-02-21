@@ -1,6 +1,8 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import AsyncLock from "async-lock";
+import { z } from "zod";
 
 import { normalizeName } from "@/session/id";
 import { isActive, NotFoundError, type Session } from "@/session/types";
@@ -10,13 +12,24 @@ export function defaultStorePath(): string {
 }
 
 export class SessionStore {
+	private readonly lock = new AsyncLock();
+
 	constructor(private readonly path = defaultStorePath()) {}
 
 	private async load(): Promise<Session[]> {
 		try {
 			await access(this.path);
-		} catch {
-			return [];
+		} catch (error) {
+			if (
+				error &&
+				typeof error === "object" &&
+				"code" in error &&
+				error.code === "ENOENT"
+			) {
+				return [];
+			}
+			const message = error instanceof Error ? error.message : String(error);
+			throw new Error(`failed to access sessions file: ${message}`);
 		}
 
 		const raw = await readFile(this.path, "utf8");
@@ -31,19 +44,37 @@ export class SessionStore {
 			const message = error instanceof Error ? error.message : String(error);
 			throw new Error(`failed to parse sessions file: ${message}`);
 		}
-		if (Array.isArray(parsed)) {
-			return parsed as Session[];
-		}
-		if (
-			parsed &&
-			typeof parsed === "object" &&
-			"sessions" in parsed &&
-			Array.isArray((parsed as { sessions: unknown }).sessions)
-		) {
-			return (parsed as { sessions: Session[] }).sessions;
+		const statusSchema = z.enum([
+			"provisioning",
+			"running",
+			"stopped",
+			"failed",
+		]);
+		const sessionSchema = z.object({
+			id: z.string(),
+			status: statusSchema,
+			provider: z.string(),
+			provider_id: z.string(),
+			ip_address: z.string(),
+			region: z.string().optional(),
+			server_type: z.string().optional(),
+			created_at: z.string(),
+			timeout: z.string().optional(),
+		});
+		const fileSchema = z.union([
+			z.array(sessionSchema),
+			z.object({ sessions: z.array(sessionSchema) }),
+		]);
+		const validated = fileSchema.safeParse(parsed);
+		if (!validated.success) {
+			throw new Error(
+				`invalid sessions file structure: ${validated.error.message}`,
+			);
 		}
 
-		throw new Error("invalid sessions file structure");
+		return Array.isArray(validated.data)
+			? validated.data
+			: validated.data.sessions;
 	}
 
 	private async save(sessions: Session[]): Promise<void> {
@@ -54,63 +85,73 @@ export class SessionStore {
 	}
 
 	async add(session: Session): Promise<void> {
-		const sessions = await this.load();
-		const normalized = normalizeName(session.id);
-		if (
-			sessions.some((existing) => normalizeName(existing.id) === normalized)
-		) {
-			throw new Error(`session with name '${session.id}' already exists`);
-		}
+		await this.lock.acquire("sessions", async () => {
+			const sessions = await this.load();
+			const normalized = normalizeName(session.id);
+			if (
+				sessions.some((existing) => normalizeName(existing.id) === normalized)
+			) {
+				throw new Error(`session with name '${session.id}' already exists`);
+			}
 
-		sessions.push({ ...session, id: normalized });
-		await this.save(sessions);
+			sessions.push({ ...session, id: normalized });
+			await this.save(sessions);
+		});
 	}
 
 	async update(id: string, updates: Partial<Session>): Promise<void> {
-		const sessions = await this.load();
-		const normalized = normalizeName(id);
-		const index = sessions.findIndex(
-			(session) => normalizeName(session.id) === normalized,
-		);
-		if (index === -1) {
-			throw new NotFoundError(id);
-		}
+		await this.lock.acquire("sessions", async () => {
+			const sessions = await this.load();
+			const normalized = normalizeName(id);
+			const index = sessions.findIndex(
+				(session) => normalizeName(session.id) === normalized,
+			);
+			if (index === -1) {
+				throw new NotFoundError(id);
+			}
 
-		sessions[index] = { ...sessions[index], ...updates };
-		await this.save(sessions);
+			sessions[index] = { ...sessions[index], ...updates };
+			await this.save(sessions);
+		});
 	}
 
 	async remove(id: string): Promise<void> {
-		const sessions = await this.load();
-		const normalized = normalizeName(id);
-		const filtered = sessions.filter(
-			(session) => normalizeName(session.id) !== normalized,
-		);
-		if (filtered.length === sessions.length) {
-			throw new NotFoundError(id);
-		}
+		await this.lock.acquire("sessions", async () => {
+			const sessions = await this.load();
+			const normalized = normalizeName(id);
+			const filtered = sessions.filter(
+				(session) => normalizeName(session.id) !== normalized,
+			);
+			if (filtered.length === sessions.length) {
+				throw new NotFoundError(id);
+			}
 
-		await this.save(filtered);
+			await this.save(filtered);
+		});
 	}
 
 	async get(id: string): Promise<Session> {
-		const sessions = await this.load();
-		const normalized = normalizeName(id);
-		const session = sessions.find(
-			(current) => normalizeName(current.id) === normalized,
-		);
-		if (!session) {
-			throw new NotFoundError(id);
-		}
-		return session;
+		return this.lock.acquire("sessions", async () => {
+			const sessions = await this.load();
+			const normalized = normalizeName(id);
+			const session = sessions.find(
+				(current) => normalizeName(current.id) === normalized,
+			);
+			if (!session) {
+				throw new NotFoundError(id);
+			}
+			return session;
+		});
 	}
 
 	async list(): Promise<Session[]> {
-		return this.load();
+		return this.lock.acquire("sessions", async () => this.load());
 	}
 
 	async listActive(): Promise<Session[]> {
-		const sessions = await this.load();
-		return sessions.filter((session) => isActive(session));
+		return this.lock.acquire("sessions", async () => {
+			const sessions = await this.load();
+			return sessions.filter((session) => isActive(session));
+		});
 	}
 }

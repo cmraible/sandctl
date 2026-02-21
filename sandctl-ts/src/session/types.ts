@@ -1,3 +1,5 @@
+import { Duration as LuxonDuration } from "luxon";
+
 export type Status = "provisioning" | "running" | "stopped" | "failed";
 
 export interface Session {
@@ -44,17 +46,18 @@ export class Duration {
 	}
 
 	toString(): string {
-		const totalSeconds = Math.floor(this.milliseconds / 1000);
-		const hours = Math.floor(totalSeconds / 3600);
-		const minutes = Math.floor((totalSeconds % 3600) / 60);
-		const seconds = totalSeconds % 60;
+		const duration = LuxonDuration.fromMillis(this.milliseconds)
+			.shiftTo("hours", "minutes", "seconds")
+			.normalize();
+		const hours = Math.floor(duration.hours);
+		const minutes = Math.floor(duration.minutes);
 		if (hours > 0) {
-			return `${hours}h${minutes}m${seconds}s`;
+			return duration.toFormat("h'h'm'm's's'");
 		}
 		if (minutes > 0) {
-			return `${minutes}m${seconds}s`;
+			return duration.toFormat("m'm's's'");
 		}
-		return `${seconds}s`;
+		return duration.toFormat("s's'");
 	}
 
 	toJSON(): string {

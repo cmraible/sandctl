@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { formatTimeout, runList } from "@/commands/list";
-import { clearProviders, registerProvider } from "@/provider";
+import { clearProviders, registerProvider, VMNotFoundError } from "@/provider";
 import { SessionStore } from "@/session/store";
 import type { Session } from "@/session/types";
 
@@ -79,6 +79,18 @@ describe("commands/list", () => {
 		await store.add({ ...runningSession, provider: "unknown" });
 		await runList({ format: "table", all: true }, store);
 		expect((await store.get("alice")).status).toBe("running");
+	});
+
+	test("vm not found marks active session as stopped", async () => {
+		await store.add(runningSession);
+		registerProvider("hetzner", {
+			async getVM() {
+				throw new VMNotFoundError("123");
+			},
+			async deleteVM() {},
+		});
+		await runList({ format: "table", all: true }, store);
+		expect((await store.get("alice")).status).toBe("stopped");
 	});
 
 	test("formatTimeout handles nil, expired, hours, and minutes", () => {

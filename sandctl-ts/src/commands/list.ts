@@ -1,6 +1,7 @@
 import { Command } from "commander";
+import { DateTime } from "luxon";
 
-import { getProvider, type VMStatus } from "@/provider";
+import { getProvider, VMNotFoundError, type VMStatus } from "@/provider";
 import { SessionStore } from "@/session/store";
 import { type Session, type Status, timeoutRemaining } from "@/session/types";
 
@@ -44,9 +45,7 @@ export function formatTimeout(remaining: number | null): string {
 }
 
 function formatCreatedAt(createdAt: string): string {
-	const d = new Date(createdAt);
-	const pad = (n: number) => String(n).padStart(2, "0");
-	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+	return DateTime.fromISO(createdAt).toLocal().toFormat("yyyy-MM-dd HH:mm:ss");
 }
 
 function outputTable(sessions: Session[]): void {
@@ -93,18 +92,6 @@ export async function runList(
 
 		try {
 			const vm = await provider.getVM(updatedSession.provider_id);
-			if (!vm) {
-				if (
-					updatedSession.status === "running" ||
-					updatedSession.status === "provisioning"
-				) {
-					updatedSession.status = "stopped";
-					await store.update(updatedSession.id, { status: "stopped" });
-				}
-				updatedSessions.push(updatedSession);
-				continue;
-			}
-
 			const nextStatus = mapVMStatusToSession(vm.status);
 			if (
 				nextStatus !== updatedSession.status ||
@@ -120,6 +107,17 @@ export async function runList(
 				});
 			}
 		} catch (error) {
+			if (error instanceof VMNotFoundError) {
+				if (
+					updatedSession.status === "running" ||
+					updatedSession.status === "provisioning"
+				) {
+					updatedSession.status = "stopped";
+					await store.update(updatedSession.id, { status: "stopped" });
+				}
+				updatedSessions.push(updatedSession);
+				continue;
+			}
 			console.warn(
 				`[warn] Failed to sync session '${updatedSession.id}': ${error}`,
 			);

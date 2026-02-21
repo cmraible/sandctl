@@ -13,9 +13,16 @@ export interface VM {
 	ip_address?: string;
 }
 
+export class VMNotFoundError extends Error {
+	constructor(providerId: string) {
+		super(`VM with provider ID '${providerId}' not found`);
+		this.name = "VMNotFoundError";
+	}
+}
+
 export interface Provider {
-	// Returns null when providerId is not found; throws for provider/API errors.
-	getVM(providerId: string): Promise<VM | null>;
+	// Throws VMNotFoundError when providerId is not found.
+	getVM(providerId: string): Promise<VM>;
 	// Throws when the provider delete operation fails.
 	deleteVM(providerId: string): Promise<void>;
 }

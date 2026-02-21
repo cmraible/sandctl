@@ -48,7 +48,7 @@ describe("commands/destroy", () => {
 		await store.add(session);
 		registerProvider("hetzner", {
 			async getVM() {
-				return null;
+				return { id: "123", status: "running" };
 			},
 			async deleteVM() {},
 		});
@@ -74,7 +74,7 @@ describe("commands/destroy", () => {
 		await store.add(session);
 		registerProvider("hetzner", {
 			async getVM() {
-				return null;
+				return { id: "123", status: "running" };
 			},
 			async deleteVM() {
 				throw new Error("boom");
