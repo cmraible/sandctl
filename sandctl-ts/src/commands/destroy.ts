@@ -1,7 +1,14 @@
 import { confirm } from "@inquirer/prompts";
 import { Command } from "commander";
 
+import {
+	type Config,
+	getProviderConfig,
+	load,
+	type ProviderConfig,
+} from "@/config/config";
 import { getProvider } from "@/provider";
+import { get as getProviderFromRegistry } from "@/provider/registry";
 import { normalizeName, validateID } from "@/session/id";
 import { SessionStore } from "@/session/store";
 import { NotFoundError } from "@/session/types";
@@ -15,11 +22,33 @@ export class CommandExitError extends Error {
 	}
 }
 
+interface Dependencies {
+	loadConfig: (configPath?: string) => Promise<Config>;
+	resolveProvider: (
+		name: string,
+		config: ProviderConfig,
+	) => ReturnType<typeof getProviderFromRegistry>;
+	resolveLegacyProvider: typeof getProvider;
+}
+
+const defaultDependencies: Dependencies = {
+	loadConfig: load,
+	resolveProvider: getProviderFromRegistry,
+	resolveLegacyProvider: getProvider,
+};
+
 export async function runDestroy(
 	name: string,
 	options: { force: boolean },
 	store = new SessionStore(),
+	deps: Partial<Dependencies> = {},
+	configPath?: string,
 ): Promise<void> {
+	const dependencies = {
+		...defaultDependencies,
+		...deps,
+	};
+
 	const normalized = normalizeName(name);
 	if (!validateID(normalized)) {
 		throw new Error(`invalid session name format: ${name}`);
@@ -57,19 +86,46 @@ export async function runDestroy(
 		}
 	}
 
-	const provider = getProvider(session.provider);
-	if (provider) {
-		try {
-			await provider.deleteVM(session.provider_id);
-		} catch (error) {
-			const details = error instanceof Error ? error.message : String(error);
-			console.warn(
-				`[warn] Failed to delete provider VM '${session.provider_id}': ${error}`,
+	let deleteError: unknown;
+	let deletionAttempted = false;
+
+	try {
+		const config = await dependencies.loadConfig(configPath);
+		const providerConfig = getProviderConfig(config, session.provider);
+		if (providerConfig) {
+			const provider = dependencies.resolveProvider(
+				session.provider,
+				providerConfig,
 			);
-			throw new Error(
-				`Failed to delete provider VM '${session.provider_id}': ${details}`,
-			);
+			await provider.delete(session.provider_id);
+			deletionAttempted = true;
 		}
+	} catch (error) {
+		deleteError = error;
+	}
+
+	if (!deletionAttempted) {
+		const legacyProvider = dependencies.resolveLegacyProvider(session.provider);
+		if (legacyProvider) {
+			try {
+				await legacyProvider.deleteVM(session.provider_id);
+				deletionAttempted = true;
+			} catch (error) {
+				deleteError = error;
+			}
+		}
+	}
+
+	if (!deletionAttempted) {
+		const details = deleteError
+			? deleteError instanceof Error
+				? deleteError.message
+				: String(deleteError)
+			: `provider '${session.provider}' is not configured`;
+		console.warn(
+			`[warn] Failed to delete provider VM '${session.provider_id}': ${details}`,
+		);
+		throw new Error(`Failed to delete provider VM '${session.provider_id}': ${details}`);
 	}
 
 	await store.remove(session.id);
@@ -82,7 +138,8 @@ export function registerDestroyCommand(): Command {
 		.description("Terminate and remove a session")
 		.argument("<name>")
 		.option("-f, --force", "Skip confirmation prompt", false)
-		.action(async (name: string, options: { force: boolean }) => {
-			await runDestroy(name, options);
+		.action(async (name: string, options: { force: boolean }, command) => {
+			const globals = command.optsWithGlobals() as { config?: string };
+			await runDestroy(name, options, undefined, undefined, globals.config);
 		});
 }

@@ -4,9 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { runDestroy } from "@/commands/destroy";
+import type { Provider, SSHKeyManager } from "@/provider/interface";
 import { clearProviders, registerProvider } from "@/provider";
 import { SessionStore } from "@/session/store";
 import type { Session } from "@/session/types";
+import { baseProviderConfig } from "../../support/fixtures";
 
 describe("commands/destroy", () => {
 	let store: SessionStore;
@@ -90,10 +92,53 @@ describe("commands/destroy", () => {
 		});
 	});
 
-	test("sessions with unknown providers are still removed locally", async () => {
-		await store.add({ ...session, provider: "unknown" });
-		await runDestroy("alice", { force: true }, store);
+	test("destroys VM through configured provider", async () => {
+		await store.add(session);
+		const deleted: string[] = [];
+
+		const provider: Provider & SSHKeyManager = {
+			name: () => "hetzner",
+			create: async () => {
+				throw new Error("not implemented");
+			},
+			get: async () => {
+				throw new Error("not implemented");
+			},
+			delete: async (id: string) => {
+				deleted.push(id);
+			},
+			list: async () => [],
+			waitReady: async () => {
+				throw new Error("not implemented");
+			},
+			ensureSSHKey: async () => "1",
+		};
+
+		await runDestroy(
+			"alice",
+			{ force: true },
+			store,
+			{
+				loadConfig: async () => baseProviderConfig,
+				resolveProvider: () => provider,
+			},
+		);
+
+		expect(deleted).toEqual(["123"]);
 		await expect(store.get("alice")).rejects.toBeDefined();
-		expect(warnSpy).not.toHaveBeenCalled();
+	});
+
+	test("sessions with unknown providers fail and preserve local state", async () => {
+		await store.add({ ...session, provider: "unknown" });
+		await expect(
+			runDestroy(
+				"alice",
+				{ force: true },
+				store,
+				{ loadConfig: async () => baseProviderConfig },
+			),
+		).rejects.toThrow("Failed to delete provider VM '123'");
+		expect(await store.get("alice")).toMatchObject({ id: "alice" });
+		expect(warnSpy).toHaveBeenCalled();
 	});
 });
