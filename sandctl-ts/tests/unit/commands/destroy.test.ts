@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { runDestroy } from "@/commands/destroy";
-import type { Provider, SSHKeyManager } from "@/provider/interface";
 import { clearProviders, registerProvider } from "@/provider";
+import type { Provider, SSHKeyManager } from "@/provider/interface";
 import { SessionStore } from "@/session/store";
 import type { Session } from "@/session/types";
 import { baseProviderConfig } from "../../support/fixtures";
@@ -114,15 +114,10 @@ describe("commands/destroy", () => {
 			ensureSSHKey: async () => "1",
 		};
 
-		await runDestroy(
-			"alice",
-			{ force: true },
-			store,
-			{
-				loadConfig: async () => baseProviderConfig,
-				resolveProvider: () => provider,
-			},
-		);
+		await runDestroy("alice", { force: true }, store, {
+			loadConfig: async () => baseProviderConfig,
+			resolveProvider: () => provider,
+		});
 
 		expect(deleted).toEqual(["123"]);
 		await expect(store.get("alice")).rejects.toBeDefined();
@@ -131,12 +126,9 @@ describe("commands/destroy", () => {
 	test("sessions with unknown providers fail and preserve local state", async () => {
 		await store.add({ ...session, provider: "unknown" });
 		await expect(
-			runDestroy(
-				"alice",
-				{ force: true },
-				store,
-				{ loadConfig: async () => baseProviderConfig },
-			),
+			runDestroy("alice", { force: true }, store, {
+				loadConfig: async () => baseProviderConfig,
+			}),
 		).rejects.toThrow("Failed to delete provider VM '123'");
 		expect(await store.get("alice")).toMatchObject({ id: "alice" });
 		expect(warnSpy).toHaveBeenCalled();

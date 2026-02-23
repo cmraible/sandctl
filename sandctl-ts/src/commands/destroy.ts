@@ -125,7 +125,9 @@ export async function runDestroy(
 		console.warn(
 			`[warn] Failed to delete provider VM '${session.provider_id}': ${details}`,
 		);
-		throw new Error(`Failed to delete provider VM '${session.provider_id}': ${details}`);
+		throw new Error(
+			`Failed to delete provider VM '${session.provider_id}': ${details}`,
+		);
 	}
 
 	await store.remove(session.id);
