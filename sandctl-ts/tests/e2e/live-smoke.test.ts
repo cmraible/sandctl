@@ -20,6 +20,7 @@ const LIVE_SMOKE_TEST_TIMEOUT_MS =
 	LIST_TIMEOUT_MS +
 	EXEC_TIMEOUT_MS +
 	DESTROY_TIMEOUT_MS +
+	DESTROY_TIMEOUT_MS +
 	60_000;
 
 function quoteYamlScalar(value: string): string {
@@ -59,7 +60,7 @@ function writeConfig(
 
 function assertCliSuccess(
 	step: string,
-	result: { code: number; stdout: string; stderr: string },
+	result: { code: number | null; stdout: string; stderr: string },
 ): void {
 	if (result.code === 0) {
 		return;
@@ -75,17 +76,73 @@ describe("sandctl live smoke gating", () => {
 		expect(shouldRunLiveSmoke({})).toBeFalse();
 	});
 
+	describe("assertCliSuccess", () => {
+		test("does not throw when exit code is 0", () => {
+			expect(() =>
+				assertCliSuccess("step-name", {
+					code: 0,
+					stdout: "some output",
+					stderr: "",
+				}),
+			).not.toThrow();
+		});
+
+		test("throws with step name and stdout in message when exit code is non-zero", () => {
+			expect(() =>
+				assertCliSuccess("my-step", {
+					code: 1,
+					stdout: "the stdout text",
+					stderr: "the stderr text",
+				}),
+			).toThrow(/my-step/);
+		});
+
+		test("includes stdout in thrown error message", () => {
+			expect(() =>
+				assertCliSuccess("my-step", {
+					code: 1,
+					stdout: "the stdout text",
+					stderr: "",
+				}),
+			).toThrow(/the stdout text/);
+		});
+
+		test("includes stderr in thrown error message", () => {
+			expect(() =>
+				assertCliSuccess("my-step", {
+					code: 1,
+					stdout: "",
+					stderr: "the stderr text",
+				}),
+			).toThrow(/the stderr text/);
+		});
+
+		test("includes exit code in thrown error message", () => {
+			expect(() =>
+				assertCliSuccess("my-step", {
+					code: 42,
+					stdout: "",
+					stderr: "",
+				}),
+			).toThrow(/42/);
+		});
+
+		test("throws when exit code is null (signal kill)", () => {
+			expect(() =>
+				assertCliSuccess("timed-out-step", {
+					code: null,
+					stdout: "",
+					stderr: "",
+				}),
+			).toThrow(/timed-out-step/);
+		});
+	});
+
 	const liveSmokeTest = shouldRunLiveSmoke(process.env) ? test : test.skip;
 
 	liveSmokeTest(
 		"runs new -> list -> exec -c -> destroy against Hetzner",
 		() => {
-			if (!existsSync("./sandctl")) {
-				throw new Error(
-					"live smoke requires ./sandctl binary in current directory",
-				);
-			}
-
 			const token = process.env.HETZNER_API_TOKEN;
 			if (!token) {
 				throw new Error(
