@@ -4,10 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { formatTimeout, runList } from "@/commands/list";
-import * as providerModule from "@/provider";
-import { clearProviders, registerProvider, VMNotFoundError } from "@/provider";
+import type { Provider, SSHKeyManager } from "@/provider/interface";
+import type { VM } from "@/provider/types";
 import { SessionStore } from "@/session/store";
 import type { Session } from "@/session/types";
+import { baseProviderConfig } from "../../support/fixtures";
 
 describe("commands/list", () => {
 	let store: SessionStore;
@@ -29,14 +30,32 @@ describe("commands/list", () => {
 		store = new SessionStore(join(dir, "sessions.json"));
 		logSpy = spyOn(console, "log").mockImplementation(() => {});
 		warnSpy = spyOn(console, "warn").mockImplementation(() => {});
-		clearProviders();
 	});
 
 	afterEach(() => {
 		logSpy.mockRestore();
 		warnSpy.mockRestore();
-		clearProviders();
 	});
+
+	function makeProvider(vms: VM[]): Provider & SSHKeyManager {
+		return {
+			name: () => "hetzner",
+			create: async () => {
+				throw new Error("not implemented");
+			},
+			get: async () => {
+				throw new Error("not implemented");
+			},
+			delete: async () => {
+				throw new Error("not implemented");
+			},
+			list: async () => vms,
+			waitReady: async () => {
+				throw new Error("not implemented");
+			},
+			ensureSSHKey: async () => "1",
+		};
+	}
 
 	test("json format prints empty array when no active sessions", async () => {
 		await runList({ format: "json", all: false }, store);
@@ -69,43 +88,52 @@ describe("commands/list", () => {
 
 	test("provider sync updates session status", async () => {
 		await store.add(runningSession);
-		registerProvider("hetzner", {
-			async getVM() {
-				return { id: "123", status: "failed" };
-			},
-			async deleteVM() {},
+		await runList({ format: "table", all: true }, store, {
+			loadConfig: async () => baseProviderConfig,
+			resolveProvider: () =>
+				makeProvider([
+					{
+						id: "123",
+						name: "alice",
+						status: "failed",
+						ipAddress: "1.2.3.4",
+						region: "ash",
+						serverType: "cpx31",
+						createdAt: "2026-02-20T00:00:00Z",
+					},
+				]),
 		});
-		await runList({ format: "table", all: true }, store);
 		expect((await store.get("alice")).status).toBe("failed");
 	});
 
 	test("unknown providers are handled without failing", async () => {
 		await store.add({ ...runningSession, provider: "unknown" });
-		await runList({ format: "table", all: true }, store);
+		await runList({ format: "table", all: true }, store, {
+			loadConfig: async () => baseProviderConfig,
+		});
 		expect((await store.get("alice")).status).toBe("running");
+		expect(warnSpy).toHaveBeenCalled();
 	});
 
-	test("vm not found marks active session as stopped", async () => {
+	test("missing vm in provider list marks active session as stopped", async () => {
 		await store.add(runningSession);
-		registerProvider("hetzner", {
-			async getVM() {
-				throw new VMNotFoundError("123");
-			},
-			async deleteVM() {},
+		await runList({ format: "table", all: true }, store, {
+			loadConfig: async () => baseProviderConfig,
+			resolveProvider: () => makeProvider([]),
 		});
-		await runList({ format: "table", all: true }, store);
 		expect((await store.get("alice")).status).toBe("stopped");
 	});
 
 	test("provider sync failures are warnings and listing still succeeds", async () => {
 		await store.add(runningSession);
-		registerProvider("hetzner", {
-			async getVM() {
-				throw new Error("sync unavailable");
-			},
-			async deleteVM() {},
+		const provider = makeProvider([]);
+		provider.list = async () => {
+			throw new Error("sync unavailable");
+		};
+		await runList({ format: "table", all: true }, store, {
+			loadConfig: async () => baseProviderConfig,
+			resolveProvider: () => provider,
 		});
-		await runList({ format: "table", all: true }, store);
 		expect(warnSpy).toHaveBeenCalled();
 		expect(await store.get("alice")).toMatchObject({
 			id: "alice",
@@ -115,18 +143,14 @@ describe("commands/list", () => {
 		expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("alice"));
 	});
 
-	test("provider lookup failures fall back to local session data", async () => {
+	test("provider resolution failures fall back to local session data", async () => {
 		await store.add(runningSession);
-		const providerSpy = spyOn(providerModule, "getProvider").mockImplementation(
-			() => {
+		await runList({ format: "table", all: true }, store, {
+			loadConfig: async () => baseProviderConfig,
+			resolveProvider: () => {
 				throw new Error("registry unavailable");
 			},
-		);
-		try {
-			await runList({ format: "table", all: true }, store);
-		} finally {
-			providerSpy.mockRestore();
-		}
+		});
 		expect(warnSpy).toHaveBeenCalled();
 		expect(await store.get("alice")).toMatchObject({
 			id: "alice",
@@ -134,6 +158,67 @@ describe("commands/list", () => {
 			provider_id: "123",
 		});
 		expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("alice"));
+	});
+
+	test("sync calls provider list once for multiple sessions", async () => {
+		await store.add(runningSession);
+		await store.add({
+			...runningSession,
+			id: "bob",
+			provider_id: "456",
+			ip_address: "5.6.7.8",
+		});
+		let listCalls = 0;
+		const provider = makeProvider([
+			{
+				id: "123",
+				name: "alice",
+				status: "running",
+				ipAddress: "1.2.3.4",
+				region: "ash",
+				serverType: "cpx31",
+				createdAt: "2026-02-20T00:00:00Z",
+			},
+			{
+				id: "456",
+				name: "bob",
+				status: "running",
+				ipAddress: "5.6.7.8",
+				region: "ash",
+				serverType: "cpx31",
+				createdAt: "2026-02-20T00:00:00Z",
+			},
+		]);
+		provider.list = async () => {
+			listCalls += 1;
+			return await Promise.resolve([
+				{
+					id: "123",
+					name: "alice",
+					status: "running",
+					ipAddress: "1.2.3.4",
+					region: "ash",
+					serverType: "cpx31",
+					createdAt: "2026-02-20T00:00:00Z",
+				},
+				{
+					id: "456",
+					name: "bob",
+					status: "running",
+					ipAddress: "5.6.7.8",
+					region: "ash",
+					serverType: "cpx31",
+					createdAt: "2026-02-20T00:00:00Z",
+				},
+			]);
+		};
+
+		await runList({ format: "table", all: true }, store, {
+			loadConfig: async () => baseProviderConfig,
+			resolveProvider: () => provider,
+		});
+
+		expect(listCalls).toBe(1);
 	});
 
 	test("formatTimeout handles nil, expired, hours, and minutes", () => {

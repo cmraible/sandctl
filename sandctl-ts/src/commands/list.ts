@@ -1,7 +1,15 @@
 import { Command } from "commander";
 import { DateTime } from "luxon";
 
-import { getProvider, VMNotFoundError, type VMStatus } from "@/provider";
+import {
+	type Config,
+	getProviderConfig,
+	load,
+	type ProviderConfig,
+} from "@/config/config";
+import type { VMStatus } from "@/provider";
+import { get as getProviderFromRegistry } from "@/provider/registry";
+import type { VM } from "@/provider/types";
 import { SessionStore } from "@/session/store";
 import { type Session, type Status, timeoutRemaining } from "@/session/types";
 
@@ -63,80 +71,123 @@ function outputTable(sessions: Session[]): void {
 	}
 }
 
+interface Dependencies {
+	loadConfig: (configPath?: string) => Promise<Config>;
+	resolveProvider: (
+		name: string,
+		config: ProviderConfig,
+	) => ReturnType<typeof getProviderFromRegistry>;
+	warn: (message: string) => void;
+}
+
+const defaultDependencies: Dependencies = {
+	loadConfig: load,
+	resolveProvider: getProviderFromRegistry,
+	warn: (message: string) => {
+		console.warn(message);
+	},
+};
+
+async function syncProviderSessions(
+	sessions: Session[],
+	store: SessionStore,
+	deps: Dependencies,
+	configPath?: string,
+): Promise<void> {
+	const providerNames = [
+		...new Set(
+			sessions
+				.filter((session) => session.provider_id)
+				.map((session) => session.provider),
+		),
+	];
+
+	if (providerNames.length === 0) {
+		return;
+	}
+
+	let config: Config;
+	try {
+		config = await deps.loadConfig(configPath);
+	} catch (error) {
+		deps.warn(`Failed to load config for provider sync: ${String(error)}`);
+		return;
+	}
+
+	for (const providerName of providerNames) {
+		const providerConfig = getProviderConfig(config, providerName);
+		if (!providerConfig) {
+			deps.warn(
+				`[warn] Failed to sync provider '${providerName}': provider is not configured`,
+			);
+			continue;
+		}
+
+		const providerSessions = sessions.filter(
+			(session) => session.provider === providerName && session.provider_id,
+		);
+
+		let providerVMs: VM[];
+		try {
+			const provider = deps.resolveProvider(providerName, providerConfig);
+			providerVMs = await provider.list();
+		} catch (error) {
+			deps.warn(
+				`[warn] Failed to sync provider '${providerName}': ${String(error)}`,
+			);
+			continue;
+		}
+
+		const vmByID = new Map(providerVMs.map((vm) => [vm.id, vm]));
+
+		for (const session of providerSessions) {
+			const vm = vmByID.get(session.provider_id);
+			if (!vm) {
+				if (session.status === "running" || session.status === "provisioning") {
+					session.status = "stopped";
+					await store.update(session.id, { status: "stopped" });
+				}
+				continue;
+			}
+
+			const nextStatus = mapVMStatusToSession(vm.status);
+			const nextIP = vm.ipAddress ?? session.ip_address;
+			if (nextStatus !== session.status || nextIP !== session.ip_address) {
+				session.status = nextStatus;
+				session.ip_address = nextIP;
+				await store.update(session.id, {
+					status: session.status,
+					ip_address: session.ip_address,
+				});
+			}
+		}
+	}
+}
+
 export async function runList(
 	options: { format: string; all: boolean },
 	store = new SessionStore(),
+	deps: Partial<Dependencies> = {},
+	configPath?: string,
 ): Promise<void> {
+	const dependencies = {
+		...defaultDependencies,
+		...deps,
+	};
+
 	let sessions = (
 		options.all ? await store.list() : await store.listActive()
 	).map((session) => ({ ...session }));
 
-	const updatedSessions: Session[] = [];
 	for (const session of sessions) {
-		const updatedSession: Session = { ...session };
-
-		if (!updatedSession.provider_id) {
-			if (updatedSession.status !== "stopped") {
-				updatedSession.status = "stopped";
-				await store.update(updatedSession.id, { status: "stopped" });
-			}
-			updatedSessions.push(updatedSession);
-			continue;
+		if (!session.provider_id && session.status !== "stopped") {
+			session.status = "stopped";
+			await store.update(session.id, { status: "stopped" });
 		}
-
-		let provider: ReturnType<typeof getProvider>;
-		try {
-			provider = getProvider(updatedSession.provider);
-		} catch (error) {
-			console.warn(
-				`[warn] Failed to sync session '${updatedSession.id}': ${error}`,
-			);
-			updatedSessions.push(updatedSession);
-			continue;
-		}
-
-		if (!provider) {
-			updatedSessions.push(updatedSession);
-			continue;
-		}
-
-		try {
-			const vm = await provider.getVM(updatedSession.provider_id);
-			const nextStatus = mapVMStatusToSession(vm.status);
-			if (
-				nextStatus !== updatedSession.status ||
-				(vm.ip_address && vm.ip_address !== updatedSession.ip_address)
-			) {
-				updatedSession.status = nextStatus;
-				if (vm.ip_address) {
-					updatedSession.ip_address = vm.ip_address;
-				}
-				await store.update(updatedSession.id, {
-					status: updatedSession.status,
-					ip_address: updatedSession.ip_address,
-				});
-			}
-		} catch (error) {
-			if (error instanceof VMNotFoundError) {
-				if (
-					updatedSession.status === "running" ||
-					updatedSession.status === "provisioning"
-				) {
-					updatedSession.status = "stopped";
-					await store.update(updatedSession.id, { status: "stopped" });
-				}
-				updatedSessions.push(updatedSession);
-				continue;
-			}
-			console.warn(
-				`[warn] Failed to sync session '${updatedSession.id}': ${error}`,
-			);
-		}
-
-		updatedSessions.push(updatedSession);
 	}
 
-	sessions = updatedSessions;
+	await syncProviderSessions(sessions, store, dependencies, configPath);
+
 	if (!options.all) {
 		sessions = sessions.filter(
 			(session) =>
@@ -175,7 +226,8 @@ export function registerListCommand(): Command {
 			"table",
 		)
 		.option("-a, --all", "Include stopped and failed sessions", false)
-		.action(async (options: { format: string; all: boolean }) => {
-			await runList(options);
+		.action(async (options: { format: string; all: boolean }, command) => {
+			const globals = command.optsWithGlobals() as { config?: string };
+			await runList(options, undefined, undefined, globals.config);
 		});
 }
