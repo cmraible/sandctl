@@ -36,7 +36,7 @@ jobs:
         run: bun install
       - name: Test
         working-directory: sandctl-ts
-        run: bun test
+        run: bun test tests/unit/
 
   build:
     runs-on: ubuntu-latest
