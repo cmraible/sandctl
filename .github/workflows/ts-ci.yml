@@ -2,6 +2,8 @@ name: TypeScript CI
 
 on:
   push:
+    branches:
+      - main
     paths:
       - "sandctl-ts/**"
       - ".github/workflows/ts-ci.yml"
