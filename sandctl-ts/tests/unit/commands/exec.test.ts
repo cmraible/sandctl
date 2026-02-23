@@ -2,24 +2,12 @@ import { describe, expect, test } from "bun:test";
 
 import { runExec } from "@/commands/exec";
 import type { Config } from "@/config/config";
-import type { Session } from "@/session/types";
+import { makeRunningSession } from "../../support/fixtures";
 
 const FILE_MODE_CONFIG: Config = {
 	default_provider: "hetzner",
 	ssh_public_key: "~/.ssh/id_ed25519.pub",
 };
-
-function runningSession(overrides: Partial<Session> = {}): Session {
-	return {
-		id: "alice",
-		status: "running",
-		provider: "hetzner",
-		provider_id: "vm-123",
-		ip_address: "203.0.113.10",
-		created_at: "2026-02-20T00:00:00Z",
-		...overrides,
-	};
-}
 
 describe("commands/exec", () => {
 	test("propagates stdout/stderr and non-zero exit code for --command", async () => {
@@ -33,7 +21,7 @@ describe("commands/exec", () => {
 				store: {
 					get: async (id: string) => {
 						events.push(`store.get:${id}`);
-						return runningSession();
+						return makeRunningSession();
 					},
 				},
 				loadConfig: async () => FILE_MODE_CONFIG,
@@ -101,7 +89,7 @@ describe("commands/exec", () => {
 				{ command: "echo test" },
 				{
 					store: {
-						get: async () => runningSession({ status: "stopped" }),
+						get: async () => makeRunningSession({ status: "stopped" }),
 					},
 				},
 			),
@@ -117,7 +105,7 @@ describe("commands/exec", () => {
 			{},
 			{
 				store: {
-					get: async () => runningSession(),
+					get: async () => makeRunningSession(),
 				},
 				loadConfig: async () => FILE_MODE_CONFIG,
 				createSSHClient: () => {
@@ -159,7 +147,7 @@ describe("commands/exec", () => {
 					{ command },
 					{
 						store: {
-							get: async () => runningSession(),
+							get: async () => makeRunningSession(),
 						},
 						loadConfig: async () => FILE_MODE_CONFIG,
 						createSSHClient: () => {
@@ -201,7 +189,7 @@ describe("commands/exec", () => {
 				{ command: "uname -a" },
 				{
 					store: {
-						get: async () => runningSession(),
+						get: async () => makeRunningSession(),
 					},
 					loadConfig: async () => FILE_MODE_CONFIG,
 					createSSHClient: () => {
@@ -243,7 +231,7 @@ describe("commands/exec", () => {
 				{},
 				{
 					store: {
-						get: async () => runningSession(),
+						get: async () => makeRunningSession(),
 					},
 					loadConfig: async () => FILE_MODE_CONFIG,
 					createSSHClient: () => {

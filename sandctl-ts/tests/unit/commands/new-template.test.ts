@@ -1,25 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
 import { runNew } from "@/commands/new";
-import type { Config } from "@/config/config";
 import type { Provider, SSHKeyManager } from "@/provider/interface";
 import type { VM } from "@/provider/types";
 import { TemplateNotFoundError } from "@/template/store";
+import { baseProviderConfig } from "../../support/fixtures";
 
 type ProviderLike = Provider & SSHKeyManager;
-
-const BASE_CONFIG: Config = {
-	default_provider: "hetzner",
-	ssh_public_key: "~/.ssh/id_ed25519.pub",
-	providers: {
-		hetzner: {
-			token: "token",
-			region: "ash",
-			server_type: "cpx31",
-			image: "ubuntu-24.04",
-		},
-	},
-};
 
 function makeProvider(overrides: Partial<ProviderLike> = {}): ProviderLike {
 	const createdVM: VM = {
@@ -52,7 +39,7 @@ describe("commands/new --template", () => {
 		await runNew(
 			{ template: "My API" },
 			{
-				loadConfig: async () => BASE_CONFIG,
+				loadConfig: async () => baseProviderConfig,
 				resolveProvider: () => provider,
 				generateSessionID: () => "violet",
 				getPublicKey: async () => "ssh-ed25519 AAAA test@local",
@@ -113,7 +100,7 @@ describe("commands/new --template", () => {
 		await runNew(
 			{ template: "Bob's App" },
 			{
-				loadConfig: async () => BASE_CONFIG,
+				loadConfig: async () => baseProviderConfig,
 				resolveProvider: () => provider,
 				generateSessionID: () => "violet",
 				getPublicKey: async () => "ssh-ed25519 AAAA test@local",
@@ -165,7 +152,7 @@ describe("commands/new --template", () => {
 			runNew(
 				{ template: "Ghost" },
 				{
-					loadConfig: async () => BASE_CONFIG,
+					loadConfig: async () => baseProviderConfig,
 					resolveProvider: () => provider,
 					generateSessionID: () => "violet",
 					getPublicKey: async () => "ssh-ed25519 AAAA test@local",

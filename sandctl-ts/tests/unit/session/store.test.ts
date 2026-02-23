@@ -4,21 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { SessionStore } from "@/session/store";
-import { NotFoundError, type Session } from "@/session/types";
+import { NotFoundError } from "@/session/types";
+import { baseSession } from "../../support/fixtures";
 
 describe("session/store", () => {
 	let store: SessionStore;
 	let storePath: string;
-
-	const baseSession: Session = {
-		id: "alice",
-		status: "running",
-		provider: "hetzner",
-		provider_id: "123",
-		ip_address: "1.2.3.4",
-		created_at: "2026-02-20T00:00:00Z",
-		timeout: "1h0m0s",
-	};
 
 	beforeEach(async () => {
 		const dir = await mkdtemp(join(tmpdir(), "sandctl-store-test-"));

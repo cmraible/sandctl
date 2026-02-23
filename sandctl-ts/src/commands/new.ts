@@ -1,5 +1,9 @@
 import { Command } from "commander";
-
+import {
+	buildSSHOptions,
+	type SSHRuntimeClient,
+	withSSHClient,
+} from "@/commands/shared/session-runtime";
 import {
 	type Config,
 	getProviderConfig,
@@ -19,7 +23,6 @@ import {
 import { type ExecResult, execWithStreams } from "@/ssh/exec";
 import { TemplateNotFoundError, TemplateStore } from "@/template/store";
 import type { TemplateInitScript, TemplateStoreLike } from "@/template/types";
-import { expandTilde } from "@/utils/paths";
 
 const DEFAULT_PROVIDER = "hetzner";
 const DEFAULT_WAIT_READY_TIMEOUT_MS = 5 * 60 * 1000;
@@ -57,11 +60,6 @@ interface Dependencies {
 	) => Promise<ExecResult>;
 	now: () => Date;
 	warn: (message: string) => void;
-}
-
-interface SSHRuntimeClient extends SSHClientLike {
-	connect(): Promise<void>;
-	close(): Promise<void>;
 }
 
 const defaultDependencies: Dependencies = {
@@ -113,31 +111,6 @@ function waitReadyTimeoutMs(options: NewOptions): number {
 	return Duration.parse(options.timeout).milliseconds;
 }
 
-function sshOptions(config: Config, host: string): SSHClientOptions {
-	if (config.ssh_key_source === "agent") {
-		return {
-			host,
-			username: "root",
-			useAgent: true,
-		};
-	}
-
-	if (!config.ssh_public_key) {
-		throw new Error("ssh_public_key not configured");
-	}
-
-	const publicKeyPath = expandTilde(config.ssh_public_key);
-	const privateKeyPath = publicKeyPath.endsWith(".pub")
-		? publicKeyPath.slice(0, -4)
-		: publicKeyPath;
-
-	return {
-		host,
-		username: "root",
-		privateKeyPath,
-	};
-}
-
 function shellQuote(value: string): string {
 	return `'${value.replaceAll("'", "'\\''")}'`;
 }
@@ -148,27 +121,20 @@ async function runTemplateScript(
 	template: TemplateInitScript,
 	deps: Pick<Dependencies, "createSSHClient" | "runRemoteTemplate">,
 ): Promise<void> {
-	const client = deps.createSSHClient(sshOptions(config, host));
-	await client.connect();
+	const client = deps.createSSHClient(buildSSHOptions(config, host));
 
-	try {
+	await withSSHClient(client, async (c) => {
 		const command =
 			`SANDCTL_TEMPLATE_NAME=${shellQuote(template.name)} ` +
 			`SANDCTL_TEMPLATE_NORMALIZED=${shellQuote(template.normalized)} ` +
 			"bash -s";
-		const result = await deps.runRemoteTemplate(
-			client,
-			command,
-			template.script,
-		);
+		const result = await deps.runRemoteTemplate(c, command, template.script);
 		if (result.exitCode !== 0) {
 			throw new Error(
 				`template init script failed with exit code ${result.exitCode}`,
 			);
 		}
-	} finally {
-		await client.close();
-	}
+	});
 }
 
 export async function runNew(

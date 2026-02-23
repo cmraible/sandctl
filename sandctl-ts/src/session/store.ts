@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import AsyncLock from "async-lock";
 import { z } from "zod";
 
+import { formatZodError } from "@/errors/format";
 import { normalizeName } from "@/session/id";
 import { isActive, NotFoundError, type Session } from "@/session/types";
 
@@ -32,17 +33,6 @@ function normalizeSession(input: z.infer<typeof sessionInputSchema>): Session {
 		provider_id: input.provider_id ?? "",
 		ip_address: input.ip_address ?? "",
 	};
-}
-
-function formatValidationError(error: z.ZodError): string {
-	const maxIssues = 5;
-	const issues = error.issues.slice(0, maxIssues).map((issue) => {
-		const path = issue.path.length > 0 ? issue.path.join(".") : "<root>";
-		return `${path}: ${issue.message}`;
-	});
-	const remainder = error.issues.length - issues.length;
-	const suffix = remainder > 0 ? ` (+${remainder} more)` : "";
-	return `${issues.join("; ")}${suffix}`;
 }
 
 export function defaultStorePath(): string {
@@ -85,7 +75,7 @@ export class SessionStore {
 		const validated = fileSchema.safeParse(parsed);
 		if (!validated.success) {
 			throw new Error(
-				`invalid sessions file structure: ${formatValidationError(validated.error)}`,
+				`invalid sessions file structure: ${formatZodError(validated.error)}`,
 			);
 		}
 

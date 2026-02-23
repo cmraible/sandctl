@@ -1,33 +1,14 @@
 import { describe, expect, test } from "bun:test";
 
 import { runConsole } from "@/commands/console";
-import type { Config } from "@/config/config";
-import type { Session } from "@/session/types";
-
-const AGENT_MODE_CONFIG: Config = {
-	default_provider: "hetzner",
-	ssh_key_source: "agent",
-	ssh_public_key_inline: "ssh-ed25519 AAAA test@local",
-};
-
-function runningSession(overrides: Partial<Session> = {}): Session {
-	return {
-		id: "alice",
-		status: "running",
-		provider: "hetzner",
-		provider_id: "vm-123",
-		ip_address: "203.0.113.10",
-		created_at: "2026-02-20T00:00:00Z",
-		...overrides,
-	};
-}
+import { agentModeConfig, makeRunningSession } from "../../support/fixtures";
 
 describe("commands/console", () => {
 	test("rejects with exit code 5 when session is not running", async () => {
 		await expect(
 			runConsole("alice", {
 				store: {
-					get: async () => runningSession({ status: "failed" }),
+					get: async () => makeRunningSession({ status: "failed" }),
 				},
 			}),
 		).rejects.toMatchObject({
@@ -42,10 +23,10 @@ describe("commands/console", () => {
 			store: {
 				get: async (id: string) => {
 					events.push(`store.get:${id}`);
-					return runningSession();
+					return makeRunningSession();
 				},
 			},
-			loadConfig: async () => AGENT_MODE_CONFIG,
+			loadConfig: async () => agentModeConfig,
 			createSSHClient: (options) => {
 				events.push(`client.host:${options.host}`);
 				events.push(`client.useAgent:${String(options.useAgent)}`);
@@ -83,9 +64,9 @@ describe("commands/console", () => {
 		await expect(
 			runConsole("alice", {
 				store: {
-					get: async () => runningSession(),
+					get: async () => makeRunningSession(),
 				},
-				loadConfig: async () => AGENT_MODE_CONFIG,
+				loadConfig: async () => agentModeConfig,
 				createSSHClient: () => {
 					return {
 						connect: async () => {
