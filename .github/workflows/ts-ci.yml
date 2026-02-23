@@ -57,24 +57,27 @@ jobs:
       HETZNER_API_TOKEN: ${{ secrets.HETZNER_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-        if: ${{ env.HETZNER_API_TOKEN != '' }}
       - uses: oven-sh/setup-bun@v2
-        if: ${{ env.HETZNER_API_TOKEN != '' }}
       - name: Install dependencies
-        if: ${{ env.HETZNER_API_TOKEN != '' }}
         working-directory: sandctl-ts
         run: bun install
       - name: Build binary
-        if: ${{ env.HETZNER_API_TOKEN != '' }}
         working-directory: sandctl-ts
         run: bun run build
       - name: Generate SSH key
         if: ${{ env.HETZNER_API_TOKEN != '' }}
         run: ssh-keygen -t ed25519 -N '' -f /tmp/id_ed25519
-      - name: Run E2E tests
+      - name: Run live smoke E2E test
         if: ${{ env.HETZNER_API_TOKEN != '' }}
         working-directory: sandctl-ts
         env:
           HETZNER_API_TOKEN: ${{ env.HETZNER_API_TOKEN }}
+          SANDCTL_LIVE_SMOKE: "1"
           SSH_PUBLIC_KEY: /tmp/id_ed25519.pub
-        run: bun test tests/e2e/
+        run: bun test tests/e2e/live-smoke.test.ts
+      - name: Skip live smoke E2E test
+        if: ${{ env.HETZNER_API_TOKEN == '' }}
+        run: 'echo "Skipping live smoke E2E test: HETZNER_API_TOKEN is not configured"'
+      - name: Cleanup generated SSH key
+        if: ${{ always() && env.HETZNER_API_TOKEN != '' }}
+        run: rm -f /tmp/id_ed25519 /tmp/id_ed25519.pub

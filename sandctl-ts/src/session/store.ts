@@ -8,21 +8,42 @@ import { normalizeName } from "@/session/id";
 import { isActive, NotFoundError, type Session } from "@/session/types";
 
 const statusSchema = z.enum(["provisioning", "running", "stopped", "failed"]);
-const sessionSchema = z.object({
+const sessionInputSchema = z.object({
 	id: z.string(),
 	status: statusSchema,
-	provider: z.string(),
-	provider_id: z.string(),
-	ip_address: z.string(),
+	provider: z.string().optional(),
+	provider_id: z.string().optional(),
+	ip_address: z.string().optional(),
+	failure_reason: z.string().optional(),
 	region: z.string().optional(),
 	server_type: z.string().optional(),
 	created_at: z.string(),
 	timeout: z.string().optional(),
 });
 const fileSchema = z.union([
-	z.array(sessionSchema),
-	z.object({ sessions: z.array(sessionSchema) }),
+	z.array(sessionInputSchema),
+	z.object({ sessions: z.array(sessionInputSchema) }),
 ]);
+
+function normalizeSession(input: z.infer<typeof sessionInputSchema>): Session {
+	return {
+		...input,
+		provider: input.provider ?? "",
+		provider_id: input.provider_id ?? "",
+		ip_address: input.ip_address ?? "",
+	};
+}
+
+function formatValidationError(error: z.ZodError): string {
+	const maxIssues = 5;
+	const issues = error.issues.slice(0, maxIssues).map((issue) => {
+		const path = issue.path.length > 0 ? issue.path.join(".") : "<root>";
+		return `${path}: ${issue.message}`;
+	});
+	const remainder = error.issues.length - issues.length;
+	const suffix = remainder > 0 ? ` (+${remainder} more)` : "";
+	return `${issues.join("; ")}${suffix}`;
+}
 
 export function defaultStorePath(): string {
 	return join(homedir(), ".sandctl", "sessions.json");
@@ -64,13 +85,14 @@ export class SessionStore {
 		const validated = fileSchema.safeParse(parsed);
 		if (!validated.success) {
 			throw new Error(
-				`invalid sessions file structure: ${validated.error.message}`,
+				`invalid sessions file structure: ${formatValidationError(validated.error)}`,
 			);
 		}
 
-		return Array.isArray(validated.data)
+		const sessions = Array.isArray(validated.data)
 			? validated.data
 			: validated.data.sessions;
+		return sessions.map(normalizeSession);
 	}
 
 	private async save(sessions: Session[]): Promise<void> {
@@ -107,6 +129,23 @@ export class SessionStore {
 			}
 
 			sessions[index] = { ...sessions[index], ...updates };
+			await this.save(sessions);
+		});
+	}
+
+	async upsert(session: Session): Promise<void> {
+		await this.lock.acquire("sessions", async () => {
+			const sessions = await this.load();
+			const normalized = normalizeName(session.id);
+			const next = { ...session, id: normalized };
+			const index = sessions.findIndex(
+				(existing) => normalizeName(existing.id) === normalized,
+			);
+			if (index === -1) {
+				sessions.push(next);
+			} else {
+				sessions[index] = { ...sessions[index], ...next };
+			}
 			await this.save(sessions);
 		});
 	}

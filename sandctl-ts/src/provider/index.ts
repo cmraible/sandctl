@@ -1,42 +1,44 @@
-export type VMStatus =
-	| "running"
-	| "provisioning"
-	| "starting"
-	| "stopped"
-	| "stopping"
-	| "deleting"
-	| "failed";
+export {
+	ErrAuthFailed,
+	ErrNotFound,
+	ErrProvisionFailed,
+	ErrQuotaExceeded,
+	ErrTimeout,
+	ErrUnknownProvider,
+	ErrVMNotFound,
+	ErrVMNotFound as VMNotFoundError,
+} from "@/provider/errors";
+export type { Provider, SSHKeyManager } from "@/provider/interface";
+export {
+	available,
+	clearRegistry,
+	get,
+	type ProviderFactory,
+	register,
+} from "@/provider/registry";
+export type { CreateOpts, VM, VMStatus } from "@/provider/types";
 
-export interface VM {
+export interface LegacyVM {
 	id: string;
-	status: VMStatus;
+	status: import("@/provider/types").VMStatus;
 	ip_address?: string;
 }
 
-export class VMNotFoundError extends Error {
-	constructor(providerId: string) {
-		super(`VM with provider ID '${providerId}' not found`);
-		this.name = "VMNotFoundError";
-	}
-}
-
-export interface Provider {
-	// Throws VMNotFoundError when providerId is not found.
-	getVM(providerId: string): Promise<VM>;
-	// Throws when the provider delete operation fails.
+export interface LegacyProvider {
+	getVM(providerId: string): Promise<LegacyVM>;
 	deleteVM(providerId: string): Promise<void>;
 }
 
-const providers = new Map<string, Provider>();
+const legacyProviders = new Map<string, LegacyProvider>();
 
-export function registerProvider(name: string, provider: Provider): void {
-	providers.set(name, provider);
+export function registerProvider(name: string, provider: LegacyProvider): void {
+	legacyProviders.set(name, provider);
 }
 
-export function getProvider(name: string): Provider | undefined {
-	return providers.get(name);
+export function getProvider(name: string): LegacyProvider | undefined {
+	return legacyProviders.get(name);
 }
 
 export function clearProviders(): void {
-	providers.clear();
+	legacyProviders.clear();
 }

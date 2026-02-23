@@ -1,3 +1,3 @@
-export const VERSION = "6c077d7-dirty";
-export const COMMIT = "6c077d7";
-export const BUILD_TIME = "2026-02-20T16:51:38Z";
+export const VERSION = "539d9a1-dirty";
+export const COMMIT = "539d9a1";
+export const BUILD_TIME = "2026-02-23T02:05:17Z";

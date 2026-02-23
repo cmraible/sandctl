@@ -84,7 +84,17 @@ export async function runList(
 			continue;
 		}
 
-		const provider = getProvider(updatedSession.provider);
+		let provider: ReturnType<typeof getProvider>;
+		try {
+			provider = getProvider(updatedSession.provider);
+		} catch (error) {
+			console.warn(
+				`[warn] Failed to sync session '${updatedSession.id}': ${error}`,
+			);
+			updatedSessions.push(updatedSession);
+			continue;
+		}
+
 		if (!provider) {
 			updatedSessions.push(updatedSession);
 			continue;

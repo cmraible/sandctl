@@ -62,8 +62,12 @@ export async function runDestroy(
 		try {
 			await provider.deleteVM(session.provider_id);
 		} catch (error) {
+			const details = error instanceof Error ? error.message : String(error);
 			console.warn(
 				`[warn] Failed to delete provider VM '${session.provider_id}': ${error}`,
+			);
+			throw new Error(
+				`Failed to delete provider VM '${session.provider_id}': ${details}`,
 			);
 		}
 	}

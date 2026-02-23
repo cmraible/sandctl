@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -71,6 +79,27 @@ providers:
 		await expect(
 			load("/definitely/missing/config.yaml"),
 		).rejects.toBeInstanceOf(NotFoundError);
+	});
+
+	test("load expands tilde paths", async () => {
+		const home = os.homedir();
+		const sandctlDir = path.join(home, ".sandctl");
+		const fileName = `config.test.${Date.now()}.yaml`;
+		const configPath = path.join(sandctlDir, fileName);
+		try {
+			mkdirSync(sandctlDir, { recursive: true, mode: 0o700 });
+			writeFileSync(
+				configPath,
+				"default_provider: hetzner\nssh_key_source: agent\nproviders:\n  hetzner:\n    token: test-token\n",
+				{ mode: 0o600 },
+			);
+
+			const config = await load(`~/.sandctl/${fileName}`);
+			expect(config.default_provider).toBe("hetzner");
+			expect(config.providers?.hetzner?.token).toBe("test-token");
+		} finally {
+			rmSync(configPath, { force: true });
+		}
 	});
 
 	test("validate requires default_provider", () => {
@@ -149,5 +178,50 @@ providers:
 		} finally {
 			rmSync(tmpDir, { recursive: true, force: true });
 		}
+	});
+
+	test("getSSHPublicKey falls back to ssh_public_key path in agent mode", async () => {
+		const tmpDir = mkdtempSync(path.join(os.tmpdir(), "sandctl-ts-config-"));
+		try {
+			const keyPath = path.join(tmpDir, "id_ed25519.pub");
+			writeFileSync(keyPath, "ssh-ed25519 AAAA agent@example.com\n", {
+				mode: 0o644,
+			});
+
+			const config: Config = {
+				default_provider: "hetzner",
+				ssh_key_source: "agent",
+				ssh_public_key: keyPath,
+			};
+
+			expect(await getSSHPublicKey(config)).toBe(
+				"ssh-ed25519 AAAA agent@example.com",
+			);
+		} finally {
+			rmSync(tmpDir, { recursive: true, force: true });
+		}
+	});
+
+	test("getSSHPublicKey falls back to default agent key path", async () => {
+		const candidatePaths = [
+			path.join(os.homedir(), ".ssh", "id_ed25519.pub"),
+			path.join(os.homedir(), ".ssh", "id_rsa.pub"),
+		];
+		const existingPath = candidatePaths.find((candidate) =>
+			existsSync(candidate),
+		);
+
+		const config: Config = {
+			default_provider: "hetzner",
+			ssh_key_source: "agent",
+		};
+
+		if (!existingPath) {
+			await expect(getSSHPublicKey(config)).rejects.toThrow(ValidationError);
+			return;
+		}
+
+		const expected = readFileSync(existingPath, "utf8").trim();
+		expect(await getSSHPublicKey(config)).toBe(expected);
 	});
 });

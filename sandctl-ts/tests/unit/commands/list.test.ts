@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { formatTimeout, runList } from "@/commands/list";
+import * as providerModule from "@/provider";
 import { clearProviders, registerProvider, VMNotFoundError } from "@/provider";
 import { SessionStore } from "@/session/store";
 import type { Session } from "@/session/types";
@@ -11,6 +12,7 @@ import type { Session } from "@/session/types";
 describe("commands/list", () => {
 	let store: SessionStore;
 	let logSpy: ReturnType<typeof spyOn>;
+	let warnSpy: ReturnType<typeof spyOn>;
 
 	const runningSession: Session = {
 		id: "alice",
@@ -26,11 +28,13 @@ describe("commands/list", () => {
 		const dir = await mkdtemp(join(tmpdir(), "sandctl-list-test-"));
 		store = new SessionStore(join(dir, "sessions.json"));
 		logSpy = spyOn(console, "log").mockImplementation(() => {});
+		warnSpy = spyOn(console, "warn").mockImplementation(() => {});
 		clearProviders();
 	});
 
 	afterEach(() => {
 		logSpy.mockRestore();
+		warnSpy.mockRestore();
 		clearProviders();
 	});
 
@@ -91,6 +95,45 @@ describe("commands/list", () => {
 		});
 		await runList({ format: "table", all: true }, store);
 		expect((await store.get("alice")).status).toBe("stopped");
+	});
+
+	test("provider sync failures are warnings and listing still succeeds", async () => {
+		await store.add(runningSession);
+		registerProvider("hetzner", {
+			async getVM() {
+				throw new Error("sync unavailable");
+			},
+			async deleteVM() {},
+		});
+		await runList({ format: "table", all: true }, store);
+		expect(warnSpy).toHaveBeenCalled();
+		expect(await store.get("alice")).toMatchObject({
+			id: "alice",
+			status: "running",
+			provider_id: "123",
+		});
+		expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("alice"));
+	});
+
+	test("provider lookup failures fall back to local session data", async () => {
+		await store.add(runningSession);
+		const providerSpy = spyOn(providerModule, "getProvider").mockImplementation(
+			() => {
+				throw new Error("registry unavailable");
+			},
+		);
+		try {
+			await runList({ format: "table", all: true }, store);
+		} finally {
+			providerSpy.mockRestore();
+		}
+		expect(warnSpy).toHaveBeenCalled();
+		expect(await store.get("alice")).toMatchObject({
+			id: "alice",
+			status: "running",
+			provider_id: "123",
+		});
+		expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("alice"));
 	});
 
 	test("formatTimeout handles nil, expired, hours, and minutes", () => {

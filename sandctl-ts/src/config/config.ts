@@ -81,22 +81,24 @@ function migrateLegacyConfig(config: Config): Config {
 }
 
 export async function load(configPath = defaultConfigPath()): Promise<Config> {
+	const resolvedConfigPath = expandTilde(configPath);
+
 	let info: Awaited<ReturnType<typeof stat>>;
 	try {
-		info = await stat(configPath);
+		info = await stat(resolvedConfigPath);
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-			throw new NotFoundError(configPath);
+			throw new NotFoundError(resolvedConfigPath);
 		}
 		throw error;
 	}
 
 	const mode = info.mode & 0o777;
 	if ((mode & 0o077) !== 0) {
-		throw new InsecurePermissionsError(configPath, mode);
+		throw new InsecurePermissionsError(resolvedConfigPath, mode);
 	}
 
-	const parsed = parse(await readFile(configPath, "utf8")) as Config;
+	const parsed = parse(await readFile(resolvedConfigPath, "utf8")) as Config;
 	const config = migrateLegacyConfig(parsed ?? {});
 	validate(config);
 	return config;
@@ -147,13 +149,35 @@ export function setProviderSSHKeyID(
 
 export async function getSSHPublicKey(config: Config): Promise<string> {
 	if (config.ssh_key_source === "agent") {
-		if (!config.ssh_public_key_inline) {
-			throw new ValidationError(
-				"ssh_public_key_inline",
-				"is required when ssh_key_source is 'agent'",
-			);
+		if (config.ssh_public_key_inline) {
+			return config.ssh_public_key_inline.trim();
 		}
-		return config.ssh_public_key_inline.trim();
+
+		if (config.ssh_public_key) {
+			return (
+				await readFile(expandTilde(config.ssh_public_key), "utf8")
+			).trim();
+		}
+
+		const defaultAgentPublicKeyPaths = [
+			"~/.ssh/id_ed25519.pub",
+			"~/.ssh/id_rsa.pub",
+		];
+
+		for (const candidate of defaultAgentPublicKeyPaths) {
+			try {
+				return (await readFile(expandTilde(candidate), "utf8")).trim();
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+					throw error;
+				}
+			}
+		}
+
+		throw new ValidationError(
+			"ssh_public_key_inline",
+			"or ssh_public_key is required when ssh_key_source is 'agent' (or place your key at ~/.ssh/id_ed25519.pub)",
+		);
 	}
 
 	if (!config.ssh_public_key) {

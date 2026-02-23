@@ -8,6 +8,7 @@ export interface Session {
 	provider: string;
 	provider_id: string;
 	ip_address: string;
+	failure_reason?: string;
 	region?: string;
 	server_type?: string;
 	created_at: string;

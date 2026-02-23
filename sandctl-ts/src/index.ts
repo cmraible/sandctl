@@ -1,8 +1,11 @@
 import { Command } from "commander";
 
+import { registerConsoleCommand } from "@/commands/console";
 import { registerDestroyCommand } from "@/commands/destroy";
+import { registerExecCommand } from "@/commands/exec";
 import { registerInitCommand } from "@/commands/init";
 import { registerListCommand } from "@/commands/list";
+import { registerNewCommand } from "@/commands/new";
 import { registerVersionCommand } from "@/commands/version";
 
 const program = new Command()
@@ -13,7 +16,10 @@ const program = new Command()
 
 program.addCommand(registerVersionCommand());
 program.addCommand(registerInitCommand());
+program.addCommand(registerNewCommand());
 program.addCommand(registerListCommand());
+program.addCommand(registerExecCommand());
+program.addCommand(registerConsoleCommand());
 program.addCommand(registerDestroyCommand());
 
 if (import.meta.main) {

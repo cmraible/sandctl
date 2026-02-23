@@ -70,7 +70,7 @@ describe("commands/destroy", () => {
 		await expect(store.get("legacy")).rejects.toBeDefined();
 	});
 
-	test("provider deletion failures are warnings and local cleanup continues", async () => {
+	test("provider deletion failures preserve session for retry", async () => {
 		await store.add(session);
 		registerProvider("hetzner", {
 			async getVM() {
@@ -80,9 +80,14 @@ describe("commands/destroy", () => {
 				throw new Error("boom");
 			},
 		});
-		await runDestroy("alice", { force: true }, store);
+		await expect(runDestroy("alice", { force: true }, store)).rejects.toThrow(
+			"Failed to delete provider VM '123'",
+		);
 		expect(warnSpy).toHaveBeenCalled();
-		await expect(store.get("alice")).rejects.toBeDefined();
+		expect(await store.get("alice")).toMatchObject({
+			id: "alice",
+			provider_id: "123",
+		});
 	});
 
 	test("sessions with unknown providers are still removed locally", async () => {

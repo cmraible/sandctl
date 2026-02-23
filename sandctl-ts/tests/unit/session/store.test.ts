@@ -103,4 +103,44 @@ describe("session/store", () => {
 		await writeFile(storePath, "{not json");
 		await expect(store.list()).rejects.toThrow("failed to parse sessions file");
 	});
+
+	test("loads legacy sessions without provider fields", async () => {
+		await writeFile(
+			storePath,
+			JSON.stringify({
+				sessions: [
+					{
+						id: "legacy",
+						status: "running",
+						created_at: "2026-02-20T00:00:00Z",
+					},
+				],
+			}),
+		);
+
+		const sessions = await store.list();
+		expect(sessions).toHaveLength(1);
+		expect(sessions[0].provider).toBe("");
+		expect(sessions[0].provider_id).toBe("");
+		expect(sessions[0].ip_address).toBe("");
+	});
+
+	test("invalid structure error is concise", async () => {
+		await writeFile(
+			storePath,
+			JSON.stringify({
+				sessions: [{ id: 123, status: "running", created_at: "not-a-date" }],
+			}),
+		);
+
+		try {
+			await store.list();
+			expect.unreachable();
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			expect(message).toContain("invalid sessions file structure:");
+			expect(message).not.toContain('"code"');
+			expect(message.length).toBeLessThan(400);
+		}
+	});
 });
