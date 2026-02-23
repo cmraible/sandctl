@@ -15,6 +15,12 @@ const NEW_TIMEOUT_MS = 8 * 60 * 1000;
 const LIST_TIMEOUT_MS = 60 * 1000;
 const EXEC_TIMEOUT_MS = 2 * 60 * 1000;
 const DESTROY_TIMEOUT_MS = 5 * 60 * 1000;
+const LIVE_SMOKE_TEST_TIMEOUT_MS =
+	NEW_TIMEOUT_MS +
+	LIST_TIMEOUT_MS +
+	EXEC_TIMEOUT_MS +
+	DESTROY_TIMEOUT_MS +
+	60_000;
 
 function quoteYamlScalar(value: string): string {
 	return JSON.stringify(value);
@@ -49,6 +55,19 @@ function writeConfig(
 		`    image: ${quoteYamlScalar("ubuntu-24.04")}`,
 	].join("\n");
 	writeFileSync(configPath, `${config}\n`, { mode: 0o600 });
+}
+
+function assertCliSuccess(
+	step: string,
+	result: { code: number; stdout: string; stderr: string },
+): void {
+	if (result.code === 0) {
+		return;
+	}
+
+	throw new Error(
+		`${step} failed with exit code ${result.code}\nstdout:\n${result.stdout || "<empty>"}\nstderr:\n${result.stderr || "<empty>"}`,
+	);
 }
 
 describe("sandctl live smoke gating", () => {
@@ -93,13 +112,13 @@ describe("sandctl live smoke gating", () => {
 					env,
 					timeoutMs: NEW_TIMEOUT_MS,
 				});
-				expect(newResult.code).toBe(0);
+				assertCliSuccess("new", newResult);
 
 				const listResult = runBinary(
 					["--config", configPath, "list", "--format", "json"],
 					{ env, timeoutMs: LIST_TIMEOUT_MS },
 				);
-				expect(listResult.code).toBe(0);
+				assertCliSuccess("list", listResult);
 
 				const sessions = JSON.parse(listResult.stdout) as SessionRecord[];
 				expect(sessions.length).toBeGreaterThan(0);
@@ -120,20 +139,20 @@ describe("sandctl live smoke gating", () => {
 					],
 					{ env, timeoutMs: EXEC_TIMEOUT_MS },
 				);
-				expect(execResult.code).toBe(0);
+				assertCliSuccess("exec -c", execResult);
 				expect(execResult.stdout).toContain(smokeMarker);
 
 				const destroyResult = runBinary(
 					["--config", configPath, "destroy", target.id, "--force"],
 					{ env, timeoutMs: DESTROY_TIMEOUT_MS },
 				);
-				expect(destroyResult.code).toBe(0);
+				assertCliSuccess("destroy", destroyResult);
 
 				const postDestroyList = runBinary(
 					["--config", configPath, "list", "--all", "--format", "json"],
 					{ env, timeoutMs: LIST_TIMEOUT_MS },
 				);
-				expect(postDestroyList.code).toBe(0);
+				assertCliSuccess("post-destroy list", postDestroyList);
 				const postDestroySessions = JSON.parse(
 					postDestroyList.stdout,
 				) as SessionRecord[];
@@ -150,5 +169,6 @@ describe("sandctl live smoke gating", () => {
 				}
 			}
 		},
+		LIVE_SMOKE_TEST_TIMEOUT_MS,
 	);
 });
