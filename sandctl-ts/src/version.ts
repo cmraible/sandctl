@@ -1,3 +1,14 @@
-export const VERSION = "0629848-dirty";
-export const COMMIT = "0629848";
-export const BUILD_TIME = "2026-02-23T05:54:14Z";
+declare const __SANDCTL_VERSION__: string | undefined;
+declare const __SANDCTL_COMMIT__: string | undefined;
+declare const __SANDCTL_BUILD_TIME__: string | undefined;
+
+export const VERSION =
+	typeof __SANDCTL_VERSION__ === "string" ? __SANDCTL_VERSION__ : "dev";
+
+export const COMMIT =
+	typeof __SANDCTL_COMMIT__ === "string" ? __SANDCTL_COMMIT__ : "unknown";
+
+export const BUILD_TIME =
+	typeof __SANDCTL_BUILD_TIME__ === "string"
+		? __SANDCTL_BUILD_TIME__
+		: "unknown";

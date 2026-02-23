@@ -15,5 +15,9 @@ if [[ -z "$BUN_BIN" ]]; then
 	exit 127
 fi
 
-printf 'export const VERSION = "%s";\nexport const COMMIT = "%s";\nexport const BUILD_TIME = "%s";\n' "$VERSION" "$COMMIT" "$BUILD_TIME" > src/version.ts
-"$BUN_BIN" build src/index.ts --compile --outfile sandctl
+"$BUN_BIN" build src/index.ts \
+	--compile \
+	--outfile sandctl \
+	--define __SANDCTL_VERSION__="\"$VERSION\"" \
+	--define __SANDCTL_COMMIT__="\"$COMMIT\"" \
+	--define __SANDCTL_BUILD_TIME__="\"$BUILD_TIME\""
