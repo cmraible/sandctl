@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { runNew } from "@/commands/new";
+import { runNew, runNewCommand } from "@/commands/new";
 import type { Provider, SSHKeyManager } from "@/provider/interface";
 import type { VM } from "@/provider/types";
 import type { Session } from "@/session/types";
@@ -110,5 +110,55 @@ describe("commands/new", () => {
 			provider: "hetzner",
 			provider_id: "vm-123",
 		});
+	});
+
+	test("command wrapper shows progress and logs VM name", async () => {
+		const events: string[] = [];
+		await runNewCommand({}, undefined, {
+			runNew: async () => ({
+				id: "violet",
+				status: "running",
+				provider: "hetzner",
+				provider_id: "vm-123",
+				ip_address: "203.0.113.10",
+				created_at: "2026-02-22T00:00:00Z",
+			}),
+			createSpinner: () => ({
+				succeed: (message: string) => {
+					events.push(`succeed:${message}`);
+				},
+				fail: (message: string) => {
+					events.push(`fail:${message}`);
+				},
+			}),
+			log: (message: string) => {
+				events.push(`log:${message}`);
+			},
+		});
+
+		expect(events).toEqual([
+			"succeed:Created VM 'violet'.",
+			"log:VM name: violet",
+		]);
+	});
+
+	test("command wrapper marks spinner as failed on errors", async () => {
+		const events: string[] = [];
+		await expect(
+			runNewCommand({}, undefined, {
+				runNew: async () => {
+					throw new Error("boom");
+				},
+				createSpinner: () => ({
+					succeed: () => {},
+					fail: (message: string) => {
+						events.push(`fail:${message}`);
+					},
+				}),
+				log: () => {},
+			}),
+		).rejects.toThrow("boom");
+
+		expect(events).toEqual(["fail:Failed to provision VM."]);
 	});
 });

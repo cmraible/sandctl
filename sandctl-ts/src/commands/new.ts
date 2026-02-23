@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { createSpinner } from "nanospinner";
 import {
 	buildSSHOptions,
 	type SSHRuntimeClient,
@@ -34,6 +35,17 @@ interface NewOptions {
 	image?: string;
 	timeout?: string;
 	template?: string;
+}
+
+interface NewCommandSpinner {
+	succeed(message: string): void;
+	fail(message: string): void;
+}
+
+interface NewCommandDependencies {
+	runNew: (options: NewOptions, configPath?: string) => Promise<Session>;
+	createSpinner: (text: string) => NewCommandSpinner;
+	log: (message: string) => void;
 }
 
 interface SessionStoreLike {
@@ -76,6 +88,26 @@ const defaultDependencies: Dependencies = {
 	now: () => new Date(),
 	warn: (message: string) => {
 		console.warn(message);
+	},
+};
+
+const defaultNewCommandDependencies: NewCommandDependencies = {
+	runNew: async (options, configPath) => {
+		return await runNew(options, {}, configPath);
+	},
+	createSpinner: (text) => {
+		const spinner = createSpinner(text).start();
+		return {
+			succeed(message: string): void {
+				spinner.success({ text: message });
+			},
+			fail(message: string): void {
+				spinner.error({ text: message });
+			},
+		};
+	},
+	log: (message: string) => {
+		console.log(message);
 	},
 };
 
@@ -253,6 +285,28 @@ export async function runNew(
 	}
 }
 
+export async function runNewCommand(
+	options: NewOptions,
+	configPath?: string,
+	deps: Partial<NewCommandDependencies> = {},
+): Promise<Session> {
+	const dependencies = {
+		...defaultNewCommandDependencies,
+		...deps,
+	};
+
+	const spinner = dependencies.createSpinner("Provisioning VM...");
+	try {
+		const session = await dependencies.runNew(options, configPath);
+		spinner.succeed(`Created VM '${session.id}'.`);
+		dependencies.log(`VM name: ${session.id}`);
+		return session;
+	} catch (error) {
+		spinner.fail("Failed to provision VM.");
+		throw error;
+	}
+}
+
 export function registerNewCommand(): Command {
 	return new Command("new")
 		.description("Create a new sandboxed session")
@@ -264,6 +318,6 @@ export function registerNewCommand(): Command {
 		.option("-t, --timeout <timeout>", "Wait timeout (for example: 5m, 10m)")
 		.action(async (options: NewOptions, command) => {
 			const globals = command.optsWithGlobals() as { config?: string };
-			await runNew(options, {}, globals.config);
+			await runNewCommand(options, globals.config);
 		});
 }
