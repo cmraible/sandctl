@@ -5,7 +5,7 @@ import { discoverPrimaryAgentSocket } from "@/ssh/agent";
 
 const DEFAULT_PORT = 22;
 const DEFAULT_USERNAME = "agent";
-const DEFAULT_TIMEOUT_MS = 10_000;
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 export interface SSHClientOptions {
 	host: string;
