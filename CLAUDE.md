@@ -1,52 +1,66 @@
 # sandctl Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-01-22
+## Overview
+
+sandctl is a CLI tool for managing sandboxed VMs on Hetzner Cloud. The implementation is in TypeScript/Bun, located in `sandctl-ts/`.
 
 ## Active Technologies
-- Go 1.22+ + Cobra (CLI framework), gopkg.in/yaml.v3 (config serialization), golang.org/x/term (secure input) (002-init-command)
-- YAML file at `~/.sandctl/config` (002-init-command)
-- Go 1.22 + Cobra (CLI), gopkg.in/yaml.v3 (config), golang.org/x/term (003-human-readable-names)
-- Local JSON file at `~/.sandctl/sessions.json` (003-human-readable-names)
-- Go 1.22+ (existing project), YAML (GitHub Actions workflows) + GitHub Actions (ubuntu-latest runner), Go toolchain (004-github-actions-ci)
-- N/A (CI/CD configuration only) (004-github-actions-ci)
-- Go 1.23.0 + Cobra (CLI), gopkg.in/yaml.v3 (config), golang.org/x/term (secure input) (006-opencode-default-agent)
-- YAML file at `~/.sandctl/config` (0600 permissions), JSON at `~/.sandctl/sessions.json` (006-opencode-default-agent)
-- Go 1.23.0 + Cobra (CLI framework), `os/exec` (command execution), `testing` (Go standard test framework) (008-e2e-test-suite)
-- N/A (test artifacts use temp directories) (008-e2e-test-suite)
-- Go 1.24 + Cobra (CLI framework), gopkg.in/yaml.v3 (config), golang.org/x/term (secure input) (010-rename-start-to-new)
-- Go 1.24 + github.com/spf13/cobra v1.9.1 (CLI), github.com/gorilla/websocket v1.5.1 (WebSocket), golang.org/x/term v0.30.0 (terminal control) (011-console-command)
-- ~/.sandctl/sessions.json (local session store), ~/.sandctl/config (YAML config) (011-console-command)
-- Go 1.24 + github.com/spf13/cobra v1.9.1 (CLI), golang.org/x/term v0.30.0 (terminal detection) (012-auto-console-after-new)
-- Go 1.24 + github.com/spf13/cobra v1.9.1 (CLI), golang.org/x/term v0.30.0 (terminal) (013-repo-clone)
-- Go 1.24.0 + github.com/spf13/cobra v1.9.1 (CLI), golang.org/x/crypto/ssh (SSH client/agent), gopkg.in/yaml.v3 (config), golang.org/x/term (terminal detection) (016-ssh-agent-support)
-- Go 1.24.0 + github.com/spf13/cobra v1.9.1 (CLI), golang.org/x/crypto/ssh (SSH client), gopkg.in/yaml.v3 (config) (017-cloud-init-agent-user)
-- Go 1.24.0 + github.com/spf13/cobra v1.9.1 (CLI), gopkg.in/yaml.v3 (config), golang.org/x/term (terminal detection) (018-rename-repo-to-template)
-- YAML files at `~/.sandctl/templates/<name>/config.yaml`, shell scripts at `~/.sandctl/templates/<name>/init.sh` (018-rename-repo-to-template)
-- Go 1.24.0 + github.com/spf13/cobra v1.9.1 (CLI), gopkg.in/yaml.v3 (config), golang.org/x/term (terminal), golang.org/x/crypto/ssh (SSH client) (019-sandbox-git-config)
-- YAML config file at `~/.sandctl/config` (0600 permissions), JSON session store at `~/.sandctl/sessions.json` (019-sandbox-git-config)
 
-- Go 1.22+ + Cobra (CLI framework), Viper (config), Fly.io Sprites SDK (001-sandbox-cli)
+- TypeScript + Bun (runtime and bundler)
+- Commander.js (CLI framework)
+- ssh2 (SSH client)
+- Biome (linting and formatting)
 
 ## Project Structure
 
 ```text
-src/
-tests/
+sandctl-ts/
+├── src/
+│   ├── commands/       # CLI command implementations
+│   ├── config/         # Config file handling (~/.sandctl/config)
+│   ├── hetzner/        # Hetzner Cloud provider
+│   ├── provider/       # Provider interface and registry
+│   ├── session/        # Session management (~/.sandctl/sessions.json)
+│   ├── ssh/            # SSH client, console, exec
+│   ├── template/       # Template management
+│   └── utils/          # Shared utilities
+├── tests/
+│   ├── unit/           # Unit tests
+│   ├── e2e/            # E2E and contract tests
+│   └── support/        # Test fixtures
+└── biome.json          # Linter/formatter config
 ```
 
 ## Commands
 
-# Add commands for Go 1.22+
+```bash
+cd sandctl-ts
+
+# Install dependencies
+bun install
+
+# Run unit tests
+bun test tests/unit/
+
+# Run linter
+bun run lint
+
+# Build binary
+bun run build
+
+# Run e2e tests (requires HETZNER_API_TOKEN)
+bun test tests/e2e/
+```
 
 ## Code Style
 
-Go 1.22+: Follow standard conventions
+- Biome for linting and formatting — run `bun run lint` before committing
+- Import ordering is enforced (node: → third-party → @/ aliases)
+- No non-null assertions — use early returns or narrowing instead
 
-## Recent Changes
-- 019-sandbox-git-config: Added Go 1.24.0 + github.com/spf13/cobra v1.9.1 (CLI), gopkg.in/yaml.v3 (config), golang.org/x/term (terminal), golang.org/x/crypto/ssh (SSH client)
-- 018-rename-repo-to-template: Added Go 1.24.0 + github.com/spf13/cobra v1.9.1 (CLI), gopkg.in/yaml.v3 (config), golang.org/x/term (terminal detection)
-- 017-cloud-init-agent-user: Added Go 1.24.0 + github.com/spf13/cobra v1.9.1 (CLI), golang.org/x/crypto/ssh (SSH client), gopkg.in/yaml.v3 (config)
+## CI Checks
 
+All must pass before merging: `lint`, `build`, `test`, `contract-tests`, `e2e`
 
 <!-- MANUAL ADDITIONS START -->
 <!-- MANUAL ADDITIONS END -->
