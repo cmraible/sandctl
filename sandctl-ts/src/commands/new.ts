@@ -13,11 +13,9 @@ import {
 	getProviderConfig,
 	getSSHPublicKey,
 	hasGitConfig,
-	hasGitHubToken,
 	load,
 	type ProviderConfig,
 } from "@/config/config";
-import { expandTilde } from "@/utils/paths";
 import { get as getProviderFromRegistry } from "@/provider/registry";
 import { generateID } from "@/session/id";
 import { SessionStore } from "@/session/store";
@@ -31,6 +29,7 @@ import { openConsole } from "@/ssh/console";
 import { type ExecResult, execWithStreams } from "@/ssh/exec";
 import { TemplateNotFoundError, TemplateStore } from "@/template/store";
 import type { TemplateInitScript, TemplateStoreLike } from "@/template/types";
+import { expandTilde } from "@/utils/paths";
 
 const DEFAULT_PROVIDER = "hetzner";
 const DEFAULT_WAIT_READY_TIMEOUT_MS = 5 * 60 * 1000;
@@ -95,19 +94,16 @@ interface Dependencies {
 		config: Config,
 		host: string,
 		deps: Pick<Dependencies, "createSSHClient">,
-		warn: (message: string) => void,
 	) => Promise<void>;
 	setupGitConfig: (
 		config: Config,
 		host: string,
 		deps: Pick<Dependencies, "createSSHClient">,
-		warn: (message: string) => void,
 	) => Promise<void>;
 	setupGitHubCLI: (
 		config: Config,
 		host: string,
 		deps: Pick<Dependencies, "createSSHClient">,
-		warn: (message: string) => void,
 	) => Promise<void>;
 	now: () => Date;
 	warn: (message: string) => void;
@@ -250,7 +246,6 @@ async function setupOpenCodeViaSSH(
 	config: Config,
 	host: string,
 	deps: Pick<Dependencies, "createSSHClient">,
-	warn: (message: string) => void,
 ): Promise<void> {
 	if (!config.opencode_zen_key) {
 		return;
@@ -289,7 +284,6 @@ async function setupGitConfigViaSSH(
 	config: Config,
 	host: string,
 	deps: Pick<Dependencies, "createSSHClient">,
-	warn: (message: string) => void,
 ): Promise<void> {
 	if (!hasGitConfig(config)) {
 		return;
@@ -327,9 +321,8 @@ async function setupGitHubCLIViaSSH(
 	config: Config,
 	host: string,
 	deps: Pick<Dependencies, "createSSHClient">,
-	warn: (message: string) => void,
 ): Promise<void> {
-	if (!hasGitHubToken(config)) {
+	if (!config.github_token) {
 		return;
 	}
 
@@ -338,20 +331,18 @@ async function setupGitHubCLIViaSSH(
 
 	await withSSHClient(client, async (c) => {
 		const authChannel = await c.exec(
-			`echo ${shellQuote(config.github_token!)} | sudo -u agent gh auth login --with-token --hostname github.com`,
+			`echo ${shellQuote(config.github_token)} | sudo -u agent gh auth login --with-token --hostname github.com`,
 		);
 		await collectChannelOutput(authChannel);
 
-		const setupChannel = await c.exec(
-			"sudo -u agent gh auth setup-git",
-		);
+		const setupChannel = await c.exec("sudo -u agent gh auth setup-git");
 		await collectChannelOutput(setupChannel);
 	});
 }
 
-async function collectChannelOutput(
-	channel: { on(event: string, listener: (...args: unknown[]) => void): void },
-): Promise<void> {
+async function collectChannelOutput(channel: {
+	on(event: string, listener: (...args: unknown[]) => void): void;
+}): Promise<void> {
 	return new Promise<void>((resolve) => {
 		channel.on("close", () => resolve());
 	});
@@ -454,7 +445,6 @@ export async function runNew(
 					config,
 					readyVM.ipAddress,
 					dependencies,
-					dependencies.warn,
 				);
 			} catch (error) {
 				dependencies.warn(
@@ -467,7 +457,6 @@ export async function runNew(
 					config,
 					readyVM.ipAddress,
 					dependencies,
-					dependencies.warn,
 				);
 			} catch (error) {
 				dependencies.warn(
@@ -480,7 +469,6 @@ export async function runNew(
 					config,
 					readyVM.ipAddress,
 					dependencies,
-					dependencies.warn,
 				);
 			} catch (error) {
 				dependencies.warn(
