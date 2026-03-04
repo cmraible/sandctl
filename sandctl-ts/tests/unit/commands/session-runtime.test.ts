@@ -97,7 +97,7 @@ describe("buildSSHOptions", () => {
 		const opts = buildSSHOptions(config, "10.0.0.1");
 		expect(opts).toEqual({
 			host: "10.0.0.1",
-			username: "root",
+			username: "agent",
 			useAgent: true,
 		} satisfies SSHClientOptions);
 	});
@@ -110,7 +110,7 @@ describe("buildSSHOptions", () => {
 		const opts = buildSSHOptions(config, "10.0.0.2");
 		expect(opts).toEqual({
 			host: "10.0.0.2",
-			username: "root",
+			username: "agent",
 			privateKeyPath: "/home/user/.ssh/id_ed25519.pub".slice(0, -4),
 		} satisfies SSHClientOptions);
 	});

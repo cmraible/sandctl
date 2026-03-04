@@ -52,6 +52,7 @@ describe("commands/new", () => {
 					resolveProvider: () => provider,
 					generateSessionID: () => "violet",
 					getPublicKey: async () => "ssh-ed25519 AAAA test@local",
+					waitForCloudInit: async () => {},
 					store: {
 						list: async () => [],
 						add: async (session: Session) => {
@@ -93,6 +94,7 @@ describe("commands/new", () => {
 					resolveProvider: () => provider,
 					generateSessionID: () => "violet",
 					getPublicKey: async () => "ssh-ed25519 AAAA test@local",
+					waitForCloudInit: async () => {},
 					store: {
 						list: async () => [],
 						add: async (session: Session) => {
@@ -139,6 +141,8 @@ describe("commands/new", () => {
 		expect(events).toEqual([
 			"succeed:Created VM 'violet'.",
 			"log:VM name: violet",
+			"log:Use 'sandctl console violet' to connect.",
+			"log:Use 'sandctl destroy violet' when done.",
 		]);
 	});
 

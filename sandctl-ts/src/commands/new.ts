@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { isatty } from "node:tty";
 import { Command } from "commander";
 import { createSpinner } from "nanospinner";
 import {
@@ -21,12 +23,15 @@ import {
 	type SSHClientLike,
 	type SSHClientOptions,
 } from "@/ssh/client";
+import { openConsole } from "@/ssh/console";
 import { type ExecResult, execWithStreams } from "@/ssh/exec";
 import { TemplateNotFoundError, TemplateStore } from "@/template/store";
 import type { TemplateInitScript, TemplateStoreLike } from "@/template/types";
 
 const DEFAULT_PROVIDER = "hetzner";
 const DEFAULT_WAIT_READY_TIMEOUT_MS = 5 * 60 * 1000;
+const DEFAULT_CLOUD_INIT_TIMEOUT_MS = 10 * 60 * 1000;
+const CLOUD_INIT_POLL_INTERVAL_MS = 5_000;
 
 interface NewOptions {
 	provider?: string;
@@ -35,6 +40,7 @@ interface NewOptions {
 	image?: string;
 	timeout?: string;
 	template?: string;
+	noConsole?: boolean;
 }
 
 interface NewCommandSpinner {
@@ -46,6 +52,11 @@ interface NewCommandDependencies {
 	runNew: (options: NewOptions, configPath?: string) => Promise<Session>;
 	createSpinner: (text: string) => NewCommandSpinner;
 	log: (message: string) => void;
+	loadConfig: (configPath?: string) => Promise<Config>;
+	createSSHClient: (options: SSHClientOptions) => SSHRuntimeClient;
+	openRemoteConsole: (client: SSHClientLike) => Promise<void>;
+	isInteractive: () => boolean;
+	warn: (message: string) => void;
 }
 
 interface SessionStoreLike {
@@ -70,6 +81,12 @@ interface Dependencies {
 		command: string,
 		script: string,
 	) => Promise<ExecResult>;
+	waitForCloudInit: (
+		config: Config,
+		host: string,
+		createClient: (options: SSHClientOptions) => SSHRuntimeClient,
+		timeoutMs: number,
+	) => Promise<void>;
 	now: () => Date;
 	warn: (message: string) => void;
 }
@@ -85,6 +102,7 @@ const defaultDependencies: Dependencies = {
 	runRemoteTemplate: async (client, command, script) => {
 		return await execWithStreams(client, command, { stdin: script });
 	},
+	waitForCloudInit: defaultWaitForCloudInit,
 	now: () => new Date(),
 	warn: (message: string) => {
 		console.warn(message);
@@ -108,6 +126,13 @@ const defaultNewCommandDependencies: NewCommandDependencies = {
 	},
 	log: (message: string) => {
 		console.log(message);
+	},
+	loadConfig: load,
+	createSSHClient: (options) => new SSHClient(options),
+	openRemoteConsole: openConsole,
+	isInteractive: () => isatty(0),
+	warn: (message: string) => {
+		console.warn(message);
 	},
 };
 
@@ -141,6 +166,55 @@ function waitReadyTimeoutMs(options: NewOptions): number {
 		return DEFAULT_WAIT_READY_TIMEOUT_MS;
 	}
 	return Duration.parse(options.timeout).milliseconds;
+}
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function defaultWaitForCloudInit(
+	config: Config,
+	host: string,
+	createClient: (options: SSHClientOptions) => SSHRuntimeClient,
+	timeoutMs: number,
+): Promise<void> {
+	const sshOptions = { ...buildSSHOptions(config, host), username: "root" };
+	const deadline = Date.now() + timeoutMs;
+
+	while (Date.now() < deadline) {
+		try {
+			const client = createClient(sshOptions);
+			const done = await withSSHClient(client, async (c) => {
+				const channel = await c.exec(
+					"test -f /var/lib/cloud/instance/boot-finished && echo done",
+				);
+				return await new Promise<boolean>((resolve) => {
+					let output = "";
+					channel.on("data", (data: Buffer | string) => {
+						output += data.toString();
+					});
+					channel.on("close", () => {
+						resolve(output.trim() === "done");
+					});
+				});
+			});
+			if (done) {
+				return;
+			}
+		} catch {
+			// SSH not ready yet or command failed; keep polling
+		}
+		await sleep(CLOUD_INIT_POLL_INTERVAL_MS);
+	}
+
+	throw new Error(
+		`cloud-init did not complete within ${Math.round(timeoutMs / 1000)}s`,
+	);
+}
+
+export function sshKeyName(publicKey: string): string {
+	const hex = createHash("md5").update(publicKey).digest("hex");
+	return `sandctl-${hex.slice(0, 8)}`;
 }
 
 function shellQuote(value: string): string {
@@ -213,7 +287,7 @@ export async function runNew(
 
 	const publicKey = await dependencies.getPublicKey(config);
 	const sshKeyID = await provider.ensureSSHKey(
-		`sandctl-${sessionID}`,
+		sshKeyName(publicKey),
 		publicKey,
 	);
 
@@ -230,6 +304,16 @@ export async function runNew(
 		await provider.waitReady(createdVM.id, waitReadyTimeoutMs(options));
 
 		const readyVM = await provider.get(createdVM.id);
+
+		if (readyVM.ipAddress) {
+			await dependencies.waitForCloudInit(
+				config,
+				readyVM.ipAddress,
+				dependencies.createSSHClient,
+				DEFAULT_CLOUD_INIT_TIMEOUT_MS,
+			);
+		}
+
 		if (selectedTemplate && !readyVM.ipAddress) {
 			throw new Error("VM has no IP address for template initialization");
 		}
@@ -296,15 +380,43 @@ export async function runNewCommand(
 	};
 
 	const spinner = dependencies.createSpinner("Provisioning VM...");
+	let session: Session;
 	try {
-		const session = await dependencies.runNew(options, configPath);
+		session = await dependencies.runNew(options, configPath);
 		spinner.succeed(`Created VM '${session.id}'.`);
 		dependencies.log(`VM name: ${session.id}`);
-		return session;
 	} catch (error) {
 		spinner.fail("Failed to provision VM.");
 		throw error;
 	}
+
+	const shouldConsole =
+		!options.noConsole && dependencies.isInteractive() && session.ip_address;
+
+	if (shouldConsole) {
+		dependencies.log("Connecting to console...");
+		try {
+			const config = await dependencies.loadConfig(configPath);
+			const client = dependencies.createSSHClient(
+				buildSSHOptions(config, session.ip_address),
+			);
+			await withSSHClient(client, async (c) => {
+				await dependencies.openRemoteConsole(c);
+			});
+		} catch (error) {
+			dependencies.warn(
+				`Warning: Failed to connect to console: ${messageFromError(error)}`,
+			);
+			dependencies.log(
+				`Session was created successfully. Use 'sandctl console ${session.id}' to connect manually.`,
+			);
+		}
+	} else if (!options.noConsole) {
+		dependencies.log(`Use 'sandctl console ${session.id}' to connect.`);
+		dependencies.log(`Use 'sandctl destroy ${session.id}' when done.`);
+	}
+
+	return session;
 }
 
 export function registerNewCommand(): Command {
@@ -316,6 +428,10 @@ export function registerNewCommand(): Command {
 		.option("--server-type <serverType>", "Server type override")
 		.option("--image <image>", "Image override")
 		.option("-t, --timeout <timeout>", "Wait timeout (for example: 5m, 10m)")
+		.option(
+			"--no-console",
+			"Skip automatic console connection after provisioning",
+		)
 		.action(async (options: NewOptions, command) => {
 			const globals = command.optsWithGlobals() as { config?: string };
 			await runNewCommand(options, globals.config);

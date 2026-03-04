@@ -44,6 +44,7 @@ describe("commands/new --template", () => {
 				resolveProvider: () => provider,
 				generateSessionID: () => "violet",
 				getPublicKey: async () => "ssh-ed25519 AAAA test@local",
+				waitForCloudInit: async () => {},
 				store: {
 					list: async () => [],
 					add: async () => {},
@@ -105,6 +106,7 @@ describe("commands/new --template", () => {
 				resolveProvider: () => provider,
 				generateSessionID: () => "violet",
 				getPublicKey: async () => "ssh-ed25519 AAAA test@local",
+				waitForCloudInit: async () => {},
 				store: {
 					list: async () => [],
 					add: async () => {},

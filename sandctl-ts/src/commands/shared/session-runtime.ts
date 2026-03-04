@@ -94,7 +94,7 @@ export function buildSSHOptions(
 	if (config.ssh_key_source === "agent") {
 		return {
 			host,
-			username: "root",
+			username: "agent",
 			useAgent: true,
 		};
 	}
@@ -110,7 +110,7 @@ export function buildSSHOptions(
 
 	return {
 		host,
-		username: "root",
+		username: "agent",
 		privateKeyPath,
 	};
 }

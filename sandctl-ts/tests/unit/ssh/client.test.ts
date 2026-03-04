@@ -45,7 +45,7 @@ describe("ssh/client", () => {
 		expect(connectConfig).toMatchObject({
 			host: "192.0.2.10",
 			port: 22,
-			username: "root",
+			username: "agent",
 			agent: "/tmp/agent.sock",
 		});
 	});
