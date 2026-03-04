@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { isatty } from "node:tty";
 import { Command } from "commander";
 import { createSpinner } from "nanospinner";
@@ -11,9 +12,12 @@ import {
 	type Config,
 	getProviderConfig,
 	getSSHPublicKey,
+	hasGitConfig,
+	hasGitHubToken,
 	load,
 	type ProviderConfig,
 } from "@/config/config";
+import { expandTilde } from "@/utils/paths";
 import { get as getProviderFromRegistry } from "@/provider/registry";
 import { generateID } from "@/session/id";
 import { SessionStore } from "@/session/store";
@@ -87,6 +91,24 @@ interface Dependencies {
 		createClient: (options: SSHClientOptions) => SSHRuntimeClient,
 		timeoutMs: number,
 	) => Promise<void>;
+	setupOpenCode: (
+		config: Config,
+		host: string,
+		deps: Pick<Dependencies, "createSSHClient">,
+		warn: (message: string) => void,
+	) => Promise<void>;
+	setupGitConfig: (
+		config: Config,
+		host: string,
+		deps: Pick<Dependencies, "createSSHClient">,
+		warn: (message: string) => void,
+	) => Promise<void>;
+	setupGitHubCLI: (
+		config: Config,
+		host: string,
+		deps: Pick<Dependencies, "createSSHClient">,
+		warn: (message: string) => void,
+	) => Promise<void>;
 	now: () => Date;
 	warn: (message: string) => void;
 }
@@ -103,6 +125,9 @@ const defaultDependencies: Dependencies = {
 		return await execWithStreams(client, command, { stdin: script });
 	},
 	waitForCloudInit: defaultWaitForCloudInit,
+	setupOpenCode: setupOpenCodeViaSSH,
+	setupGitConfig: setupGitConfigViaSSH,
+	setupGitHubCLI: setupGitHubCLIViaSSH,
 	now: () => new Date(),
 	warn: (message: string) => {
 		console.warn(message);
@@ -221,6 +246,117 @@ function shellQuote(value: string): string {
 	return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
+async function setupOpenCodeViaSSH(
+	config: Config,
+	host: string,
+	deps: Pick<Dependencies, "createSSHClient">,
+	warn: (message: string) => void,
+): Promise<void> {
+	if (!config.opencode_zen_key) {
+		return;
+	}
+
+	const sshOptions = { ...buildSSHOptions(config, host), username: "root" };
+	const client = deps.createSSHClient(sshOptions);
+
+	await withSSHClient(client, async (c) => {
+		const installChannel = await c.exec(
+			"curl -fsSL https://opencode.ai/install | bash",
+		);
+		await collectChannelOutput(installChannel);
+
+		const mkdirChannel = await c.exec(
+			"mkdir -p /home/agent/.local/share/opencode",
+		);
+		await collectChannelOutput(mkdirChannel);
+
+		const authJSON = JSON.stringify({
+			opencode: { type: "api", key: config.opencode_zen_key },
+		});
+		const writeChannel = await c.exec(
+			`echo ${shellQuote(authJSON)} > /home/agent/.local/share/opencode/auth.json`,
+		);
+		await collectChannelOutput(writeChannel);
+
+		const chownChannel = await c.exec(
+			"chown -R agent:agent /home/agent/.local/share/opencode",
+		);
+		await collectChannelOutput(chownChannel);
+	});
+}
+
+async function setupGitConfigViaSSH(
+	config: Config,
+	host: string,
+	deps: Pick<Dependencies, "createSSHClient">,
+	warn: (message: string) => void,
+): Promise<void> {
+	if (!hasGitConfig(config)) {
+		return;
+	}
+
+	let gitConfigContent: string;
+	if (config.git_config_path) {
+		gitConfigContent = await readFile(
+			expandTilde(config.git_config_path),
+			"utf8",
+		);
+	} else {
+		gitConfigContent = `[user]\n\tname = ${config.git_user_name}\n\temail = ${config.git_user_email}\n`;
+	}
+
+	const encoded = Buffer.from(gitConfigContent).toString("base64");
+
+	const sshOptions = { ...buildSSHOptions(config, host), username: "root" };
+	const client = deps.createSSHClient(sshOptions);
+
+	await withSSHClient(client, async (c) => {
+		const writeChannel = await c.exec(
+			`echo '${encoded}' | base64 -d > /home/agent/.gitconfig`,
+		);
+		await collectChannelOutput(writeChannel);
+
+		const chownChannel = await c.exec(
+			"chown agent:agent /home/agent/.gitconfig && chmod 644 /home/agent/.gitconfig",
+		);
+		await collectChannelOutput(chownChannel);
+	});
+}
+
+async function setupGitHubCLIViaSSH(
+	config: Config,
+	host: string,
+	deps: Pick<Dependencies, "createSSHClient">,
+	warn: (message: string) => void,
+): Promise<void> {
+	if (!hasGitHubToken(config)) {
+		return;
+	}
+
+	const sshOptions = { ...buildSSHOptions(config, host), username: "root" };
+	const client = deps.createSSHClient(sshOptions);
+
+	await withSSHClient(client, async (c) => {
+		const authChannel = await c.exec(
+			`echo ${shellQuote(config.github_token!)} | sudo -u agent gh auth login --with-token --hostname github.com`,
+		);
+		await collectChannelOutput(authChannel);
+
+		const setupChannel = await c.exec(
+			"sudo -u agent gh auth setup-git",
+		);
+		await collectChannelOutput(setupChannel);
+	});
+}
+
+async function collectChannelOutput(
+	channel: { on(event: string, listener: (...args: unknown[]) => void): void },
+): Promise<void> {
+	return new Promise<void>((resolve) => {
+		channel.on("close", () => resolve());
+	});
+}
+
 async function runTemplateScript(
 	config: Config,
 	host: string,
@@ -312,6 +448,45 @@ export async function runNew(
 				dependencies.createSSHClient,
 				DEFAULT_CLOUD_INIT_TIMEOUT_MS,
 			);
+
+			try {
+				await dependencies.setupOpenCode(
+					config,
+					readyVM.ipAddress,
+					dependencies,
+					dependencies.warn,
+				);
+			} catch (error) {
+				dependencies.warn(
+					`[warn] OpenCode setup failed: ${messageFromError(error)}`,
+				);
+			}
+
+			try {
+				await dependencies.setupGitConfig(
+					config,
+					readyVM.ipAddress,
+					dependencies,
+					dependencies.warn,
+				);
+			} catch (error) {
+				dependencies.warn(
+					`[warn] Git config setup failed: ${messageFromError(error)}`,
+				);
+			}
+
+			try {
+				await dependencies.setupGitHubCLI(
+					config,
+					readyVM.ipAddress,
+					dependencies,
+					dependencies.warn,
+				);
+			} catch (error) {
+				dependencies.warn(
+					`[warn] GitHub CLI auth failed: ${messageFromError(error)}`,
+				);
+			}
 		}
 
 		if (selectedTemplate && !readyVM.ipAddress) {
