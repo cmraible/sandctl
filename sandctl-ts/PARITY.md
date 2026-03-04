@@ -26,8 +26,16 @@ The following gaps identified in the quality review have been resolved:
 - **Test fixtures**: `tests/support/fixtures.ts` provides canonical mock objects (`makeSession`, `makeConfig`) reused across unit tests.
 - **Live smoke hardening**: `tests/e2e/live-smoke.test.ts` adds SSH-wait polling, timeout enforcement, and structured cleanup teardown.
 
+## Deliberate Omissions
+
+The following Go CLI features are intentionally not ported to the TypeScript rewrite:
+
+- **OpenCode setup via SSH** (`setupOpenCodeViaSSH`): The Go CLI installs OpenCode and writes an auth.json on new VMs when `opencode_zen_key` is configured. Omitted from the TS rewrite to keep things simple — OpenCode is no longer actively used.
+- **GitHub CLI auth via SSH** (`setupGitHubCLIViaSSH`): The Go CLI runs `gh auth login` on new VMs when `github_token` is configured. Omitted from the TS rewrite for simplicity. Can be added later if needed.
+
+These config fields (`opencode_zen_key`, `github_token`) are still accepted by `sandctl init` for backwards compatibility with existing config files, but the `new` command does not act on them.
+
 ## Known Gaps
 
-- Template management subcommands (`sandctl template add|list|show|edit|remove`) are available in Go but are not yet exposed in the TypeScript CLI command tree.
 - Full cloud-provider behavior is intentionally opt-in in CI/local verification because live smoke requires external credentials and real Hetzner resources.
 - The e2e version test requires a built `./sandctl` binary in `sandctl-ts`; without a built binary it is skipped by design.
