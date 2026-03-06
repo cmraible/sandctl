@@ -15,13 +15,13 @@ const defaultDependencies: Dependencies = {
 
 export async function runTemplateRemove(
 	name: string,
-	options: { force: boolean },
+	options: { force: boolean; json?: boolean },
 	store = new TemplateStore(),
 	deps: Partial<Dependencies> = {},
 ): Promise<void> {
 	const { log, confirm: askConfirm } = { ...defaultDependencies, ...deps };
 
-	if (!options.force) {
+	if (!options.force && !options.json) {
 		const accepted = await askConfirm(`Delete template '${name}'?`);
 		if (!accepted) {
 			log("Canceled.");
@@ -40,6 +40,11 @@ export async function runTemplateRemove(
 		throw error;
 	}
 
+	if (options.json) {
+		console.log(JSON.stringify({ name, removed: true }, null, 2));
+		return;
+	}
+
 	log(`Template '${name}' deleted.`);
 }
 
@@ -48,7 +53,10 @@ export function registerTemplateRemoveCommand(): Command {
 		.description("Delete a template")
 		.argument("<name>", "Template name")
 		.option("-f, --force", "Skip confirmation prompt", false)
-		.action(async (name: string, options: { force: boolean }) => {
-			await runTemplateRemove(name, options);
-		});
+		.action(
+			async (name: string, options: { force: boolean }, command: Command) => {
+				const globals = command.optsWithGlobals() as { json?: boolean };
+				await runTemplateRemove(name, { ...options, json: globals.json });
+			},
+		);
 }

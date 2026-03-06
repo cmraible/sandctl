@@ -227,7 +227,13 @@ export function registerListCommand(): Command {
 		)
 		.option("-a, --all", "Include stopped and failed sessions", false)
 		.action(async (options: { format: string; all: boolean }, command) => {
-			const globals = command.optsWithGlobals() as { config?: string };
+			const globals = command.optsWithGlobals() as {
+				config?: string;
+				json?: boolean;
+			};
+			if (globals.json) {
+				options.format = "json";
+			}
 			await runList(options, undefined, undefined, globals.config);
 		});
 }

@@ -1,9 +1,9 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runTemplateRemove } from "@/commands/template-remove";
-import { TemplateNotFoundError, TemplateStore } from "@/template/store";
+import { TemplateStore } from "@/template/store";
 import type { TemplateStoreLike } from "@/template/types";
 
 describe("template remove", () => {
@@ -88,5 +88,28 @@ describe("template remove", () => {
 		});
 
 		expect(existsCalled.count).toBe(0);
+	});
+
+	test("json option skips confirmation and outputs JSON", async () => {
+		const root = await mkdtemp(join(tmpdir(), "sandctl-tpl-rm-"));
+		const store = new TemplateStore(root);
+		await store.add("Ghost");
+
+		const confirmFn = mock(async () => true);
+		const logSpy = spyOn(console, "log").mockImplementation(() => {});
+		try {
+			await runTemplateRemove("Ghost", { force: false, json: true }, store, {
+				log: () => {},
+				confirm: confirmFn,
+			});
+
+			expect(confirmFn).not.toHaveBeenCalled();
+			expect(await store.exists("Ghost")).toBe(false);
+			expect(logSpy).toHaveBeenCalledTimes(1);
+			const parsed = JSON.parse(logSpy.mock.calls[0][0] as string);
+			expect(parsed).toEqual({ name: "Ghost", removed: true });
+		} finally {
+			logSpy.mockRestore();
+		}
 	});
 });

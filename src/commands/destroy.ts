@@ -37,13 +37,18 @@ const defaultDependencies: Dependencies = {
 	resolveLegacyProvider: getProvider,
 };
 
+export interface DestroyResult {
+	id: string;
+	destroyed: boolean;
+}
+
 export async function runDestroy(
 	name: string,
-	options: { force: boolean },
+	options: { force: boolean; silent?: boolean },
 	store = new SessionStore(),
 	deps: Partial<Dependencies> = {},
 	configPath?: string,
-): Promise<void> {
+): Promise<DestroyResult> {
 	const dependencies = {
 		...defaultDependencies,
 		...deps,
@@ -71,8 +76,10 @@ export async function runDestroy(
 			);
 		}
 		await store.remove(session.id);
-		console.log(`Session '${session.id}' destroyed.`);
-		return;
+		if (!options.silent) {
+			console.log(`Session '${session.id}' destroyed.`);
+		}
+		return { id: session.id, destroyed: true };
 	}
 
 	if (!options.force) {
@@ -81,8 +88,10 @@ export async function runDestroy(
 			default: false,
 		});
 		if (!accepted) {
-			console.log("Canceled.");
-			return;
+			if (!options.silent) {
+				console.log("Canceled.");
+			}
+			return { id: session.id, destroyed: false };
 		}
 	}
 
@@ -131,7 +140,10 @@ export async function runDestroy(
 	}
 
 	await store.remove(session.id);
-	console.log(`Session '${session.id}' destroyed.`);
+	if (!options.silent) {
+		console.log(`Session '${session.id}' destroyed.`);
+	}
+	return { id: session.id, destroyed: true };
 }
 
 export function registerDestroyCommand(): Command {
@@ -141,7 +153,22 @@ export function registerDestroyCommand(): Command {
 		.argument("<name>")
 		.option("-f, --force", "Skip confirmation prompt", false)
 		.action(async (name: string, options: { force: boolean }, command) => {
-			const globals = command.optsWithGlobals() as { config?: string };
-			await runDestroy(name, options, undefined, undefined, globals.config);
+			const globals = command.optsWithGlobals() as {
+				config?: string;
+				json?: boolean;
+			};
+			if (globals.json) {
+				options.force = true;
+			}
+			const result = await runDestroy(
+				name,
+				{ ...options, silent: globals.json },
+				undefined,
+				undefined,
+				globals.config,
+			);
+			if (globals.json) {
+				console.log(JSON.stringify(result, null, 2));
+			}
 		});
 }

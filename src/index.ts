@@ -13,7 +13,8 @@ const program = new Command()
 	.name("sandctl")
 	.description("Manage sandboxed AI web development agents")
 	.option("--config <path>", "Config file path", "~/.sandctl/config")
-	.option("-v, --verbose", "Enable verbose debug output");
+	.option("-v, --verbose", "Enable verbose debug output")
+	.option("--json", "Output results as JSON");
 
 program.addCommand(registerVersionCommand());
 program.addCommand(registerInitCommand());

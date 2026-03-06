@@ -104,7 +104,46 @@ export function registerExecCommand(): Command {
 				options: ExecOptions,
 				command: Command,
 			): Promise<void> => {
-				const globals = command.optsWithGlobals() as { config?: string };
+				const globals = command.optsWithGlobals() as {
+					config?: string;
+					json?: boolean;
+				};
+
+				if (globals.json && options.command) {
+					let stdoutBuf = "";
+					let stderrBuf = "";
+					const exitCode = await runExec(
+						name,
+						options,
+						{
+							stdout: {
+								write(chunk: string | Uint8Array) {
+									stdoutBuf += chunk.toString();
+									return true;
+								},
+							},
+							stderr: {
+								write(chunk: string | Uint8Array) {
+									stderrBuf += chunk.toString();
+									return true;
+								},
+							},
+						},
+						globals.config,
+					);
+					console.log(
+						JSON.stringify(
+							{ exit_code: exitCode, stdout: stdoutBuf, stderr: stderrBuf },
+							null,
+							2,
+						),
+					);
+					if (exitCode !== 0) {
+						process.exitCode = exitCode;
+					}
+					return;
+				}
+
 				const exitCode = await runExec(name, options, {}, globals.config);
 				if (exitCode !== 0) {
 					process.exitCode = exitCode;

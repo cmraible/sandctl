@@ -124,4 +124,26 @@ describe("init command (non-interactive)", () => {
 			rmSync(tmpDir, { recursive: true, force: true });
 		}
 	});
+
+	test("returns result object with config path", async () => {
+		const tmpDir = mkdtempSync(path.join(os.tmpdir(), "sandctl-ts-init-"));
+		try {
+			const configPath = path.join(tmpDir, "config.yaml");
+
+			const result = await runInit(
+				{
+					hetznerToken: "token",
+					sshAgent: true,
+				},
+				configPath,
+			);
+
+			expect(result).toEqual({
+				config_path: configPath,
+				saved: true,
+			});
+		} finally {
+			rmSync(tmpDir, { recursive: true, force: true });
+		}
+	});
 });

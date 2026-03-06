@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,7 +12,7 @@ describe("template add", () => {
 		const output: string[] = [];
 		const openEditor = mock(async () => {});
 
-		await runTemplateAdd("Ghost", store, {
+		await runTemplateAdd("Ghost", {}, store, {
 			log: (msg: string) => output.push(msg),
 			errLog: (msg: string) => output.push(msg),
 			openEditor,
@@ -31,7 +31,7 @@ describe("template add", () => {
 		const errors: string[] = [];
 		const openEditor = mock(async () => {});
 
-		await runTemplateAdd("Ghost", store, {
+		await runTemplateAdd("Ghost", {}, store, {
 			log: () => {},
 			errLog: (msg: string) => errors.push(msg),
 			openEditor,
@@ -46,7 +46,7 @@ describe("template add", () => {
 		const store = new TemplateStore(root);
 
 		await expect(
-			runTemplateAdd("", store, {
+			runTemplateAdd("", {}, store, {
 				log: () => {},
 				errLog: () => {},
 				openEditor: async () => {},
@@ -62,7 +62,7 @@ describe("template add", () => {
 			throw new Error("editor crashed");
 		});
 
-		await runTemplateAdd("Ghost", store, {
+		await runTemplateAdd("Ghost", {}, store, {
 			log: (msg: string) => output.push(msg),
 			errLog: (msg: string) => output.push(msg),
 			openEditor,
@@ -70,5 +70,29 @@ describe("template add", () => {
 
 		expect(await store.exists("Ghost")).toBe(true);
 		expect(output.some((m) => m.includes("init.sh"))).toBe(true);
+	});
+
+	test("json option outputs template config and skips editor", async () => {
+		const root = await mkdtemp(join(tmpdir(), "sandctl-tpl-add-"));
+		const store = new TemplateStore(root);
+		const openEditor = mock(async () => {});
+
+		const logSpy = spyOn(console, "log").mockImplementation(() => {});
+		try {
+			await runTemplateAdd("Ghost", { json: true }, store, {
+				log: () => {},
+				errLog: () => {},
+				openEditor,
+			});
+
+			expect(openEditor).not.toHaveBeenCalled();
+			expect(logSpy).toHaveBeenCalledTimes(1);
+			const parsed = JSON.parse(logSpy.mock.calls[0][0] as string);
+			expect(parsed).toHaveProperty("template", "ghost");
+			expect(parsed).toHaveProperty("original_name", "Ghost");
+			expect(parsed).toHaveProperty("created_at");
+		} finally {
+			logSpy.mockRestore();
+		}
 	});
 });

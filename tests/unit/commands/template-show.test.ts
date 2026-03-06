@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { describe, expect, spyOn, test } from "bun:test";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runTemplateShow } from "@/commands/template-show";
@@ -12,7 +12,7 @@ describe("template show", () => {
 		await store.add("Ghost");
 
 		const output: string[] = [];
-		await runTemplateShow("Ghost", store, {
+		await runTemplateShow("Ghost", {}, store, {
 			write: (msg: string) => output.push(msg),
 		});
 
@@ -26,7 +26,7 @@ describe("template show", () => {
 		const store = new TemplateStore(root);
 
 		await expect(
-			runTemplateShow("Nope", store, { write: () => {} }),
+			runTemplateShow("Nope", {}, store, { write: () => {} }),
 		).rejects.toThrow(/not found/);
 	});
 
@@ -41,11 +41,29 @@ describe("template show", () => {
 		await writeFile(scriptPath, "#!/bin/bash\necho hello");
 
 		const output: string[] = [];
-		await runTemplateShow("Ghost", store, {
+		await runTemplateShow("Ghost", {}, store, {
 			write: (msg: string) => output.push(msg),
 		});
 
 		const joined = output.join("");
 		expect(joined.endsWith("\n")).toBe(true);
+	});
+
+	test("json option outputs name and script as JSON", async () => {
+		const root = await mkdtemp(join(tmpdir(), "sandctl-tpl-show-"));
+		const store = new TemplateStore(root);
+		await store.add("Ghost");
+
+		const logSpy = spyOn(console, "log").mockImplementation(() => {});
+		try {
+			await runTemplateShow("Ghost", { json: true }, store);
+			expect(logSpy).toHaveBeenCalledTimes(1);
+			const parsed = JSON.parse(logSpy.mock.calls[0][0] as string);
+			expect(parsed).toHaveProperty("name", "Ghost");
+			expect(parsed).toHaveProperty("script");
+			expect(parsed.script).toContain("#!/bin/bash");
+		} finally {
+			logSpy.mockRestore();
+		}
 	});
 });

@@ -59,10 +59,15 @@ async function pathExists(targetPath: string): Promise<boolean> {
 	}
 }
 
+export interface InitResult {
+	config_path: string;
+	saved: boolean;
+}
+
 export async function runInit(
 	options: InitOptions,
 	configPath: string,
-): Promise<void> {
+): Promise<InitResult> {
 	const resolvedConfigPath = expandTilde(configPath);
 
 	if (options.sshAgent && options.sshPublicKey) {
@@ -114,9 +119,7 @@ export async function runInit(
 			);
 		}
 		await save(resolvedConfigPath, buildConfig(options));
-		console.log(`Configuration saved successfully to ${resolvedConfigPath}`);
-		console.log("Next step: sandctl new");
-		return;
+		return { config_path: resolvedConfigPath, saved: true };
 	}
 
 	if (!process.stdin.isTTY || !process.stdout.isTTY) {
@@ -232,8 +235,7 @@ export async function runInit(
 			githubToken,
 		}),
 	);
-	console.log(`Configuration saved successfully to ${resolvedConfigPath}`);
-	console.log("Next step: sandctl new");
+	return { config_path: resolvedConfigPath, saved: true };
 }
 
 function buildConfig(options: InitOptions): Config {
@@ -281,7 +283,32 @@ export function registerInitCommand(): Command {
 		.option("--git-user-email <email>", "Git user.email")
 		.option("--github-token <token>", "GitHub personal access token")
 		.action(async (options: InitOptions, command) => {
-			const globals = command.optsWithGlobals() as { config?: string };
-			await runInit(options, globals.config ?? "~/.sandctl/config");
+			const globals = command.optsWithGlobals() as {
+				config?: string;
+				json?: boolean;
+			};
+			if (globals.json) {
+				const hasNonInteractiveFlags =
+					Boolean(options.hetznerToken) ||
+					Boolean(options.sshAgent) ||
+					Boolean(options.sshPublicKey);
+				if (!hasNonInteractiveFlags) {
+					throw new Error(
+						"--json requires non-interactive flags (--hetzner-token with --ssh-agent or --ssh-public-key)",
+					);
+				}
+			}
+			const result = await runInit(
+				options,
+				globals.config ?? "~/.sandctl/config",
+			);
+			if (globals.json) {
+				console.log(JSON.stringify(result, null, 2));
+			} else {
+				console.log(
+					`Configuration saved successfully to ${result.config_path}`,
+				);
+				console.log("Next step: sandctl new");
+			}
 		});
 }

@@ -499,7 +499,21 @@ export function registerNewCommand(): Command {
 			"Skip automatic console connection after provisioning",
 		)
 		.action(async (options: NewOptions, command) => {
-			const globals = command.optsWithGlobals() as { config?: string };
+			const globals = command.optsWithGlobals() as {
+				config?: string;
+				json?: boolean;
+			};
+			if (globals.json) {
+				options.noConsole = true;
+				const noop = () => {};
+				const session = await runNewCommand(options, globals.config, {
+					createSpinner: () => ({ succeed: noop, fail: noop }),
+					log: noop,
+					warn: noop,
+				});
+				console.log(JSON.stringify(session, null, 2));
+				return;
+			}
 			await runNewCommand(options, globals.config);
 		});
 }

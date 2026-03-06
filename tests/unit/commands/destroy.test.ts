@@ -133,4 +133,37 @@ describe("commands/destroy", () => {
 		expect(await store.get("alice")).toMatchObject({ id: "alice" });
 		expect(warnSpy).toHaveBeenCalled();
 	});
+
+	test("silent option suppresses console output", async () => {
+		await store.add(session);
+
+		const provider: Provider & SSHKeyManager = {
+			name: () => "hetzner",
+			create: async () => {
+				throw new Error("not implemented");
+			},
+			get: async () => {
+				throw new Error("not implemented");
+			},
+			delete: async () => {},
+			list: async () => [],
+			waitReady: async () => {
+				throw new Error("not implemented");
+			},
+			ensureSSHKey: async () => "1",
+		};
+
+		const result = await runDestroy(
+			"alice",
+			{ force: true, silent: true },
+			store,
+			{
+				loadConfig: async () => baseProviderConfig,
+				resolveProvider: () => provider,
+			},
+		);
+
+		expect(result).toEqual({ id: "alice", destroyed: true });
+		expect(logSpy).not.toHaveBeenCalled();
+	});
 });

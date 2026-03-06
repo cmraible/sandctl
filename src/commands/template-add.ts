@@ -18,6 +18,7 @@ const defaultDependencies: Dependencies = {
 
 export async function runTemplateAdd(
 	name: string,
+	options: { json?: boolean } = {},
 	store = new TemplateStore(),
 	deps: Partial<Dependencies> = {},
 ): Promise<void> {
@@ -38,6 +39,11 @@ export async function runTemplateAdd(
 			return;
 		}
 		throw error;
+	}
+
+	if (options.json) {
+		console.log(JSON.stringify(config, null, 2));
+		return;
 	}
 
 	const scriptPath = await store.getInitScriptPath(name);
@@ -63,7 +69,8 @@ export function registerTemplateAddCommand(): Command {
 	return new Command("add")
 		.description("Create a new template configuration")
 		.argument("<name>", "Template name")
-		.action(async (name: string) => {
-			await runTemplateAdd(name);
+		.action(async (name: string, _options: unknown, command: Command) => {
+			const globals = command.optsWithGlobals() as { json?: boolean };
+			await runTemplateAdd(name, { json: globals.json });
 		});
 }
