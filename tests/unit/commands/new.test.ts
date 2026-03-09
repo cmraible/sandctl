@@ -134,6 +134,7 @@ describe("commands/new", () => {
 				fail: (message: string) => {
 					events.push(`fail:${message}`);
 				},
+				update: () => {},
 			}),
 			log: (message: string) => {
 				events.push(`log:${message}`);
@@ -142,7 +143,6 @@ describe("commands/new", () => {
 
 		expect(events).toEqual([
 			"succeed:Created VM 'violet'.",
-			"log:VM name: violet",
 			"log:Use 'sandctl console violet' to connect.",
 			"log:Use 'sandctl destroy violet' when done.",
 		]);
@@ -160,6 +160,7 @@ describe("commands/new", () => {
 					fail: (message: string) => {
 						events.push(`fail:${message}`);
 					},
+					update: () => {},
 				}),
 				log: () => {},
 			}),

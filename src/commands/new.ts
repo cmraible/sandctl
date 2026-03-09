@@ -26,7 +26,7 @@ import {
 	type SSHClientOptions,
 } from "@/ssh/client";
 import { openConsole } from "@/ssh/console";
-import { type ExecResult, execWithStreams } from "@/ssh/exec";
+import { type ExecResult, execWithStreamingOutput } from "@/ssh/exec";
 import { TemplateNotFoundError, TemplateStore } from "@/template/store";
 import type { TemplateInitScript, TemplateStoreLike } from "@/template/types";
 import { expandTilde } from "@/utils/paths";
@@ -49,10 +49,19 @@ interface NewOptions {
 interface NewCommandSpinner {
 	succeed(message: string): void;
 	fail(message: string): void;
+	update(message: string): void;
 }
 
 interface NewCommandDependencies {
-	runNew: (options: NewOptions, configPath?: string) => Promise<Session>;
+	runNew: (
+		options: NewOptions,
+		configPath?: string,
+		callbacks?: {
+			onProgress?: (message: string) => void;
+			onStdout?: (data: string) => void;
+			onStderr?: (data: string) => void;
+		},
+	) => Promise<Session>;
 	createSpinner: (text: string) => NewCommandSpinner;
 	log: (message: string) => void;
 	loadConfig: (configPath?: string) => Promise<Config>;
@@ -83,6 +92,10 @@ interface Dependencies {
 		client: SSHClientLike,
 		command: string,
 		script: string,
+		streaming?: {
+			onStdout?: (data: string) => void;
+			onStderr?: (data: string) => void;
+		},
 	) => Promise<ExecResult>;
 	waitForCloudInit: (
 		config: Config,
@@ -97,6 +110,9 @@ interface Dependencies {
 	) => Promise<void>;
 	now: () => Date;
 	warn: (message: string) => void;
+	log: (message: string) => void;
+	writeStdout: (data: string) => void;
+	writeStderr: (data: string) => void;
 }
 
 const defaultDependencies: Dependencies = {
@@ -107,8 +123,12 @@ const defaultDependencies: Dependencies = {
 	store: new SessionStore(),
 	templateStore: new TemplateStore(),
 	createSSHClient: (options) => new SSHClient(options),
-	runRemoteTemplate: async (client, command, script) => {
-		return await execWithStreams(client, command, { stdin: script });
+	runRemoteTemplate: async (client, command, script, streaming) => {
+		return await execWithStreamingOutput(client, command, {
+			stdin: script,
+			onStdout: streaming?.onStdout,
+			onStderr: streaming?.onStderr,
+		});
 	},
 	waitForCloudInit: defaultWaitForCloudInit,
 	setupGitConfig: setupGitConfigViaSSH,
@@ -116,11 +136,24 @@ const defaultDependencies: Dependencies = {
 	warn: (message: string) => {
 		console.warn(message);
 	},
+	log: () => {},
+	writeStdout: (data: string) => process.stdout.write(data),
+	writeStderr: (data: string) => process.stderr.write(data),
 };
 
 const defaultNewCommandDependencies: NewCommandDependencies = {
-	runNew: async (options, configPath) => {
-		return await runNew(options, {}, configPath);
+	runNew: async (options, configPath, callbacks) => {
+		return await runNew(
+			options,
+			{
+				log: callbacks?.onProgress ?? (() => {}),
+				writeStdout:
+					callbacks?.onStdout ?? ((data) => process.stdout.write(data)),
+				writeStderr:
+					callbacks?.onStderr ?? ((data) => process.stderr.write(data)),
+			},
+			configPath,
+		);
 	},
 	createSpinner: (text) => {
 		const spinner = createSpinner(text).start();
@@ -130,6 +163,9 @@ const defaultNewCommandDependencies: NewCommandDependencies = {
 			},
 			fail(message: string): void {
 				spinner.error({ text: message });
+			},
+			update(message: string): void {
+				spinner.update({ text: message });
 			},
 		};
 	},
@@ -279,7 +315,10 @@ async function runTemplateScript(
 	config: Config,
 	host: string,
 	template: TemplateInitScript,
-	deps: Pick<Dependencies, "createSSHClient" | "runRemoteTemplate">,
+	deps: Pick<
+		Dependencies,
+		"createSSHClient" | "runRemoteTemplate" | "writeStdout" | "writeStderr"
+	>,
 ): Promise<void> {
 	const client = deps.createSSHClient(buildSSHOptions(config, host));
 
@@ -288,7 +327,10 @@ async function runTemplateScript(
 			`SANDCTL_TEMPLATE_NAME=${shellQuote(template.name)} ` +
 			`SANDCTL_TEMPLATE_NORMALIZED=${shellQuote(template.normalized)} ` +
 			"bash -s";
-		const result = await deps.runRemoteTemplate(c, command, template.script);
+		const result = await deps.runRemoteTemplate(c, command, template.script, {
+			onStdout: deps.writeStdout,
+			onStderr: deps.writeStderr,
+		});
 		if (result.exitCode !== 0) {
 			throw new Error(
 				`template init script failed with exit code ${result.exitCode}`,
@@ -348,6 +390,7 @@ export async function runNew(
 	let createdVM: Awaited<ReturnType<typeof provider.create>> | undefined;
 
 	try {
+		dependencies.log("Creating VM...");
 		createdVM = await provider.create({
 			name: sessionID,
 			region: options.region,
@@ -355,11 +398,13 @@ export async function runNew(
 			image: options.image,
 			sshKeyIDs: [sshKeyID],
 		});
+		dependencies.log("Waiting for VM to be ready...");
 		await provider.waitReady(createdVM.id, waitReadyTimeoutMs(options));
 
 		const readyVM = await provider.get(createdVM.id);
 
 		if (readyVM.ipAddress) {
+			dependencies.log("Waiting for cloud-init to complete...");
 			await dependencies.waitForCloudInit(
 				config,
 				readyVM.ipAddress,
@@ -368,6 +413,7 @@ export async function runNew(
 			);
 
 			try {
+				dependencies.log("Setting up git config...");
 				await dependencies.setupGitConfig(
 					config,
 					readyVM.ipAddress,
@@ -385,9 +431,12 @@ export async function runNew(
 		}
 
 		if (selectedTemplate && readyVM.ipAddress) {
+			dependencies.log(`Running template '${selectedTemplate.name}'...`);
 			await runTemplateScript(config, readyVM.ipAddress, selectedTemplate, {
 				createSSHClient: dependencies.createSSHClient,
 				runRemoteTemplate: dependencies.runRemoteTemplate,
+				writeStdout: dependencies.writeStdout,
+				writeStderr: dependencies.writeStderr,
 			});
 		}
 
@@ -445,14 +494,33 @@ export async function runNewCommand(
 		...deps,
 	};
 
-	const spinner = dependencies.createSpinner("Provisioning VM...");
+	const spinner = dependencies.createSpinner("Creating VM...");
+	let spinnerActive = true;
 	let session: Session;
 	try {
-		session = await dependencies.runNew(options, configPath);
-		spinner.succeed(`Created VM '${session.id}'.`);
-		dependencies.log(`VM name: ${session.id}`);
+		session = await dependencies.runNew(options, configPath, {
+			onProgress: (message: string) => {
+				if (message.startsWith("Running template")) {
+					spinner.succeed(message.replace("...", ""));
+					spinnerActive = false;
+				} else if (spinnerActive) {
+					spinner.update(message);
+				}
+			},
+			onStdout: (data: string) => process.stdout.write(data),
+			onStderr: (data: string) => process.stderr.write(data),
+		});
+		if (spinnerActive) {
+			spinner.succeed(`Created VM '${session.id}'.`);
+		} else {
+			dependencies.log(`\nVM '${session.id}' created.`);
+		}
 	} catch (error) {
-		spinner.fail("Failed to provision VM.");
+		if (spinnerActive) {
+			spinner.fail("Failed to provision VM.");
+		} else {
+			dependencies.warn("\nFailed to provision VM.");
+		}
 		throw error;
 	}
 
@@ -507,7 +575,7 @@ export function registerNewCommand(): Command {
 				options.noConsole = true;
 				const noop = () => {};
 				const session = await runNewCommand(options, globals.config, {
-					createSpinner: () => ({ succeed: noop, fail: noop }),
+					createSpinner: () => ({ succeed: noop, fail: noop, update: noop }),
 					log: noop,
 					warn: noop,
 				});
