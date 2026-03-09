@@ -49,6 +49,7 @@ describe("commands/new --template", () => {
 				store: {
 					list: async () => [],
 					add: async () => {},
+					update: async () => {},
 				},
 				templateStore: {
 					getInitScript: async () => ({
@@ -112,6 +113,7 @@ describe("commands/new --template", () => {
 				store: {
 					list: async () => [],
 					add: async () => {},
+					update: async () => {},
 				},
 				templateStore: {
 					getInitScript: async () => ({

@@ -78,7 +78,7 @@ interface NewCommandDependencies {
 interface SessionStoreLike {
 	list(): Promise<Session[]>;
 	add(session: Session): Promise<void>;
-	upsert?(session: Session): Promise<void>;
+	update(id: string, updates: Partial<Session>): Promise<void>;
 }
 
 interface Dependencies {
@@ -190,24 +190,6 @@ function messageFromError(error: unknown): string {
 		return error.message;
 	}
 	return String(error);
-}
-
-async function persistFailedSession(
-	store: SessionStoreLike,
-	session: Session,
-	warn: (message: string) => void,
-): Promise<void> {
-	try {
-		if (store.upsert) {
-			await store.upsert(session);
-			return;
-		}
-		await store.add(session);
-	} catch (error) {
-		warn(
-			`[warn] Failed to persist failed session '${session.id}': ${messageFromError(error)}`,
-		);
-	}
 }
 
 function waitReadyTimeoutMs(options: NewOptions): number {
@@ -390,6 +372,18 @@ export async function runNew(
 			image: options.image,
 			sshKeyIDs: [sshKeyID],
 		});
+
+		await dependencies.store.add({
+			id: sessionID,
+			status: "provisioning",
+			provider: providerName,
+			provider_id: createdVM.id,
+			ip_address: createdVM.ipAddress ?? "",
+			region: createdVM.region,
+			server_type: createdVM.serverType,
+			created_at: createdAt,
+		});
+
 		dependencies.log("Waiting for VM to be ready...");
 		await provider.waitReady(createdVM.id, waitReadyTimeoutMs(options));
 
@@ -432,7 +426,14 @@ export async function runNew(
 			});
 		}
 
-		const session: Session = {
+		await dependencies.store.update(sessionID, {
+			status: "running",
+			ip_address: readyVM.ipAddress ?? "",
+			region: readyVM.region,
+			server_type: readyVM.serverType,
+		});
+
+		return {
 			id: sessionID,
 			status: "running",
 			provider: providerName,
@@ -442,9 +443,6 @@ export async function runNew(
 			server_type: readyVM.serverType,
 			created_at: createdAt,
 		};
-
-		await dependencies.store.add(session);
-		return session;
 	} catch (error) {
 		if (createdVM) {
 			try {
@@ -455,21 +453,16 @@ export async function runNew(
 				);
 			}
 
-			await persistFailedSession(
-				dependencies.store,
-				{
-					id: sessionID,
+			try {
+				await dependencies.store.update(sessionID, {
 					status: "failed",
-					provider: providerName,
-					provider_id: createdVM.id,
-					ip_address: createdVM.ipAddress ?? "",
-					region: createdVM.region,
-					server_type: createdVM.serverType,
-					created_at: createdAt,
 					failure_reason: messageFromError(error),
-				},
-				dependencies.warn,
-			);
+				});
+			} catch (updateError) {
+				dependencies.warn(
+					`[warn] Failed to update session '${sessionID}': ${messageFromError(updateError)}`,
+				);
+			}
 		}
 
 		throw error;

@@ -35,6 +35,7 @@ describe("commands/new", () => {
 	test("deletes VM and persists failed session when waitReady fails", async () => {
 		const deleted: string[] = [];
 		const added: Session[] = [];
+		const updates: { id: string; updates: Partial<Session> }[] = [];
 		const provider = makeProvider({
 			waitReady: async () => {
 				throw new Error("vm never became ready");
@@ -59,6 +60,9 @@ describe("commands/new", () => {
 						add: async (session: Session) => {
 							added.push(session);
 						},
+						update: async (id: string, u: Partial<Session>) => {
+							updates.push({ id, updates: u });
+						},
 					},
 				},
 			),
@@ -68,16 +72,21 @@ describe("commands/new", () => {
 		expect(added).toHaveLength(1);
 		expect(added[0]).toMatchObject({
 			id: "violet",
-			status: "failed",
+			status: "provisioning",
 			provider: "hetzner",
 			provider_id: "vm-123",
 			ip_address: "203.0.113.10",
-			failure_reason: "vm never became ready",
+		});
+		expect(updates).toHaveLength(1);
+		expect(updates[0]).toMatchObject({
+			id: "violet",
+			updates: { status: "failed", failure_reason: "vm never became ready" },
 		});
 	});
 
 	test("persists failed session even when cleanup delete fails", async () => {
 		const added: Session[] = [];
+		const updates: { id: string; updates: Partial<Session> }[] = [];
 		const provider = makeProvider({
 			waitReady: async () => {
 				throw new Error("setup step failed");
@@ -102,6 +111,9 @@ describe("commands/new", () => {
 						add: async (session: Session) => {
 							added.push(session);
 						},
+						update: async (id: string, u: Partial<Session>) => {
+							updates.push({ id, updates: u });
+						},
 					},
 				},
 			),
@@ -110,9 +122,14 @@ describe("commands/new", () => {
 		expect(added).toHaveLength(1);
 		expect(added[0]).toMatchObject({
 			id: "violet",
-			status: "failed",
+			status: "provisioning",
 			provider: "hetzner",
 			provider_id: "vm-123",
+		});
+		expect(updates).toHaveLength(1);
+		expect(updates[0]).toMatchObject({
+			id: "violet",
+			updates: { status: "failed" },
 		});
 	});
 
