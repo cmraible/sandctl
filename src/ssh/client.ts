@@ -98,6 +98,7 @@ export class SSHClient implements SSHClientLike {
 				this.options.agentSocket ?? (await this.deps.discoverAgentSocket());
 			if (socket) {
 				config.agent = socket;
+				config.agentForward = true;
 			}
 		}
 
