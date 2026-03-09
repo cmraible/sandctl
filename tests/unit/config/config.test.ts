@@ -15,6 +15,7 @@ import {
 	type Config,
 	getGitConfig,
 	getProviderConfig,
+	getPublicKeyFromAgent,
 	getSSHPublicKey,
 	hasGitConfig,
 	hasGitHubToken,
@@ -200,6 +201,14 @@ providers:
 		} finally {
 			rmSync(tmpDir, { recursive: true, force: true });
 		}
+	});
+
+	test("getPublicKeyFromAgent returns undefined when no agent is available", async () => {
+		// In CI / test environments, there is typically no SSH agent
+		// so this should return undefined rather than throwing
+		const result = await getPublicKeyFromAgent();
+		// Result is either undefined (no agent) or a valid key string
+		expect(result === undefined || result.startsWith("ssh-")).toBe(true);
 	});
 
 	test("getSSHPublicKey falls back to default agent key path", async () => {

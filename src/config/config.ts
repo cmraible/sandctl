@@ -1,6 +1,8 @@
+import { execFile } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { parse } from "yaml";
 
 import { isValidEmail } from "@/utils/email";
@@ -147,6 +149,47 @@ export function setProviderSSHKeyID(
 	};
 }
 
+const execFileAsync = promisify(execFile);
+
+/**
+ * Query the SSH agent for public keys via `ssh-add -L`.
+ * If a fingerprint is provided, returns only the matching key.
+ * Otherwise returns the first key found.
+ */
+export async function getPublicKeyFromAgent(
+	fingerprint?: string,
+): Promise<string | undefined> {
+	try {
+		const { stdout } = await execFileAsync("ssh-add", ["-L"]);
+		const keys = stdout
+			.trim()
+			.split("\n")
+			.filter((line) => line.length > 0);
+		if (keys.length === 0) {
+			return undefined;
+		}
+
+		if (fingerprint) {
+			// List fingerprints to find the matching key index
+			const { stdout: fpOut } = await execFileAsync("ssh-add", ["-l"]);
+			const fpLines = fpOut
+				.trim()
+				.split("\n")
+				.filter((line) => line.length > 0);
+			for (let i = 0; i < fpLines.length && i < keys.length; i++) {
+				if (fpLines[i].includes(fingerprint)) {
+					return keys[i].trim();
+				}
+			}
+		}
+
+		// No fingerprint or no match — return the first key
+		return keys[0].trim();
+	} catch {
+		return undefined;
+	}
+}
+
 export async function getSSHPublicKey(config: Config): Promise<string> {
 	if (config.ssh_key_source === "agent") {
 		if (config.ssh_public_key_inline) {
@@ -174,9 +217,15 @@ export async function getSSHPublicKey(config: Config): Promise<string> {
 			}
 		}
 
+		// Try to get the public key from the SSH agent
+		const agentKey = await getPublicKeyFromAgent(config.ssh_key_fingerprint);
+		if (agentKey) {
+			return agentKey;
+		}
+
 		throw new ValidationError(
 			"ssh_public_key_inline",
-			"or ssh_public_key is required when ssh_key_source is 'agent' (or place your key at ~/.ssh/id_ed25519.pub)",
+			"is required when ssh_key_source is 'agent' and no key is found in the SSH agent or at ~/.ssh/id_ed25519.pub",
 		);
 	}
 
