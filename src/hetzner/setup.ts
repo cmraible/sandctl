@@ -9,7 +9,7 @@ set -e
 # Update package lists, upgrade existing packages, and install prerequisites
 apt-get update
 apt-get upgrade -y
-apt-get install -y build-essential ca-certificates curl git wget jq htop vim
+apt-get install -y build-essential ca-certificates curl git wget jq htop tmux vim
 
 # Add Docker's official GPG key
 install -m 0755 -d /etc/apt/keyrings
