@@ -26,7 +26,11 @@ import {
 	type SSHClientOptions,
 } from "@/ssh/client";
 import { openConsole } from "@/ssh/console";
-import { type ExecResult, execWithStreamingOutput } from "@/ssh/exec";
+import {
+	type ExecResult,
+	execWithStreamingOutput,
+	exec as sshExec,
+} from "@/ssh/exec";
 import { TemplateNotFoundError, TemplateStore } from "@/template/store";
 import type { TemplateInitScript, TemplateStoreLike } from "@/template/types";
 import { expandTilde } from "@/utils/paths";
@@ -291,23 +295,11 @@ async function setupGitConfigViaSSH(
 	const client = deps.createSSHClient(sshOptions);
 
 	await withSSHClient(client, async (c) => {
-		const writeChannel = await c.exec(
-			`echo '${encoded}' | base64 -d > /home/agent/.gitconfig`,
-		);
-		await collectChannelOutput(writeChannel);
-
-		const chownChannel = await c.exec(
+		await sshExec(c, `echo '${encoded}' | base64 -d > /home/agent/.gitconfig`);
+		await sshExec(
+			c,
 			"chown agent:agent /home/agent/.gitconfig && chmod 644 /home/agent/.gitconfig",
 		);
-		await collectChannelOutput(chownChannel);
-	});
-}
-
-async function collectChannelOutput(channel: {
-	on(event: string, listener: (...args: unknown[]) => void): void;
-}): Promise<void> {
-	return new Promise<void>((resolve) => {
-		channel.on("close", () => resolve());
 	});
 }
 
