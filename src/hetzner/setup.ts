@@ -6,9 +6,10 @@ export function generateCloudInit(): string {
 	return `#!/bin/bash
 set -e
 
-# Update package lists and install prerequisites
+# Update package lists, upgrade existing packages, and install prerequisites
 apt-get update
-apt-get install -y ca-certificates curl git wget jq htop vim
+apt-get upgrade -y
+apt-get install -y build-essential ca-certificates curl git wget jq htop vim
 
 # Add Docker's official GPG key
 install -m 0755 -d /etc/apt/keyrings
