@@ -137,10 +137,11 @@ export async function runInit(
 		}
 	}
 
-	const hetznerToken = await password({
-		message: "Hetzner Cloud API token",
-		mask: true,
-	});
+	const hetznerToken =
+		(await password({
+			message: `Hetzner Cloud API token${existing?.providers?.hetzner?.token ? " (leave blank to keep existing)" : ""}`,
+			mask: true,
+		})) || existing?.providers?.hetzner?.token;
 	const sshMode = await select({
 		message: "SSH key mode",
 		default: existing?.ssh_key_source === "agent" ? "agent" : "file",
@@ -215,10 +216,11 @@ export async function runInit(
 				default: existing?.git_config_path,
 			});
 
-	const githubToken = await password({
-		message: "GitHub personal access token (optional)",
-		mask: true,
-	});
+	const githubToken =
+		(await password({
+			message: `GitHub personal access token${existing?.github_token ? " (leave blank to keep existing)" : " (optional)"}`,
+			mask: true,
+		})) || existing?.github_token;
 
 	await save(
 		resolvedConfigPath,
