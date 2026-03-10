@@ -211,7 +211,7 @@ providers:
 		expect(result === undefined || result.startsWith("ssh-")).toBe(true);
 	});
 
-	test("getSSHPublicKey falls back to default agent key path", async () => {
+	test("getSSHPublicKey falls back to default agent key path or agent", async () => {
 		const candidatePaths = [
 			path.join(os.homedir(), ".ssh", "id_ed25519.pub"),
 			path.join(os.homedir(), ".ssh", "id_rsa.pub"),
@@ -225,12 +225,20 @@ providers:
 			ssh_key_source: "agent",
 		};
 
-		if (!existingPath) {
-			await expect(getSSHPublicKey(config)).rejects.toThrow(ValidationError);
+		if (existingPath) {
+			const expected = readFileSync(existingPath, "utf8").trim();
+			expect(await getSSHPublicKey(config)).toBe(expected);
 			return;
 		}
 
-		const expected = readFileSync(existingPath, "utf8").trim();
-		expect(await getSSHPublicKey(config)).toBe(expected);
+		// No key file on disk — falls back to SSH agent.
+		// If an agent is reachable (e.g. 1Password via IdentityAgent),
+		// getSSHPublicKey returns a key; otherwise it throws.
+		try {
+			const key = await getSSHPublicKey(config);
+			expect(key.startsWith("ssh-")).toBe(true);
+		} catch (error) {
+			expect(error).toBeInstanceOf(ValidationError);
+		}
 	});
 });

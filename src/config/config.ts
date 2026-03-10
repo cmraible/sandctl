@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { parse } from "yaml";
 
+import { discoverPrimaryAgentSocket } from "@/ssh/agent";
 import { isValidEmail } from "@/utils/email";
 import { expandTilde } from "@/utils/paths";
 
@@ -160,7 +161,16 @@ export async function getPublicKeyFromAgent(
 	fingerprint?: string,
 ): Promise<string | undefined> {
 	try {
-		const { stdout } = await execFileAsync("ssh-add", ["-L"]);
+		// Discover the correct agent socket — SSH_AUTH_SOCK may point to
+		// the macOS default agent while the real keys live in 1Password or
+		// another agent found via IdentityAgent in ~/.ssh/config.
+		const agentSocket = await discoverPrimaryAgentSocket();
+		const env = agentSocket
+			? { ...process.env, SSH_AUTH_SOCK: agentSocket }
+			: process.env;
+		const execOpts = { env };
+
+		const { stdout } = await execFileAsync("ssh-add", ["-L"], execOpts);
 		const keys = stdout
 			.trim()
 			.split("\n")
@@ -171,7 +181,11 @@ export async function getPublicKeyFromAgent(
 
 		if (fingerprint) {
 			// List fingerprints to find the matching key index
-			const { stdout: fpOut } = await execFileAsync("ssh-add", ["-l"]);
+			const { stdout: fpOut } = await execFileAsync(
+				"ssh-add",
+				["-l"],
+				execOpts,
+			);
 			const fpLines = fpOut
 				.trim()
 				.split("\n")
