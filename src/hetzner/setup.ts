@@ -1,3 +1,13 @@
+export function generatePostSnapshotSSHSetup(): string {
+	return [
+		"mkdir -p /home/agent/.ssh",
+		"cp /root/.ssh/authorized_keys /home/agent/.ssh/authorized_keys",
+		"chown -R agent:agent /home/agent/.ssh",
+		"chmod 700 /home/agent/.ssh",
+		"chmod 600 /home/agent/.ssh/authorized_keys",
+	].join(" && ");
+}
+
 export const DEFAULT_REGION = "ash";
 export const DEFAULT_SERVER_TYPE = "cpx31";
 export const DEFAULT_IMAGE = "ubuntu-24.04";
@@ -59,6 +69,13 @@ runcmd:
   - echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list
   - apt-get update
   - apt-get install -y gh
+
+  # Install Node.js
+  - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+  - apt-get install -y nodejs
+
+  # Install Claude Code
+  - npm install -g @anthropic-ai/claude-code
 
   # Clean up
   - apt-get autoremove -y
