@@ -25,6 +25,42 @@ export interface SSHShellChannelLike extends SSHExecChannelLike {
 	setWindow(rows: number, cols: number, height: number, width: number): void;
 }
 
+export interface SFTPStats {
+	isDirectory(): boolean;
+	isFile(): boolean;
+	size: number;
+}
+
+export interface SFTPFileEntry {
+	filename: string;
+	attrs: SFTPStats;
+}
+
+export interface SFTPWrapperLike {
+	fastPut(
+		localPath: string,
+		remotePath: string,
+		options: { step?: (total: number, nb: number, fsize: number) => void },
+		callback: (err?: Error | null) => void,
+	): void;
+	fastGet(
+		remotePath: string,
+		localPath: string,
+		options: { step?: (total: number, nb: number, fsize: number) => void },
+		callback: (err?: Error | null) => void,
+	): void;
+	readdir(
+		path: string,
+		callback: (err: Error | undefined, list: SFTPFileEntry[]) => void,
+	): void;
+	stat(
+		path: string,
+		callback: (err: Error | undefined, stats: SFTPStats) => void,
+	): void;
+	mkdir(path: string, callback: (err?: Error | null) => void): void;
+	end(): void;
+}
+
 export interface SSHConnectionLike {
 	connect(config: Record<string, unknown>): void;
 	on(event: string, listener: (...args: unknown[]) => void): SSHConnectionLike;
@@ -40,6 +76,7 @@ export interface SSHConnectionLike {
 		window: { term: string; cols: number; rows: number },
 		callback: (error?: Error, channel?: SSHShellChannelLike) => void,
 	): void;
+	sftp(callback: (error?: Error, sftp?: SFTPWrapperLike) => void): void;
 	end(): void;
 }
 
@@ -62,6 +99,7 @@ export interface SSHClientLike {
 		cols?: number;
 		rows?: number;
 	}): Promise<SSHShellChannelLike>;
+	sftp(): Promise<SFTPWrapperLike>;
 }
 
 export class SSHClient implements SSHClientLike {
@@ -143,6 +181,22 @@ export class SSHClient implements SSHClientLike {
 					return;
 				}
 				resolve(channel);
+			});
+		});
+	}
+
+	async sftp(): Promise<SFTPWrapperLike> {
+		if (!this.connected) {
+			throw new Error("ssh client is not connected");
+		}
+
+		return await new Promise<SFTPWrapperLike>((resolve, reject) => {
+			this.connection.sftp((error, sftp) => {
+				if (error || !sftp) {
+					reject(error ?? new Error("failed to open sftp session"));
+					return;
+				}
+				resolve(sftp);
 			});
 		});
 	}
