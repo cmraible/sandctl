@@ -16,6 +16,15 @@ import {
 	load,
 	type ProviderConfig,
 } from "@/config/config";
+import type { HetznerImage } from "@/hetzner/client";
+import { HetznerProvider } from "@/hetzner/provider";
+import { generatePostSnapshotSSHSetup } from "@/hetzner/setup";
+import {
+	cleanupOldSnapshots,
+	createBaseSnapshot,
+	findBaseSnapshot,
+	type SnapshotClientLike,
+} from "@/hetzner/snapshots";
 import { get as getProviderFromRegistry } from "@/provider/registry";
 import { generateID } from "@/session/id";
 import { SessionStore } from "@/session/store";
@@ -112,6 +121,18 @@ interface Dependencies {
 		host: string,
 		deps: Pick<Dependencies, "createSSHClient">,
 	) => Promise<void>;
+	findSnapshot: (client: SnapshotClientLike) => Promise<HetznerImage | null>;
+	createSnapshot: (
+		client: SnapshotClientLike,
+		serverId: string,
+	) => Promise<HetznerImage>;
+	cleanupSnapshots: (client: SnapshotClientLike) => Promise<void>;
+	runSSHSetup: (
+		config: Config,
+		host: string,
+		command: string,
+		createClient: (options: SSHClientOptions) => SSHRuntimeClient,
+	) => Promise<void>;
 	now: () => Date;
 	warn: (message: string) => void;
 	log: (message: string) => void;
@@ -136,6 +157,10 @@ const defaultDependencies: Dependencies = {
 	},
 	waitForCloudInit: defaultWaitForCloudInit,
 	setupGitConfig: setupGitConfigViaSSH,
+	findSnapshot: findBaseSnapshot,
+	createSnapshot: createBaseSnapshot,
+	cleanupSnapshots: cleanupOldSnapshots,
+	runSSHSetup: defaultRunSSHSetup,
 	now: () => new Date(),
 	warn: (message: string) => {
 		console.warn(message);
@@ -313,6 +338,19 @@ async function runTemplateScript(
 	});
 }
 
+async function defaultRunSSHSetup(
+	config: Config,
+	host: string,
+	command: string,
+	createClient: (options: SSHClientOptions) => SSHRuntimeClient,
+): Promise<void> {
+	const sshOptions = { ...buildSSHOptions(config, host), username: "root" };
+	const client = createClient(sshOptions);
+	await withSSHClient(client, async (c) => {
+		await sshExec(c, command);
+	});
+}
+
 export async function runNew(
 	options: NewOptions,
 	deps: Partial<Dependencies> = {},
@@ -361,17 +399,41 @@ export async function runNew(
 		publicKey,
 	);
 
+	// Check for cached base snapshot (Hetzner only, skip if --image is set)
+	const isHetzner = provider instanceof HetznerProvider;
+	let snapshot: HetznerImage | null = null;
+	if (isHetzner && !options.image) {
+		try {
+			snapshot = await dependencies.findSnapshot(provider.client);
+		} catch (error) {
+			dependencies.warn(
+				`[warn] Snapshot lookup failed, falling back to cloud-init: ${messageFromError(error)}`,
+			);
+		}
+	}
+
 	let createdVM: Awaited<ReturnType<typeof provider.create>> | undefined;
 
 	try {
 		dependencies.log("Creating VM...");
-		createdVM = await provider.create({
-			name: sessionID,
-			region: options.region,
-			serverType: options.serverType,
-			image: options.image,
-			sshKeyIDs: [sshKeyID],
-		});
+		if (snapshot) {
+			createdVM = await provider.create({
+				name: sessionID,
+				region: options.region,
+				serverType: options.serverType,
+				image: String(snapshot.id),
+				sshKeyIDs: [sshKeyID],
+				skipUserData: true,
+			});
+		} else {
+			createdVM = await provider.create({
+				name: sessionID,
+				region: options.region,
+				serverType: options.serverType,
+				image: options.image,
+				sshKeyIDs: [sshKeyID],
+			});
+		}
 
 		await dependencies.store.add({
 			id: sessionID,
@@ -390,13 +452,38 @@ export async function runNew(
 		const readyVM = await provider.get(createdVM.id);
 
 		if (readyVM.ipAddress) {
-			dependencies.log("Waiting for cloud-init to complete...");
-			await dependencies.waitForCloudInit(
-				config,
-				readyVM.ipAddress,
-				dependencies.createSSHClient,
-				DEFAULT_CLOUD_INIT_TIMEOUT_MS,
-			);
+			if (snapshot) {
+				// Booting from snapshot — copy SSH keys to agent user
+				dependencies.log("Setting up SSH keys...");
+				await dependencies.runSSHSetup(
+					config,
+					readyVM.ipAddress,
+					generatePostSnapshotSSHSetup(),
+					dependencies.createSSHClient,
+				);
+			} else {
+				// Fresh boot — wait for cloud-init
+				dependencies.log("Waiting for cloud-init to complete...");
+				await dependencies.waitForCloudInit(
+					config,
+					readyVM.ipAddress,
+					dependencies.createSSHClient,
+					DEFAULT_CLOUD_INIT_TIMEOUT_MS,
+				);
+
+				// Create a base snapshot for next time (Hetzner only)
+				if (isHetzner && !options.image) {
+					try {
+						dependencies.log("Creating base snapshot...");
+						await dependencies.createSnapshot(provider.client, createdVM.id);
+						await dependencies.cleanupSnapshots(provider.client);
+					} catch (error) {
+						dependencies.warn(
+							`[warn] Snapshot creation failed: ${messageFromError(error)}`,
+						);
+					}
+				}
+			}
 
 			try {
 				dependencies.log("Setting up git config...");

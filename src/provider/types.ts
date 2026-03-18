@@ -35,4 +35,5 @@ export interface CreateOpts {
 	image?: string;
 	sshKeyIDs?: string[];
 	userData?: string;
+	skipUserData?: boolean;
 }

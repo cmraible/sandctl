@@ -1,8 +1,10 @@
 import { Socket } from "node:net";
 import type { ProviderConfig } from "@/config/config";
 import {
+	type CreateImageOpts,
 	type CreateServerOpts,
 	HetznerClient,
+	type HetznerImage,
 	type HetznerServer,
 	type HetznerSSHKey,
 } from "@/hetzner/client";
@@ -32,10 +34,14 @@ export interface HetznerClientLike {
 	createSSHKey(name: string, publicKey: string): Promise<HetznerSSHKey>;
 	listSSHKeys(fingerprint?: string): Promise<HetznerSSHKey[]>;
 	listDatacenters(): Promise<Array<{ id: number; name: string }>>;
+	createImage(serverId: string, opts: CreateImageOpts): Promise<HetznerImage>;
+	getImage(id: string): Promise<HetznerImage>;
+	listImages(labelSelector?: string): Promise<HetznerImage[]>;
+	deleteImage(id: string): Promise<void>;
 }
 
 export class HetznerProvider implements Provider, SSHKeyManager {
-	private readonly client: HetznerClientLike;
+	readonly client: HetznerClientLike;
 
 	constructor(
 		private readonly config: ProviderConfig,
@@ -70,18 +76,23 @@ export class HetznerProvider implements Provider, SSHKeyManager {
 			return parsed;
 		});
 
-		const server = await this.client.createServer({
+		const serverOpts: CreateServerOpts = {
 			name: opts.name,
 			location: opts.region ?? this.config.region ?? DEFAULT_REGION,
 			server_type:
 				opts.serverType ?? this.config.server_type ?? DEFAULT_SERVER_TYPE,
 			image: opts.image ?? this.config.image ?? DEFAULT_IMAGE,
 			ssh_keys: sshKeyIDs,
-			user_data: opts.userData ?? generateCloudInit(),
 			labels: {
 				"managed-by": "sandctl",
 			},
-		});
+		};
+
+		if (!opts.skipUserData) {
+			serverOpts.user_data = opts.userData ?? generateCloudInit();
+		}
+
+		const server = await this.client.createServer(serverOpts);
 
 		return mapServer(server);
 	}

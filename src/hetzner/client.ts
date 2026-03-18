@@ -37,6 +37,21 @@ export interface CreateServerOpts {
 	labels?: Record<string, string>;
 }
 
+export interface HetznerImage {
+	id: number;
+	type: string;
+	status: string;
+	description: string;
+	labels: Record<string, string>;
+	created_from: { id: number; name: string } | null;
+}
+
+export interface CreateImageOpts {
+	description: string;
+	type: "snapshot";
+	labels: Record<string, string>;
+}
+
 interface HetznerErrorResponse {
 	error?: {
 		code?: string;
@@ -98,6 +113,42 @@ export class HetznerClient {
 			},
 		);
 		return response.ssh_keys;
+	}
+
+	async createImage(
+		serverId: string,
+		opts: CreateImageOpts,
+	): Promise<HetznerImage> {
+		const response = await this.request<{ image: HetznerImage }>(
+			`/servers/${serverId}/actions/create_image`,
+			{
+				method: "POST",
+				body: JSON.stringify(opts),
+			},
+		);
+		return response.image;
+	}
+
+	async getImage(id: string): Promise<HetznerImage> {
+		const response = await this.request<{ image: HetznerImage }>(
+			`/images/${id}`,
+		);
+		return response.image;
+	}
+
+	async listImages(labelSelector?: string): Promise<HetznerImage[]> {
+		const query: Record<string, string> = { type: "snapshot" };
+		if (labelSelector) {
+			query.label_selector = labelSelector;
+		}
+		const response = await this.request<{ images: HetznerImage[] }>("/images", {
+			query,
+		});
+		return response.images;
+	}
+
+	async deleteImage(id: string): Promise<void> {
+		await this.request<void>(`/images/${id}`, { method: "DELETE" });
 	}
 
 	async listDatacenters(): Promise<Array<{ id: number; name: string }>> {
