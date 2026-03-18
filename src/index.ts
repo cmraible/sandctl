@@ -8,6 +8,7 @@ import { registerInitCommand } from "@/commands/init";
 import { registerListCommand } from "@/commands/list";
 import { registerNewCommand } from "@/commands/new";
 import { registerOpenCommand } from "@/commands/open";
+import { registerStatusCommand } from "@/commands/status";
 import { registerTemplateCommand } from "@/commands/template";
 import { registerVersionCommand } from "@/commands/version";
 
@@ -25,6 +26,7 @@ program.addCommand(registerListCommand());
 program.addCommand(registerExecCommand());
 program.addCommand(registerConsoleCommand());
 program.addCommand(registerOpenCommand());
+program.addCommand(registerStatusCommand());
 program.addCommand(registerDestroyCommand());
 program.addCommand(registerExtendCommand());
 program.addCommand(registerTemplateCommand());
