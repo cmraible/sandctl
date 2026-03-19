@@ -1,6 +1,7 @@
 import { Command } from "commander";
 
 import { registerConsoleCommand } from "@/commands/console";
+import { registerCpCommand } from "@/commands/cp";
 import { registerDestroyCommand } from "@/commands/destroy";
 import { registerExecCommand } from "@/commands/exec";
 import { registerExtendCommand } from "@/commands/extend";
@@ -25,6 +26,7 @@ program.addCommand(registerInitCommand());
 program.addCommand(registerNewCommand());
 program.addCommand(registerListCommand());
 program.addCommand(registerExecCommand());
+program.addCommand(registerCpCommand());
 program.addCommand(registerLogsCommand());
 program.addCommand(registerConsoleCommand());
 program.addCommand(registerOpenCommand());
