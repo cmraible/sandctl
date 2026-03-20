@@ -82,9 +82,13 @@ describe("commands/destroy", () => {
 				throw new Error("boom");
 			},
 		});
-		await expect(runDestroy("alice", { force: true }, store)).rejects.toThrow(
-			"Failed to delete provider VM '123'",
-		);
+		await expect(
+			runDestroy("alice", { force: true }, store, {
+				loadConfig: async () => {
+					throw new Error("no config");
+				},
+			}),
+		).rejects.toThrow("Failed to delete provider VM '123'");
 		expect(warnSpy).toHaveBeenCalled();
 		expect(await store.get("alice")).toMatchObject({
 			id: "alice",
