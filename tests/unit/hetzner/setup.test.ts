@@ -15,7 +15,7 @@ describe("hetzner/setup", () => {
 
 		test("installs Claude Code globally", () => {
 			const output = generateCloudInit();
-			expect(output).toContain("npm install -g @anthropic-ai/claude-code");
+			expect(output).toContain("claude.ai/install.sh");
 		});
 
 		test("creates agent user with docker and sudo groups", () => {
