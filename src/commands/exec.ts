@@ -15,7 +15,7 @@ import {
 	type SSHClientLike,
 	type SSHClientOptions,
 } from "@/ssh/client";
-import { openConsole } from "@/ssh/console";
+import { type ConsoleOptions, openConsole } from "@/ssh/console";
 import { type ExecResult, exec } from "@/ssh/exec";
 
 export { CommandExitError };
@@ -36,7 +36,10 @@ interface Dependencies {
 		client: SSHClientLike,
 		command: string,
 	) => Promise<ExecResult>;
-	openRemoteConsole: (client: SSHClientLike) => Promise<void>;
+	openRemoteConsole: (
+		client: SSHClientLike,
+		options?: ConsoleOptions,
+	) => Promise<void>;
 	stdout: WritableLike;
 	stderr: WritableLike;
 }
@@ -88,7 +91,9 @@ export async function runExec(
 			return result.exitCode;
 		}
 
-		await dependencies.openRemoteConsole(c);
+		await dependencies.openRemoteConsole(c, {
+			initialCommands: config.post_ssh_commands,
+		});
 		return 0;
 	});
 }

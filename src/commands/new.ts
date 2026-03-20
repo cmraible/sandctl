@@ -36,7 +36,7 @@ import {
 	type SSHClientLike,
 	type SSHClientOptions,
 } from "@/ssh/client";
-import { openConsole } from "@/ssh/console";
+import { type ConsoleOptions, openConsole } from "@/ssh/console";
 import {
 	type ExecResult,
 	execWithStreamingOutput,
@@ -81,7 +81,10 @@ interface NewCommandDependencies {
 	log: (message: string) => void;
 	loadConfig: (configPath?: string) => Promise<Config>;
 	createSSHClient: (options: SSHClientOptions) => SSHRuntimeClient;
-	openRemoteConsole: (client: SSHClientLike) => Promise<void>;
+	openRemoteConsole: (
+		client: SSHClientLike,
+		options?: ConsoleOptions,
+	) => Promise<void>;
 	isInteractive: () => boolean;
 	warn: (message: string) => void;
 }
@@ -671,7 +674,9 @@ export async function runNewCommand(
 				buildSSHOptions(config, session.ip_address),
 			);
 			await withSSHClient(client, async (c) => {
-				await dependencies.openRemoteConsole(c);
+				await dependencies.openRemoteConsole(c, {
+					initialCommands: config.post_ssh_commands,
+				});
 			});
 		} catch (error) {
 			dependencies.warn(

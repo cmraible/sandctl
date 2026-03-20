@@ -4,6 +4,7 @@ export interface ConsoleOptions {
 	term?: string;
 	cols?: number;
 	rows?: number;
+	initialCommands?: string[];
 }
 
 export interface ConsoleRuntime {
@@ -47,6 +48,12 @@ export async function openConsole(
 		cols: options.cols ?? runtime.stdout.columns ?? 80,
 		rows: options.rows ?? runtime.stdout.rows ?? 24,
 	});
+
+	if (options.initialCommands && options.initialCommands.length > 0) {
+		for (const cmd of options.initialCommands) {
+			shell.write(`${cmd}\n`);
+		}
+	}
 
 	await runInteractiveSession(shell, runtime);
 }

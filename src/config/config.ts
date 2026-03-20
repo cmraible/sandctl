@@ -31,6 +31,7 @@ export interface Config {
 	git_user_email?: string;
 	github_token?: string;
 	claude_config_path?: string;
+	post_ssh_commands?: string[];
 }
 
 export class NotFoundError extends Error {

@@ -15,7 +15,7 @@ import {
 	type SSHClientLike,
 	type SSHClientOptions,
 } from "@/ssh/client";
-import { openConsole } from "@/ssh/console";
+import { type ConsoleOptions, openConsole } from "@/ssh/console";
 
 export { CommandExitError };
 
@@ -23,7 +23,10 @@ interface Dependencies {
 	store: SessionStoreLike;
 	loadConfig: (configPath?: string) => Promise<Config>;
 	createSSHClient: (options: SSHClientOptions) => SSHRuntimeClient;
-	openRemoteConsole: (client: SSHClientLike) => Promise<void>;
+	openRemoteConsole: (
+		client: SSHClientLike,
+		options?: ConsoleOptions,
+	) => Promise<void>;
 }
 
 const defaultDependencies: Dependencies = {
@@ -52,7 +55,9 @@ export async function runConsole(
 	);
 
 	await withSSHClient(client, async (c) => {
-		await dependencies.openRemoteConsole(c);
+		await dependencies.openRemoteConsole(c, {
+			initialCommands: config.post_ssh_commands,
+		});
 	});
 }
 
