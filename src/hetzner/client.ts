@@ -80,6 +80,20 @@ export class HetznerClient {
 		return response.server;
 	}
 
+	async updateServer(
+		id: string,
+		updates: { name: string },
+	): Promise<HetznerServer> {
+		const response = await this.request<{ server: HetznerServer }>(
+			`/servers/${id}`,
+			{
+				method: "PUT",
+				body: JSON.stringify(updates),
+			},
+		);
+		return response.server;
+	}
+
 	async deleteServer(id: string): Promise<void> {
 		await this.request<void>(`/servers/${id}`, { method: "DELETE" });
 	}

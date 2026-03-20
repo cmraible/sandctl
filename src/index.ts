@@ -1,6 +1,7 @@
 import { Command } from "commander";
 
 import { registerConsoleCommand } from "@/commands/console";
+import { registerCpCommand } from "@/commands/cp";
 import { registerDestroyCommand } from "@/commands/destroy";
 import { registerExecCommand } from "@/commands/exec";
 import { registerExtendCommand } from "@/commands/extend";
@@ -9,6 +10,7 @@ import { registerListCommand } from "@/commands/list";
 import { registerLogsCommand } from "@/commands/logs";
 import { registerNewCommand } from "@/commands/new";
 import { registerOpenCommand } from "@/commands/open";
+import { registerRenameCommand } from "@/commands/rename";
 import { registerStatusCommand } from "@/commands/status";
 import { registerTemplateCommand } from "@/commands/template";
 import { registerVersionCommand } from "@/commands/version";
@@ -25,10 +27,12 @@ program.addCommand(registerInitCommand());
 program.addCommand(registerNewCommand());
 program.addCommand(registerListCommand());
 program.addCommand(registerExecCommand());
+program.addCommand(registerCpCommand());
 program.addCommand(registerLogsCommand());
 program.addCommand(registerConsoleCommand());
 program.addCommand(registerOpenCommand());
 program.addCommand(registerStatusCommand());
+program.addCommand(registerRenameCommand());
 program.addCommand(registerDestroyCommand());
 program.addCommand(registerExtendCommand());
 program.addCommand(registerTemplateCommand());

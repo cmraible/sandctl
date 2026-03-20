@@ -29,6 +29,7 @@ const SSH_RETRY_DELAY_MS = 1_000;
 export interface HetznerClientLike {
 	createServer(opts: CreateServerOpts): Promise<HetznerServer>;
 	getServer(id: string): Promise<HetznerServer>;
+	updateServer(id: string, updates: { name: string }): Promise<HetznerServer>;
 	deleteServer(id: string): Promise<void>;
 	listServers(labelSelector?: string): Promise<HetznerServer[]>;
 	createSSHKey(name: string, publicKey: string): Promise<HetznerSSHKey>;
