@@ -140,6 +140,32 @@ export class SessionStore {
 		});
 	}
 
+	async rename(oldId: string, newId: string): Promise<void> {
+		await this.lock.acquire("sessions", async () => {
+			const sessions = await this.load();
+			const normalizedOld = normalizeName(oldId);
+			const normalizedNew = normalizeName(newId);
+
+			if (
+				sessions.some(
+					(existing) => normalizeName(existing.id) === normalizedNew,
+				)
+			) {
+				throw new Error(`session with name '${normalizedNew}' already exists`);
+			}
+
+			const index = sessions.findIndex(
+				(session) => normalizeName(session.id) === normalizedOld,
+			);
+			if (index === -1) {
+				throw new NotFoundError(oldId);
+			}
+
+			sessions[index] = { ...sessions[index], id: normalizedNew };
+			await this.save(sessions);
+		});
+	}
+
 	async remove(id: string): Promise<void> {
 		await this.lock.acquire("sessions", async () => {
 			const sessions = await this.load();
