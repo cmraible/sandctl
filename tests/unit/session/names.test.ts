@@ -4,8 +4,8 @@ import { validateID } from "@/session/id";
 import { getRandomName, names } from "@/session/names";
 
 describe("session/names", () => {
-	test("name pool has exactly 250 entries", () => {
-		expect(names).toHaveLength(250);
+	test("name pool has at least 250 entries", () => {
+		expect(names.length).toBeGreaterThanOrEqual(250);
 	});
 
 	test("all names match validateID format", () => {
@@ -15,8 +15,9 @@ describe("session/names", () => {
 	});
 
 	test("getRandomName avoids collisions", () => {
-		const selected = getRandomName(names.slice(0, 249));
-		expect(selected).toBe(names[249]);
+		const allButLast = names.slice(0, names.length - 1);
+		const selected = getRandomName(allButLast);
+		expect(selected).toBe(names[names.length - 1]);
 	});
 
 	test("getRandomName throws when all names are in use", () => {

@@ -5,7 +5,6 @@
     "": {
       "name": "sandctl",
       "dependencies": {
-        "@faker-js/faker": "^10.3.0",
         "@inquirer/prompts": "^7.8.6",
         "async-lock": "^1.4.1",
         "chalk": "^5.5.0",
@@ -44,8 +43,6 @@
     "@biomejs/cli-win32-arm64": ["@biomejs/cli-win32-arm64@2.4.4", "", { "os": "win32", "cpu": "arm64" }, "sha512-trzCqM7x+Gn832zZHgr28JoYagQNX4CZkUZhMUac2YxvvyDRLJDrb5m9IA7CaZLlX6lTQmADVfLEKP1et1Ma4Q=="],
 
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.4.4", "", { "os": "win32", "cpu": "x64" }, "sha512-gnOHKVPFAAPrpoPt2t+Q6FZ7RPry/FDV3GcpU53P3PtLNnQjBmKyN2Vh/JtqXet+H4pme8CC76rScwdjDcT1/A=="],
-
-    "@faker-js/faker": ["@faker-js/faker@10.3.0", "", {}, "sha512-It0Sne6P3szg7JIi6CgKbvTZoMjxBZhcv91ZrqrNuaZQfB5WoqYYbzCUOq89YR+VY8juY9M1vDWmDDa2TzfXCw=="],
 
     "@inquirer/ansi": ["@inquirer/ansi@1.0.2", "", {}, "sha512-S8qNSZiYzFd0wAcyG5AXCvUHC5Sr7xpZ9wZ2py9XR88jUz8wooStVx5M6dRzczbBWjic9NP7+rY0Xi7qqK/aMQ=="],
 
