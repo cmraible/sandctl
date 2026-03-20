@@ -307,6 +307,13 @@ async function setupGitConfigViaSSH(
 		gitConfigContent = `[user]\n\tname = ${config.git_user_name}\n\temail = ${config.git_user_email}\n`;
 	}
 
+	if (
+		config.ssh_key_source === "agent" &&
+		!gitConfigContent.includes("insteadOf = https://github.com/")
+	) {
+		gitConfigContent += `\n[url "ssh://git@github.com/"]\n\tinsteadOf = https://github.com/\n`;
+	}
+
 	const encoded = Buffer.from(gitConfigContent).toString("base64");
 
 	const sshOptions = { ...buildSSHOptions(config, host), username: "root" };
