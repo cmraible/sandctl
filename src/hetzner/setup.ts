@@ -27,10 +27,11 @@ packages:
   - mosh
   - tmux
   - vim
+  - zsh
 
 users:
   - name: agent
-    shell: /bin/bash
+    shell: /bin/zsh
     groups:
       - docker
       - sudo
