@@ -21,6 +21,7 @@ interface InitOptions {
 	gitUserName?: string;
 	gitUserEmail?: string;
 	githubToken?: string;
+	claudeConfigPath?: string;
 }
 
 const DEFAULT_REGION = "ash";
@@ -222,6 +223,52 @@ export async function runInit(
 			mask: true,
 		})) || existing?.github_token;
 
+	const claudeConfigDetected = await pathExists(
+		expandTilde("~/.claude/settings.json"),
+	);
+	let claudeConfigPath: string | undefined;
+	if (claudeConfigDetected) {
+		const claudeConfigChoice = await select({
+			message: "Claude Code configuration for VMs",
+			default:
+				existing?.claude_config_path === "~/.claude"
+					? "local"
+					: existing?.claude_config_path === "~/.sandctl/claude"
+						? "sandctl"
+						: existing?.claude_config_path
+							? "local"
+							: "skip",
+			theme: VIM_SELECT_THEME,
+			choices: [
+				{ name: "Use my local ~/.claude config", value: "local" },
+				{
+					name: "Create a sandctl-specific config (~/.sandctl/claude/)",
+					value: "sandctl",
+				},
+				{ name: "Skip", value: "skip" },
+			],
+		});
+		if (claudeConfigChoice === "local") {
+			claudeConfigPath = "~/.claude";
+		} else if (claudeConfigChoice === "sandctl") {
+			claudeConfigPath = "~/.sandctl/claude";
+			const sandctlClaudePath = expandTilde("~/.sandctl/claude");
+			if (!(await pathExists(`${sandctlClaudePath}/settings.json`))) {
+				const { mkdir, writeFile } = await import("node:fs/promises");
+				await mkdir(sandctlClaudePath, { recursive: true });
+				await writeFile(
+					`${sandctlClaudePath}/settings.json`,
+					JSON.stringify({}, null, 2),
+				);
+				console.log(
+					`Created ${sandctlClaudePath}/settings.json — edit it to customize.`,
+				);
+			}
+		}
+	} else {
+		claudeConfigPath = existing?.claude_config_path;
+	}
+
 	await save(
 		resolvedConfigPath,
 		buildConfig({
@@ -235,6 +282,7 @@ export async function runInit(
 			gitUserName,
 			gitUserEmail,
 			githubToken,
+			claudeConfigPath,
 		}),
 	);
 	return { config_path: resolvedConfigPath, saved: true };
@@ -261,6 +309,7 @@ function buildConfig(options: InitOptions): Config {
 		git_user_name: options.gitUserName,
 		git_user_email: options.gitUserEmail,
 		github_token: options.githubToken,
+		claude_config_path: options.claudeConfigPath,
 	};
 }
 

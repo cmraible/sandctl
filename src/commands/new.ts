@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
+import path from "node:path";
 import { isatty } from "node:tty";
 import { Command } from "commander";
 import { createSpinner } from "nanospinner";
@@ -12,6 +13,7 @@ import {
 	type Config,
 	getProviderConfig,
 	getSSHPublicKey,
+	hasClaudeConfig,
 	hasGitConfig,
 	load,
 	type ProviderConfig,
@@ -133,6 +135,11 @@ interface Dependencies {
 		command: string,
 		createClient: (options: SSHClientOptions) => SSHRuntimeClient,
 	) => Promise<void>;
+	setupClaudeConfig: (
+		config: Config,
+		host: string,
+		deps: Pick<Dependencies, "createSSHClient">,
+	) => Promise<void>;
 	now: () => Date;
 	warn: (message: string) => void;
 	log: (message: string) => void;
@@ -161,6 +168,7 @@ const defaultDependencies: Dependencies = {
 	createSnapshot: createBaseSnapshot,
 	cleanupSnapshots: cleanupOldSnapshots,
 	runSSHSetup: defaultRunSSHSetup,
+	setupClaudeConfig: setupClaudeConfigViaSSH,
 	now: () => new Date(),
 	warn: (message: string) => {
 		console.warn(message);
@@ -306,6 +314,49 @@ async function setupGitConfigViaSSH(
 		await sshExec(
 			c,
 			"chown agent:agent /home/agent/.gitconfig && chmod 644 /home/agent/.gitconfig",
+		);
+	});
+}
+
+async function setupClaudeConfigViaSSH(
+	config: Config,
+	host: string,
+	deps: Pick<Dependencies, "createSSHClient">,
+): Promise<void> {
+	if (!hasClaudeConfig(config) || !config.claude_config_path) {
+		return;
+	}
+
+	const claudeDir = expandTilde(config.claude_config_path);
+	const sshOptions = { ...buildSSHOptions(config, host), username: "root" };
+	const client = deps.createSSHClient(sshOptions);
+
+	await withSSHClient(client, async (c) => {
+		await sshExec(c, "mkdir -p /home/agent/.claude");
+
+		const filesToCopy = ["settings.json", "CLAUDE.md"];
+		for (const file of filesToCopy) {
+			const filePath = path.join(claudeDir, file);
+			try {
+				const info = await stat(filePath);
+				if (!info.isFile()) continue;
+				const content = await readFile(filePath, "utf8");
+				const encoded = Buffer.from(content).toString("base64");
+				await sshExec(
+					c,
+					`echo '${encoded}' | base64 -d > /home/agent/.claude/${file}`,
+				);
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+					continue;
+				}
+				throw error;
+			}
+		}
+
+		await sshExec(
+			c,
+			"chown -R agent:agent /home/agent/.claude && chmod -R 644 /home/agent/.claude/*",
 		);
 	});
 }
@@ -495,6 +546,19 @@ export async function runNew(
 			} catch (error) {
 				dependencies.warn(
 					`[warn] Git config setup failed: ${messageFromError(error)}`,
+				);
+			}
+
+			try {
+				dependencies.log("Setting up Claude Code config...");
+				await dependencies.setupClaudeConfig(
+					config,
+					readyVM.ipAddress,
+					dependencies,
+				);
+			} catch (error) {
+				dependencies.warn(
+					`[warn] Claude Code config setup failed: ${messageFromError(error)}`,
 				);
 			}
 		}

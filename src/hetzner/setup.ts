@@ -74,8 +74,8 @@ runcmd:
   - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
   - apt-get install -y nodejs
 
-  # Install Claude Code
-  - npm install -g @anthropic-ai/claude-code
+  # Install Claude Code (as agent user so it's available in their PATH)
+  - su - agent -c "curl -fsSL https://claude.ai/install.sh | bash"
 
   # Clean up
   - apt-get autoremove -y

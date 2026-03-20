@@ -30,6 +30,7 @@ export interface Config {
 	git_user_name?: string;
 	git_user_email?: string;
 	github_token?: string;
+	claude_config_path?: string;
 }
 
 export class NotFoundError extends Error {
@@ -266,6 +267,10 @@ export function hasGitConfig(config: Config): boolean {
 	return Boolean(
 		config.git_config_path || (config.git_user_name && config.git_user_email),
 	);
+}
+
+export function hasClaudeConfig(config: Config): boolean {
+	return Boolean(config.claude_config_path);
 }
 
 export function hasGitHubToken(config: Config): boolean {
