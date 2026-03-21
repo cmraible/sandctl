@@ -10,11 +10,11 @@ import {
 } from "@/template/store";
 
 describe("template/store", () => {
-	test("loads init script from normalized template directory", async () => {
+	test("loads init file from normalized template directory", async () => {
 		const root = await mkdtemp(join(tmpdir(), "sandctl-template-store-test-"));
 		const templateDir = join(root, "my-api");
 		await mkdir(templateDir, { recursive: true });
-		await writeFile(join(templateDir, "init.sh"), "#!/bin/sh\necho hi\n");
+		await writeFile(join(templateDir, "init"), "#!/bin/sh\necho hi\n");
 
 		const store = new TemplateStore(root);
 		const loaded = await store.getInitScript("My API");
@@ -24,6 +24,38 @@ describe("template/store", () => {
 			normalized: "my-api",
 			script: "#!/bin/sh\necho hi\n",
 		});
+	});
+
+	test("falls back to legacy init.sh when init does not exist", async () => {
+		const root = await mkdtemp(join(tmpdir(), "sandctl-template-store-test-"));
+		const templateDir = join(root, "my-api");
+		await mkdir(templateDir, { recursive: true });
+		await writeFile(join(templateDir, "init.sh"), "#!/bin/sh\necho legacy\n");
+
+		const store = new TemplateStore(root);
+		const loaded = await store.getInitScript("My API");
+
+		expect(loaded).toEqual({
+			name: "My API",
+			normalized: "my-api",
+			script: "#!/bin/sh\necho legacy\n",
+		});
+	});
+
+	test("prefers init over init.sh when both exist", async () => {
+		const root = await mkdtemp(join(tmpdir(), "sandctl-template-store-test-"));
+		const templateDir = join(root, "my-api");
+		await mkdir(templateDir, { recursive: true });
+		await writeFile(
+			join(templateDir, "init"),
+			"#cloud-config\npackages:\n  - git\n",
+		);
+		await writeFile(join(templateDir, "init.sh"), "#!/bin/sh\necho legacy\n");
+
+		const store = new TemplateStore(root);
+		const loaded = await store.getInitScript("My API");
+
+		expect(loaded.script).toContain("#cloud-config");
 	});
 
 	test("throws TemplateNotFoundError when template script is missing", async () => {
@@ -48,7 +80,7 @@ describe("template/store", () => {
 		);
 	});
 
-	test("add creates template directory with config.yaml and init.sh", async () => {
+	test("add creates template directory with config.yaml and init", async () => {
 		const root = await mkdtemp(join(tmpdir(), "sandctl-template-store-test-"));
 		const store = new TemplateStore(root);
 
@@ -62,8 +94,8 @@ describe("template/store", () => {
 		const configStat = await stat(join(root, "ghost", "config.yaml"));
 		expect(configStat.mode & 0o777).toBe(0o600);
 
-		// Verify init.sh exists and is executable
-		const scriptStat = await stat(join(root, "ghost", "init.sh"));
+		// Verify init exists and is executable
+		const scriptStat = await stat(join(root, "ghost", "init"));
 		expect(scriptStat.mode & 0o777).toBe(0o700);
 	});
 
@@ -156,11 +188,22 @@ describe("template/store", () => {
 		expect(await store.exists("Ghost")).toBe(true);
 	});
 
-	test("getInitScriptPath returns path to init.sh", async () => {
+	test("getInitScriptPath returns path to init for new templates", async () => {
 		const root = await mkdtemp(join(tmpdir(), "sandctl-template-store-test-"));
 		const store = new TemplateStore(root);
 
 		await store.add("Ghost");
+		const scriptPath = await store.getInitScriptPath("Ghost");
+		expect(scriptPath).toBe(join(root, "ghost", "init"));
+	});
+
+	test("getInitScriptPath falls back to init.sh for legacy templates", async () => {
+		const root = await mkdtemp(join(tmpdir(), "sandctl-template-store-test-"));
+		const templateDir = join(root, "ghost");
+		await mkdir(templateDir, { recursive: true });
+		await writeFile(join(templateDir, "init.sh"), "#!/bin/sh\necho legacy\n");
+
+		const store = new TemplateStore(root);
 		const scriptPath = await store.getInitScriptPath("Ghost");
 		expect(scriptPath).toBe(join(root, "ghost", "init.sh"));
 	});

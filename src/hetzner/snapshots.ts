@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import type { CreateImageOpts, HetznerImage } from "@/hetzner/client";
-import { generateCloudInit } from "@/hetzner/setup";
 
 const SNAPSHOT_LABEL_SELECTOR = "managed-by=sandctl,purpose=base-image";
 const SNAPSHOT_DESCRIPTION_PREFIX = "sandctl-base-v";
@@ -14,22 +13,20 @@ export interface SnapshotClientLike {
 	deleteImage(id: string): Promise<void>;
 }
 
-export function snapshotVersion(): string {
-	return createHash("sha256")
-		.update(generateCloudInit())
-		.digest("hex")
-		.slice(0, 12);
+export function snapshotVersion(userData: string): string {
+	return createHash("sha256").update(userData).digest("hex").slice(0, 12);
 }
 
-function snapshotDescription(): string {
-	return `${SNAPSHOT_DESCRIPTION_PREFIX}${snapshotVersion()}`;
+function snapshotDescription(userData: string): string {
+	return `${SNAPSHOT_DESCRIPTION_PREFIX}${snapshotVersion(userData)}`;
 }
 
 export async function findBaseSnapshot(
 	client: SnapshotClientLike,
+	userData: string,
 ): Promise<HetznerImage | null> {
 	const images = await client.listImages(SNAPSHOT_LABEL_SELECTOR);
-	const expected = snapshotDescription();
+	const expected = snapshotDescription(userData);
 	const match = images.find(
 		(img) => img.description === expected && img.status === "available",
 	);
@@ -39,10 +36,11 @@ export async function findBaseSnapshot(
 export async function createBaseSnapshot(
 	client: SnapshotClientLike,
 	serverId: string,
+	userData: string,
 	sleep: (ms: number) => Promise<void> = defaultSleep,
 ): Promise<HetznerImage> {
 	const image = await client.createImage(serverId, {
-		description: snapshotDescription(),
+		description: snapshotDescription(userData),
 		type: "snapshot",
 		labels: { "managed-by": "sandctl", purpose: "base-image" },
 	});
@@ -65,9 +63,10 @@ export async function createBaseSnapshot(
 
 export async function cleanupOldSnapshots(
 	client: SnapshotClientLike,
+	userData: string,
 ): Promise<void> {
 	const images = await client.listImages(SNAPSHOT_LABEL_SELECTOR);
-	const currentDesc = snapshotDescription();
+	const currentDesc = snapshotDescription(userData);
 
 	for (const img of images) {
 		if (img.description !== currentDesc) {

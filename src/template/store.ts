@@ -18,7 +18,8 @@ import type {
 	TemplateStoreLike,
 } from "@/template/types";
 
-const INIT_SCRIPT_NAME = "init.sh";
+const INIT_FILE_NAME = "init";
+const INIT_SCRIPT_NAME_LEGACY = "init.sh";
 const CONFIG_NAME = "config.yaml";
 
 function parseAndValidateConfig(data: string, source: string): TemplateConfig {
@@ -64,16 +65,13 @@ export class TemplateAlreadyExistsError extends Error {
 function generateInitScript(originalName: string): string {
 	return `#!/bin/bash
 # Init script for template: ${originalName}
-# This script runs on the sandbox VM after creation.
+# This runs as part of cloud-init during VM creation.
 #
-# Available environment variables:
-#   SANDCTL_TEMPLATE_NAME       - Original template name
-#   SANDCTL_TEMPLATE_NORMALIZED - Normalized template name (lowercase)
-#
-# Examples:
-#   apt-get update && apt-get install -y nodejs npm
-#   git clone https://github.com/your/repo.git /home/agent/project
-#   cd /home/agent/project && npm install
+# Alternatively, use cloud-config format by starting with '#cloud-config':
+#   #cloud-config
+#   packages:
+#     - nodejs
+#     - npm
 
 set -e  # Exit on first error
 
@@ -112,7 +110,7 @@ export class TemplateStore implements TemplateStoreLike {
 		await mkdir(templateDir, { recursive: true });
 		await writeFile(configPath, YAML.stringify(config), { mode: 0o600 });
 		await writeFile(
-			join(templateDir, INIT_SCRIPT_NAME),
+			join(templateDir, INIT_FILE_NAME),
 			generateInitScript(name),
 			{ mode: 0o700 },
 		);
@@ -214,17 +212,22 @@ export class TemplateStore implements TemplateStoreLike {
 		if (!normalized) {
 			throw new TemplateNotFoundError(name);
 		}
-		const scriptPath = join(this.basePath, normalized, INIT_SCRIPT_NAME);
+		const templateDir = join(this.basePath, normalized);
 
-		try {
-			const script = await readFile(scriptPath, "utf8");
-			return { name, normalized, script };
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-				throw new TemplateNotFoundError(name);
+		// Try 'init' first, fall back to legacy 'init.sh'
+		for (const fileName of [INIT_FILE_NAME, INIT_SCRIPT_NAME_LEGACY]) {
+			try {
+				const script = await readFile(join(templateDir, fileName), "utf8");
+				return { name, normalized, script };
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+					continue;
+				}
+				throw error;
 			}
-			throw error;
 		}
+
+		throw new TemplateNotFoundError(name);
 	}
 
 	async getInitScriptPath(name: string): Promise<string> {
@@ -234,12 +237,19 @@ export class TemplateStore implements TemplateStoreLike {
 			throw new TemplateNotFoundError(name);
 		}
 
-		const scriptPath = join(this.basePath, normalized, INIT_SCRIPT_NAME);
-		try {
-			await stat(scriptPath);
-			return scriptPath;
-		} catch {
-			throw new TemplateNotFoundError(name);
+		const templateDir = join(this.basePath, normalized);
+
+		// Try 'init' first, fall back to legacy 'init.sh'
+		for (const fileName of [INIT_FILE_NAME, INIT_SCRIPT_NAME_LEGACY]) {
+			const filePath = join(templateDir, fileName);
+			try {
+				await stat(filePath);
+				return filePath;
+			} catch {
+				// File not found, try next
+			}
 		}
+
+		throw new TemplateNotFoundError(name);
 	}
 }

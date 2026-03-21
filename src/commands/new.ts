@@ -20,7 +20,11 @@ import {
 } from "@/config/config";
 import type { HetznerImage } from "@/hetzner/client";
 import { HetznerProvider } from "@/hetzner/provider";
-import { generatePostSnapshotSSHSetup } from "@/hetzner/setup";
+import {
+	assembleUserData,
+	generateCloudInit,
+	generatePostSnapshotSSHSetup,
+} from "@/hetzner/setup";
 import {
 	cleanupOldSnapshots,
 	createBaseSnapshot,
@@ -37,13 +41,10 @@ import {
 	type SSHClientOptions,
 } from "@/ssh/client";
 import { type ConsoleOptions, openConsole } from "@/ssh/console";
-import {
-	type ExecResult,
-	execWithStreamingOutput,
-	exec as sshExec,
-} from "@/ssh/exec";
+import { exec as sshExec } from "@/ssh/exec";
+import { normalizeTemplateName } from "@/template/normalize";
 import { TemplateNotFoundError, TemplateStore } from "@/template/store";
-import type { TemplateInitScript, TemplateStoreLike } from "@/template/types";
+import type { TemplateStoreLike } from "@/template/types";
 import { expandTilde } from "@/utils/paths";
 
 const DEFAULT_PROVIDER = "hetzner";
@@ -73,8 +74,6 @@ interface NewCommandDependencies {
 		configPath?: string,
 		callbacks?: {
 			onProgress?: (message: string) => void;
-			onStdout?: (data: string) => void;
-			onStderr?: (data: string) => void;
 		},
 	) => Promise<Session>;
 	createSpinner: (text: string) => NewCommandSpinner;
@@ -106,15 +105,6 @@ interface Dependencies {
 	store: SessionStoreLike;
 	templateStore: TemplateStoreLike;
 	createSSHClient: (options: SSHClientOptions) => SSHRuntimeClient;
-	runRemoteTemplate: (
-		client: SSHClientLike,
-		command: string,
-		script: string,
-		streaming?: {
-			onStdout?: (data: string) => void;
-			onStderr?: (data: string) => void;
-		},
-	) => Promise<ExecResult>;
 	waitForCloudInit: (
 		config: Config,
 		host: string,
@@ -126,12 +116,19 @@ interface Dependencies {
 		host: string,
 		deps: Pick<Dependencies, "createSSHClient">,
 	) => Promise<void>;
-	findSnapshot: (client: SnapshotClientLike) => Promise<HetznerImage | null>;
+	findSnapshot: (
+		client: SnapshotClientLike,
+		userData: string,
+	) => Promise<HetznerImage | null>;
 	createSnapshot: (
 		client: SnapshotClientLike,
 		serverId: string,
+		userData: string,
 	) => Promise<HetznerImage>;
-	cleanupSnapshots: (client: SnapshotClientLike) => Promise<void>;
+	cleanupSnapshots: (
+		client: SnapshotClientLike,
+		userData: string,
+	) => Promise<void>;
 	runSSHSetup: (
 		config: Config,
 		host: string,
@@ -146,8 +143,6 @@ interface Dependencies {
 	now: () => Date;
 	warn: (message: string) => void;
 	log: (message: string) => void;
-	writeStdout: (data: string) => void;
-	writeStderr: (data: string) => void;
 }
 
 const defaultDependencies: Dependencies = {
@@ -158,13 +153,6 @@ const defaultDependencies: Dependencies = {
 	store: new SessionStore(),
 	templateStore: new TemplateStore(),
 	createSSHClient: (options) => new SSHClient(options),
-	runRemoteTemplate: async (client, command, script, streaming) => {
-		return await execWithStreamingOutput(client, command, {
-			stdin: script,
-			onStdout: streaming?.onStdout,
-			onStderr: streaming?.onStderr,
-		});
-	},
 	waitForCloudInit: defaultWaitForCloudInit,
 	setupGitConfig: setupGitConfigViaSSH,
 	findSnapshot: findBaseSnapshot,
@@ -177,8 +165,6 @@ const defaultDependencies: Dependencies = {
 		console.warn(message);
 	},
 	log: () => {},
-	writeStdout: (data: string) => process.stdout.write(data),
-	writeStderr: (data: string) => process.stderr.write(data),
 };
 
 const defaultNewCommandDependencies: NewCommandDependencies = {
@@ -187,10 +173,6 @@ const defaultNewCommandDependencies: NewCommandDependencies = {
 			options,
 			{
 				log: callbacks?.onProgress ?? (() => {}),
-				writeStdout:
-					callbacks?.onStdout ?? ((data) => process.stdout.write(data)),
-				writeStderr:
-					callbacks?.onStderr ?? ((data) => process.stderr.write(data)),
 			},
 			configPath,
 		);
@@ -284,10 +266,6 @@ export function sshKeyName(publicKey: string): string {
 	return `sandctl-${hex.slice(0, 8)}`;
 }
 
-function shellQuote(value: string): string {
-	return `'${value.replaceAll("'", "'\\''")}'`;
-}
-
 async function setupGitConfigViaSSH(
 	config: Config,
 	host: string,
@@ -371,34 +349,6 @@ async function setupClaudeConfigViaSSH(
 	});
 }
 
-async function runTemplateScript(
-	config: Config,
-	host: string,
-	template: TemplateInitScript,
-	deps: Pick<
-		Dependencies,
-		"createSSHClient" | "runRemoteTemplate" | "writeStdout" | "writeStderr"
-	>,
-): Promise<void> {
-	const client = deps.createSSHClient(buildSSHOptions(config, host));
-
-	await withSSHClient(client, async (c) => {
-		const command =
-			`SANDCTL_TEMPLATE_NAME=${shellQuote(template.name)} ` +
-			`SANDCTL_TEMPLATE_NORMALIZED=${shellQuote(template.normalized)} ` +
-			"bash -s";
-		const result = await deps.runRemoteTemplate(c, command, template.script, {
-			onStdout: deps.writeStdout,
-			onStderr: deps.writeStderr,
-		});
-		if (result.exitCode !== 0) {
-			throw new Error(
-				`template init script failed with exit code ${result.exitCode}`,
-			);
-		}
-	});
-}
-
 async function defaultRunSSHSetup(
 	config: Config,
 	host: string,
@@ -424,12 +374,21 @@ export async function runNew(
 
 	const config = await dependencies.loadConfig(configPath);
 
-	let selectedTemplate: TemplateInitScript | undefined;
+	// -T base is not allowed — the base template is applied automatically
+	if (options.template && normalizeTemplateName(options.template) === "base") {
+		throw new Error(
+			"the 'base' template is applied automatically. Use `sandctl template edit base` to modify it.",
+		);
+	}
+
+	// Load named template init content (if -T flag provided)
+	let namedTemplateContent: string | undefined;
 	if (options.template) {
 		try {
-			selectedTemplate = await dependencies.templateStore.getInitScript(
+			const template = await dependencies.templateStore.getInitScript(
 				options.template,
 			);
+			namedTemplateContent = template.script;
 		} catch (error) {
 			if (error instanceof TemplateNotFoundError) {
 				throw new Error(
@@ -439,6 +398,24 @@ export async function runNew(
 			throw error;
 		}
 	}
+
+	// Load user base template init content (optional, no error if missing)
+	let userBaseContent: string | undefined;
+	try {
+		const baseTemplate = await dependencies.templateStore.getInitScript("base");
+		userBaseContent = baseTemplate.script;
+	} catch (error) {
+		if (!(error instanceof TemplateNotFoundError)) {
+			throw error;
+		}
+	}
+
+	// Assemble user_data from layers
+	const globalBase = generateCloudInit();
+	const additionalLayers: string[] = [];
+	if (userBaseContent) additionalLayers.push(userBaseContent);
+	if (namedTemplateContent) additionalLayers.push(namedTemplateContent);
+	const userData = assembleUserData(globalBase, additionalLayers);
 
 	const providerName =
 		options.provider ?? config.default_provider ?? DEFAULT_PROVIDER;
@@ -465,7 +442,7 @@ export async function runNew(
 	let snapshot: HetznerImage | null = null;
 	if (isHetzner && !options.image) {
 		try {
-			snapshot = await dependencies.findSnapshot(provider.client);
+			snapshot = await dependencies.findSnapshot(provider.client, userData);
 		} catch (error) {
 			dependencies.warn(
 				`[warn] Snapshot lookup failed, falling back to cloud-init: ${messageFromError(error)}`,
@@ -493,6 +470,7 @@ export async function runNew(
 				serverType: options.serverType,
 				image: options.image,
 				sshKeyIDs: [sshKeyID],
+				userData,
 			});
 		}
 
@@ -536,8 +514,12 @@ export async function runNew(
 				if (isHetzner && !options.image) {
 					try {
 						dependencies.log("Creating base snapshot...");
-						await dependencies.createSnapshot(provider.client, createdVM.id);
-						await dependencies.cleanupSnapshots(provider.client);
+						await dependencies.createSnapshot(
+							provider.client,
+							createdVM.id,
+							userData,
+						);
+						await dependencies.cleanupSnapshots(provider.client, userData);
 					} catch (error) {
 						dependencies.warn(
 							`[warn] Snapshot creation failed: ${messageFromError(error)}`,
@@ -571,20 +553,6 @@ export async function runNew(
 					`[warn] Claude Code config setup failed: ${messageFromError(error)}`,
 				);
 			}
-		}
-
-		if (selectedTemplate && !readyVM.ipAddress) {
-			throw new Error("VM has no IP address for template initialization");
-		}
-
-		if (selectedTemplate && readyVM.ipAddress) {
-			dependencies.log(`Running template '${selectedTemplate.name}'...`);
-			await runTemplateScript(config, readyVM.ipAddress, selectedTemplate, {
-				createSSHClient: dependencies.createSSHClient,
-				runRemoteTemplate: dependencies.runRemoteTemplate,
-				writeStdout: dependencies.writeStdout,
-				writeStderr: dependencies.writeStderr,
-			});
 		}
 
 		await dependencies.store.update(sessionID, {
@@ -641,32 +609,16 @@ export async function runNewCommand(
 	};
 
 	const spinner = dependencies.createSpinner("Creating VM...");
-	let spinnerActive = true;
 	let session: Session;
 	try {
 		session = await dependencies.runNew(options, configPath, {
 			onProgress: (message: string) => {
-				if (message.startsWith("Running template")) {
-					spinner.succeed(message.replace("...", ""));
-					spinnerActive = false;
-				} else if (spinnerActive) {
-					spinner.update(message);
-				}
+				spinner.update(message);
 			},
-			onStdout: (data: string) => process.stdout.write(data),
-			onStderr: (data: string) => process.stderr.write(data),
 		});
-		if (spinnerActive) {
-			spinner.succeed(`Created VM '${session.id}'.`);
-		} else {
-			dependencies.log(`\nVM '${session.id}' created.`);
-		}
+		spinner.succeed(`Created VM '${session.id}'.`);
 	} catch (error) {
-		if (spinnerActive) {
-			spinner.fail("Failed to provision VM.");
-		} else {
-			dependencies.warn("\nFailed to provision VM.");
-		}
+		spinner.fail("Failed to provision VM.");
 		throw error;
 	}
 

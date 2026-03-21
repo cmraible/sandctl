@@ -8,12 +8,14 @@ import {
 	snapshotVersion,
 } from "@/hetzner/snapshots";
 
+const TEST_USER_DATA = "#cloud-config\nusers:\n  - name: agent\n";
+
 function makeImage(overrides: Partial<HetznerImage> = {}): HetznerImage {
 	return {
 		id: 100,
 		type: "snapshot",
 		status: "available",
-		description: `sandctl-base-v${snapshotVersion()}`,
+		description: `sandctl-base-v${snapshotVersion(TEST_USER_DATA)}`,
 		labels: { "managed-by": "sandctl", purpose: "base-image" },
 		created_from: { id: 1, name: "test-server" },
 		...overrides,
@@ -45,40 +47,46 @@ function makeClient(images: HetznerImage[] = []) {
 describe("hetzner/snapshots", () => {
 	describe("snapshotVersion", () => {
 		test("returns a 12-character hex string", () => {
-			const version = snapshotVersion();
+			const version = snapshotVersion(TEST_USER_DATA);
 			expect(version).toMatch(/^[0-9a-f]{12}$/);
 		});
 
-		test("returns consistent value", () => {
-			expect(snapshotVersion()).toBe(snapshotVersion());
+		test("returns consistent value for same input", () => {
+			expect(snapshotVersion(TEST_USER_DATA)).toBe(
+				snapshotVersion(TEST_USER_DATA),
+			);
+		});
+
+		test("returns different values for different input", () => {
+			expect(snapshotVersion("input-a")).not.toBe(snapshotVersion("input-b"));
 		});
 	});
 
 	describe("findBaseSnapshot", () => {
 		test("returns null when no snapshots exist", async () => {
 			const client = makeClient([]);
-			const result = await findBaseSnapshot(client);
+			const result = await findBaseSnapshot(client, TEST_USER_DATA);
 			expect(result).toBeNull();
 		});
 
 		test("returns matching snapshot", async () => {
 			const image = makeImage();
 			const client = makeClient([image]);
-			const result = await findBaseSnapshot(client);
+			const result = await findBaseSnapshot(client, TEST_USER_DATA);
 			expect(result).toEqual(image);
 		});
 
 		test("ignores snapshots with wrong version", async () => {
 			const image = makeImage({ description: "sandctl-base-vwrongversion" });
 			const client = makeClient([image]);
-			const result = await findBaseSnapshot(client);
+			const result = await findBaseSnapshot(client, TEST_USER_DATA);
 			expect(result).toBeNull();
 		});
 
 		test("ignores snapshots with status 'creating'", async () => {
 			const image = makeImage({ status: "creating" });
 			const client = makeClient([image]);
-			const result = await findBaseSnapshot(client);
+			const result = await findBaseSnapshot(client, TEST_USER_DATA);
 			expect(result).toBeNull();
 		});
 	});
@@ -99,7 +107,12 @@ describe("hetzner/snapshots", () => {
 			};
 
 			const noSleep = async () => {};
-			const result = await createBaseSnapshot(client, "123", noSleep);
+			const result = await createBaseSnapshot(
+				client,
+				"123",
+				TEST_USER_DATA,
+				noSleep,
+			);
 			expect(result.status).toBe("available");
 			expect(pollCount).toBe(2);
 		});
@@ -111,7 +124,12 @@ describe("hetzner/snapshots", () => {
 			};
 
 			const noSleep = async () => {};
-			const result = await createBaseSnapshot(client, "123", noSleep);
+			const result = await createBaseSnapshot(
+				client,
+				"123",
+				TEST_USER_DATA,
+				noSleep,
+			);
 			expect(result.status).toBe("available");
 		});
 	});
@@ -125,7 +143,7 @@ describe("hetzner/snapshots", () => {
 			const current = makeImage({ id: 300 });
 			const client = makeClient([old, current]);
 
-			await cleanupOldSnapshots(client);
+			await cleanupOldSnapshots(client, TEST_USER_DATA);
 			expect(client.calls).toContain("deleteImage:200");
 			expect(client.calls).not.toContain("deleteImage:300");
 		});
@@ -134,7 +152,7 @@ describe("hetzner/snapshots", () => {
 			const current = makeImage({ id: 300 });
 			const client = makeClient([current]);
 
-			await cleanupOldSnapshots(client);
+			await cleanupOldSnapshots(client, TEST_USER_DATA);
 			expect(client.calls).toEqual(["listImages"]);
 		});
 	});
