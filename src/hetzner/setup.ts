@@ -24,6 +24,7 @@ packages:
   - wget
   - jq
   - htop
+  - mosh
   - tmux
   - vim
 
