@@ -34,6 +34,11 @@ describe("hetzner/setup", () => {
 			const output = generateCloudInit();
 			expect(output).toContain("apt-get install -y gh");
 		});
+
+		test("installs mosh", () => {
+			const output = generateCloudInit();
+			expect(output).toContain("- mosh");
+		});
 	});
 
 	describe("generatePostSnapshotSSHSetup", () => {
