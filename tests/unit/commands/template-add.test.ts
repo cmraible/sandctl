@@ -69,7 +69,7 @@ describe("template add", () => {
 		});
 
 		expect(await store.exists("Ghost")).toBe(true);
-		expect(output.some((m) => m.includes("init.sh"))).toBe(true);
+		expect(output.some((m) => m.includes("/init"))).toBe(true);
 	});
 
 	test("json option outputs template config and skips editor", async () => {

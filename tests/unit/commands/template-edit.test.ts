@@ -17,7 +17,7 @@ describe("template edit", () => {
 		expect(openEditor).toHaveBeenCalledTimes(1);
 		const calledPath = openEditor.mock.calls[0][0] as string;
 		expect(calledPath).toContain("ghost");
-		expect(calledPath).toContain("init.sh");
+		expect(calledPath).toContain("/init");
 	});
 
 	test("throws for non-existent template", async () => {

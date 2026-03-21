@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { runNew } from "@/commands/new";
 import type { Provider, SSHKeyManager } from "@/provider/interface";
-import type { VM } from "@/provider/types";
+import type { CreateOpts, VM } from "@/provider/types";
 import { TemplateNotFoundError } from "@/template/store";
 import type { TemplateStoreLike } from "@/template/types";
 import { baseProviderConfig } from "../../support/fixtures";
@@ -32,13 +32,53 @@ function makeProvider(overrides: Partial<ProviderLike> = {}): ProviderLike {
 	};
 }
 
-describe("commands/new --template", () => {
-	test("executes template script remotely with template env vars", async () => {
-		const events: string[] = [];
-		const provider = makeProvider();
+function makeTemplateStore(
+	templates: Record<string, string> = {},
+): TemplateStoreLike {
+	return {
+		getInitScript: async (name: string) => {
+			if (name in templates) {
+				return {
+					name,
+					normalized: name.toLowerCase().replace(/\s+/g, "-"),
+					script: templates[name],
+				};
+			}
+			throw new TemplateNotFoundError(name);
+		},
+		add: async () => ({
+			template: "",
+			original_name: "",
+			created_at: "",
+		}),
+		get: async () => ({ template: "", original_name: "", created_at: "" }),
+		list: async () => [],
+		remove: async () => {},
+		exists: async () => false,
+		getInitScriptPath: async () => "",
+	};
+}
+
+describe("commands/new --template layering", () => {
+	test("assembles user_data with named template as cloud-init layer", async () => {
+		const createCalls: CreateOpts[] = [];
+		const provider = makeProvider({
+			create: async (opts) => {
+				createCalls.push(opts);
+				return {
+					id: "vm-123",
+					name: "violet",
+					status: "running",
+					ipAddress: "203.0.113.10",
+					region: "ash",
+					serverType: "cpx31",
+					createdAt: "2026-02-22T00:00:00Z",
+				};
+			},
+		});
 
 		await runNew(
-			{ template: "My API" },
+			{ template: "web" },
 			{
 				loadConfig: async () => baseProviderConfig,
 				resolveProvider: () => provider,
@@ -51,58 +91,41 @@ describe("commands/new --template", () => {
 					add: async () => {},
 					update: async () => {},
 				},
-				templateStore: {
-					getInitScript: async () => ({
-						name: "My API",
-						normalized: "my-api",
-						script: "echo templated\n",
-					}),
-				} as TemplateStoreLike,
-				createSSHClient: (options) => {
-					events.push(`client.host:${options.host}`);
-					return {
-						connect: async () => {
-							events.push("client.connect");
-						},
-						close: async () => {
-							events.push("client.close");
-						},
-						exec: async () => {
-							throw new Error("not used");
-						},
-						shell: async () => {
-							throw new Error("not used");
-						},
-					};
-				},
-				runRemoteTemplate: async (_client, command, script) => {
-					events.push(`remote.command:${command}`);
-					events.push(`remote.script:${script.trim()}`);
-					return { stdout: "", stderr: "", exitCode: 0 };
-				},
+				templateStore: makeTemplateStore({
+					web: "#cloud-config\npackages:\n  - nginx\n",
+				}),
 			},
 		);
 
-		expect(events).toContain("client.host:203.0.113.10");
-		expect(events).toContain("client.connect");
-		expect(events).toContain("client.close");
-		expect(
-			events.some((entry) => entry.includes("SANDCTL_TEMPLATE_NAME='My API'")),
-		).toBe(true);
-		expect(
-			events.some((entry) =>
-				entry.includes("SANDCTL_TEMPLATE_NORMALIZED='my-api'"),
-			),
-		).toBe(true);
-		expect(events).toContain("remote.script:echo templated");
+		expect(createCalls).toHaveLength(1);
+		const userData = createCalls[0].userData;
+		expect(userData).toBeDefined();
+		// Should be MIME multipart since there's a named template layer
+		expect(userData).toContain("multipart/mixed");
+		expect(userData).toContain("text/cloud-config");
+		expect(userData).toContain("nginx");
+		expect(userData).toContain("name: agent");
 	});
 
-	test("shell-quotes template name with single quote in remote command", async () => {
-		const events: string[] = [];
-		const provider = makeProvider();
+	test("assembles user_data with user base template and named template", async () => {
+		const createCalls: CreateOpts[] = [];
+		const provider = makeProvider({
+			create: async (opts) => {
+				createCalls.push(opts);
+				return {
+					id: "vm-123",
+					name: "violet",
+					status: "running",
+					ipAddress: "203.0.113.10",
+					region: "ash",
+					serverType: "cpx31",
+					createdAt: "2026-02-22T00:00:00Z",
+				};
+			},
+		});
 
 		await runNew(
-			{ template: "Bob's App" },
+			{ template: "web" },
 			{
 				loadConfig: async () => baseProviderConfig,
 				resolveProvider: () => provider,
@@ -115,35 +138,156 @@ describe("commands/new --template", () => {
 					add: async () => {},
 					update: async () => {},
 				},
-				templateStore: {
-					getInitScript: async () => ({
-						name: "Bob's App",
-						normalized: "bob-s-app",
-						script: "echo templated\n",
-					}),
-				} as TemplateStoreLike,
-				createSSHClient: () => ({
-					connect: async () => {},
-					close: async () => {},
-					exec: async () => {
-						throw new Error("not used");
-					},
-					shell: async () => {
-						throw new Error("not used");
-					},
+				templateStore: makeTemplateStore({
+					base: "#cloud-config\npackages:\n  - git\n  - curl\n",
+					web: "#!/bin/bash\napt-get install -y nginx\n",
 				}),
-				runRemoteTemplate: async (_client, command) => {
-					events.push(command);
-					return { stdout: "", stderr: "", exitCode: 0 };
-				},
 			},
 		);
 
-		expect(
-			events.some((command) =>
-				command.includes("SANDCTL_TEMPLATE_NAME='Bob'\\''s App'"),
+		expect(createCalls).toHaveLength(1);
+		const userData = createCalls[0].userData;
+		expect(userData).toBeDefined();
+		expect(userData).toContain("multipart/mixed");
+		// Should have base cloud-config, user base cloud-config, and named shellscript
+		expect(userData).toContain("name: agent");
+		expect(userData).toContain("git");
+		expect(userData).toContain("nginx");
+		expect(userData).toContain("text/x-shellscript");
+	});
+
+	test("sends plain cloud-config when no templates exist", async () => {
+		const createCalls: CreateOpts[] = [];
+		const provider = makeProvider({
+			create: async (opts) => {
+				createCalls.push(opts);
+				return {
+					id: "vm-123",
+					name: "violet",
+					status: "running",
+					ipAddress: "203.0.113.10",
+					region: "ash",
+					serverType: "cpx31",
+					createdAt: "2026-02-22T00:00:00Z",
+				};
+			},
+		});
+
+		await runNew(
+			{},
+			{
+				loadConfig: async () => baseProviderConfig,
+				resolveProvider: () => provider,
+				generateSessionID: () => "violet",
+				getPublicKey: async () => "ssh-ed25519 AAAA test@local",
+				waitForCloudInit: async () => {},
+				setupGitConfig: async () => {},
+				store: {
+					list: async () => [],
+					add: async () => {},
+					update: async () => {},
+				},
+				templateStore: makeTemplateStore({}),
+			},
+		);
+
+		expect(createCalls).toHaveLength(1);
+		const userData = createCalls[0].userData;
+		expect(userData).toBeDefined();
+		// No additional layers — should be plain cloud-config without MIME wrapping
+		expect(userData).not.toContain("multipart/mixed");
+		expect(userData).toContain("#cloud-config");
+		expect(userData).toContain("name: agent");
+	});
+
+	test("applies user base template even without -T flag", async () => {
+		const createCalls: CreateOpts[] = [];
+		const provider = makeProvider({
+			create: async (opts) => {
+				createCalls.push(opts);
+				return {
+					id: "vm-123",
+					name: "violet",
+					status: "running",
+					ipAddress: "203.0.113.10",
+					region: "ash",
+					serverType: "cpx31",
+					createdAt: "2026-02-22T00:00:00Z",
+				};
+			},
+		});
+
+		await runNew(
+			{},
+			{
+				loadConfig: async () => baseProviderConfig,
+				resolveProvider: () => provider,
+				generateSessionID: () => "violet",
+				getPublicKey: async () => "ssh-ed25519 AAAA test@local",
+				waitForCloudInit: async () => {},
+				setupGitConfig: async () => {},
+				store: {
+					list: async () => [],
+					add: async () => {},
+					update: async () => {},
+				},
+				templateStore: makeTemplateStore({
+					base: "#cloud-config\npackages:\n  - vim\n",
+				}),
+			},
+		);
+
+		expect(createCalls).toHaveLength(1);
+		const userData = createCalls[0].userData;
+		// User base template present — should be MIME multipart
+		expect(userData).toContain("multipart/mixed");
+		expect(userData).toContain("vim");
+	});
+
+	test("rejects -T base with descriptive error", async () => {
+		const provider = makeProvider();
+
+		await expect(
+			runNew(
+				{ template: "base" },
+				{
+					loadConfig: async () => baseProviderConfig,
+					resolveProvider: () => provider,
+					generateSessionID: () => "violet",
+					getPublicKey: async () => "ssh-ed25519 AAAA test@local",
+					store: {
+						list: async () => [],
+						add: async () => {},
+						update: async () => {},
+					},
+					templateStore: makeTemplateStore({}),
+				},
 			),
-		).toBe(true);
+		).rejects.toThrow(
+			"the 'base' template is applied automatically. Use `sandctl template edit base` to modify it.",
+		);
+	});
+
+	test("rejects -T Base (case-insensitive) with same error", async () => {
+		const provider = makeProvider();
+
+		await expect(
+			runNew(
+				{ template: "Base" },
+				{
+					loadConfig: async () => baseProviderConfig,
+					resolveProvider: () => provider,
+					generateSessionID: () => "violet",
+					getPublicKey: async () => "ssh-ed25519 AAAA test@local",
+					store: {
+						list: async () => [],
+						add: async () => {},
+						update: async () => {},
+					},
+					templateStore: makeTemplateStore({}),
+				},
+			),
+		).rejects.toThrow("the 'base' template is applied automatically");
 	});
 
 	test("returns clear error when template is missing", async () => {
@@ -167,11 +311,7 @@ describe("commands/new --template", () => {
 						list: async () => [],
 						add: async () => {},
 					},
-					templateStore: {
-						getInitScript: async () => {
-							throw new TemplateNotFoundError("Ghost");
-						},
-					} as TemplateStoreLike,
+					templateStore: makeTemplateStore({}),
 				},
 			),
 		).rejects.toThrow(
@@ -179,5 +319,47 @@ describe("commands/new --template", () => {
 		);
 
 		expect(createCalled).toBe(false);
+	});
+
+	test("does not execute template script via SSH", async () => {
+		const events: string[] = [];
+		const provider = makeProvider();
+
+		await runNew(
+			{ template: "web" },
+			{
+				loadConfig: async () => baseProviderConfig,
+				resolveProvider: () => provider,
+				generateSessionID: () => "violet",
+				getPublicKey: async () => "ssh-ed25519 AAAA test@local",
+				waitForCloudInit: async () => {},
+				setupGitConfig: async () => {},
+				store: {
+					list: async () => [],
+					add: async () => {},
+					update: async () => {},
+				},
+				templateStore: makeTemplateStore({
+					web: "#!/bin/bash\necho hello\n",
+				}),
+				createSSHClient: () => {
+					events.push("ssh-client-created");
+					return {
+						connect: async () => {},
+						close: async () => {},
+						exec: async () => {
+							throw new Error("not used");
+						},
+						shell: async () => {
+							throw new Error("not used");
+						},
+					};
+				},
+			},
+		);
+
+		// SSH client should NOT be created for template execution
+		// (it may be created for other purposes like git config, but not for running template scripts)
+		expect(events.filter((e) => e === "ssh-client-created").length).toBe(0);
 	});
 });

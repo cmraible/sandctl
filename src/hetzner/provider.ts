@@ -12,7 +12,6 @@ import {
 	DEFAULT_IMAGE,
 	DEFAULT_REGION,
 	DEFAULT_SERVER_TYPE,
-	generateCloudInit,
 } from "@/hetzner/setup";
 import { ensureSSHKey } from "@/hetzner/ssh-keys";
 import { ErrNotFound, ErrProvisionFailed, ErrTimeout } from "@/provider/errors";
@@ -89,8 +88,8 @@ export class HetznerProvider implements Provider, SSHKeyManager {
 			},
 		};
 
-		if (!opts.skipUserData) {
-			serverOpts.user_data = opts.userData ?? generateCloudInit();
+		if (!opts.skipUserData && opts.userData) {
+			serverOpts.user_data = opts.userData;
 		}
 
 		const server = await this.client.createServer(serverOpts);

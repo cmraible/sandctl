@@ -14,32 +14,15 @@ export const DEFAULT_IMAGE = "ubuntu-24.04";
 
 export function generateCloudInit(): string {
 	return `#cloud-config
-package_update: true
-package_upgrade: true
-packages:
-  - build-essential
-  - ca-certificates
-  - curl
-  - git
-  - wget
-  - jq
-  - htop
-  - mosh
-  - tmux
-  - vim
-  - zsh
-
 users:
   - name: agent
-    shell: /bin/zsh
+    shell: /bin/bash
     groups:
-      - docker
       - sudo
     sudo: "ALL=(ALL) NOPASSWD:ALL"
     ssh_authorized_keys: []
 
 runcmd:
-  # Copy root's SSH authorized_keys to agent user (Hetzner injects keys for root)
   - |
     mkdir -p /home/agent/.ssh
     if [ -f /root/.ssh/authorized_keys ]; then
@@ -50,37 +33,40 @@ runcmd:
     chown -R agent:agent /home/agent/.ssh
     chmod 700 /home/agent/.ssh
     chmod 600 /home/agent/.ssh/authorized_keys
-
-  # Install Docker Engine
-  - install -m 0755 -d /etc/apt/keyrings
-  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-  - chmod a+r /etc/apt/keyrings/docker.asc
-  - |
-    . /etc/os-release
-    echo "Types: deb
-    URIs: https://download.docker.com/linux/ubuntu
-    Suites: \${UBUNTU_CODENAME:-$VERSION_CODENAME}
-    Components: stable
-    Signed-By: /etc/apt/keyrings/docker.asc" > /etc/apt/sources.list.d/docker.sources
-  - apt-get update
-  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
-  # Install GitHub CLI
-  - curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli-archive-keyring.gpg
-  - chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
-  - echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list
-  - apt-get update
-  - apt-get install -y gh
-
-  # Install Node.js
-  - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-  - apt-get install -y nodejs
-
-  # Install Claude Code (as agent user so it's available in their PATH)
-  - su - agent -c "curl -fsSL https://claude.ai/install.sh | bash"
-
-  # Clean up
-  - apt-get autoremove -y
-  - apt-get clean
 `;
+}
+
+export function detectContentType(content: string): string {
+	const firstLine = content.trimStart().split("\n")[0];
+	if (firstLine === "#cloud-config") {
+		return "text/cloud-config";
+	}
+	return "text/x-shellscript";
+}
+
+export function assembleUserData(
+	globalBase: string,
+	layers: string[] = [],
+): string {
+	if (layers.length === 0) {
+		return globalBase;
+	}
+
+	const boundary = "==SANDCTL==";
+	const allLayers = [globalBase, ...layers];
+
+	const parts = allLayers.map((content) => {
+		const contentType = detectContentType(content);
+		const normalized = content.endsWith("\n") ? content : `${content}\n`;
+		return `--${boundary}\nContent-Type: ${contentType}\n\n${normalized}`;
+	});
+
+	return [
+		`Content-Type: multipart/mixed; boundary="${boundary}"`,
+		"MIME-Version: 1.0",
+		"",
+		...parts,
+		`--${boundary}--`,
+		"",
+	].join("\n");
 }
