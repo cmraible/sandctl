@@ -10,6 +10,7 @@ import { registerListCommand } from "@/commands/list";
 import { registerLogsCommand } from "@/commands/logs";
 import { registerNewCommand } from "@/commands/new";
 import { registerOpenCommand } from "@/commands/open";
+import { registerReapCommand } from "@/commands/reap";
 import { registerRenameCommand } from "@/commands/rename";
 import { registerStatusCommand } from "@/commands/status";
 import { registerTemplateCommand } from "@/commands/template";
@@ -35,6 +36,7 @@ program.addCommand(registerStatusCommand());
 program.addCommand(registerRenameCommand());
 program.addCommand(registerDestroyCommand());
 program.addCommand(registerExtendCommand());
+program.addCommand(registerReapCommand());
 program.addCommand(registerTemplateCommand());
 
 if (import.meta.main) {
