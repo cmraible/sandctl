@@ -30,6 +30,9 @@ export interface Config {
 	git_user_name?: string;
 	git_user_email?: string;
 	github_token?: string;
+	hooks?: {
+		"new-console-session"?: string;
+	};
 }
 
 export class NotFoundError extends Error {
