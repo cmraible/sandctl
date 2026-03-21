@@ -33,6 +33,9 @@ export interface Config {
 	claude_config_path?: string;
 	claude_oauth_token?: string;
 	post_ssh_commands?: string[];
+	hooks?: {
+		"new-console-session"?: string;
+	};
 }
 
 export class NotFoundError extends Error {

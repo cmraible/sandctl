@@ -58,6 +58,102 @@ describe("commands/console", () => {
 		expect(events).toContain("client.close");
 	});
 
+	test("runs new-console-session hook before opening console", async () => {
+		const events: string[] = [];
+
+		await runConsole("alice", {
+			store: {
+				get: async () => makeRunningSession(),
+			},
+			loadConfig: async () => ({
+				...agentModeConfig,
+				hooks: { "new-console-session": "setup.sh" },
+			}),
+			createSSHClient: () => ({
+				connect: async () => {},
+				close: async () => {},
+				exec: async () => {
+					throw new Error("not used");
+				},
+				shell: async () => {
+					throw new Error("not used");
+				},
+			}),
+			runRemoteCommand: async (_client, command) => {
+				events.push(`hook:${command}`);
+				return { stdout: "", stderr: "", exitCode: 0 };
+			},
+			openRemoteConsole: async () => {
+				events.push("console.open");
+			},
+		});
+
+		expect(events).toEqual(["hook:setup.sh", "console.open"]);
+	});
+
+	test("opens console normally when no hook configured", async () => {
+		const events: string[] = [];
+
+		await runConsole("alice", {
+			store: {
+				get: async () => makeRunningSession(),
+			},
+			loadConfig: async () => agentModeConfig,
+			createSSHClient: () => ({
+				connect: async () => {},
+				close: async () => {},
+				exec: async () => {
+					throw new Error("not used");
+				},
+				shell: async () => {
+					throw new Error("not used");
+				},
+			}),
+			runRemoteCommand: async () => {
+				events.push("hook.run");
+				return { stdout: "", stderr: "", exitCode: 0 };
+			},
+			openRemoteConsole: async () => {
+				events.push("console.open");
+			},
+		});
+
+		expect(events).toEqual(["console.open"]);
+	});
+
+	test("hook failure does not prevent console from opening", async () => {
+		const events: string[] = [];
+
+		await runConsole("alice", {
+			store: {
+				get: async () => makeRunningSession(),
+			},
+			loadConfig: async () => ({
+				...agentModeConfig,
+				hooks: { "new-console-session": "bad-script.sh" },
+			}),
+			createSSHClient: () => ({
+				connect: async () => {},
+				close: async () => {},
+				exec: async () => {
+					throw new Error("not used");
+				},
+				shell: async () => {
+					throw new Error("not used");
+				},
+			}),
+			runRemoteCommand: async () => {
+				events.push("hook.failed");
+				throw new Error("hook exploded");
+			},
+			openRemoteConsole: async () => {
+				events.push("console.open");
+			},
+		});
+
+		expect(events).toEqual(["hook.failed", "console.open"]);
+	});
+
 	test("closes SSH client when openRemoteConsole throws", async () => {
 		const events: string[] = [];
 

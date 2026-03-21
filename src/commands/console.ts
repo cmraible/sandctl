@@ -16,6 +16,7 @@ import {
 	type SSHClientOptions,
 } from "@/ssh/client";
 import { type ConsoleOptions, openConsole } from "@/ssh/console";
+import { type ExecResult, exec } from "@/ssh/exec";
 
 export { CommandExitError };
 
@@ -23,6 +24,10 @@ interface Dependencies {
 	store: SessionStoreLike;
 	loadConfig: (configPath?: string) => Promise<Config>;
 	createSSHClient: (options: SSHClientOptions) => SSHRuntimeClient;
+	runRemoteCommand: (
+		client: SSHClientLike,
+		command: string,
+	) => Promise<ExecResult>;
 	openRemoteConsole: (
 		client: SSHClientLike,
 		options?: ConsoleOptions,
@@ -33,6 +38,7 @@ const defaultDependencies: Dependencies = {
 	store: new SessionStore(),
 	loadConfig: load,
 	createSSHClient: (options) => new SSHClient(options),
+	runRemoteCommand: exec,
 	openRemoteConsole: openConsole,
 };
 
@@ -55,6 +61,15 @@ export async function runConsole(
 	);
 
 	await withSSHClient(client, async (c) => {
+		const hookCommand = config.hooks?.["new-console-session"];
+		if (hookCommand) {
+			try {
+				await dependencies.runRemoteCommand(c, hookCommand);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				console.warn(`Warning: new-console-session hook failed: ${message}`);
+			}
+		}
 		await dependencies.openRemoteConsole(c, {
 			initialCommands: config.post_ssh_commands,
 		});
