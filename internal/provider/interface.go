@@ -44,3 +44,13 @@ type SSHKeyManager interface {
 	// Otherwise, creates a new key and returns its ID.
 	EnsureSSHKey(ctx context.Context, name, publicKey string) (keyID string, err error)
 }
+
+// Resizer handles VM resize operations for a provider.
+// This is separate from Provider because not all providers support resizing.
+type Resizer interface {
+	// Resize changes the server type (CPU/RAM) of a VM.
+	// The provider should handle stopping and restarting the VM as needed.
+	// If upgradeDisk is true, the disk is expanded to match the new server type
+	// (prevents future downgrades).
+	Resize(ctx context.Context, id string, serverType string, upgradeDisk bool) error
+}

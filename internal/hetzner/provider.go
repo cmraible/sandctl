@@ -266,6 +266,110 @@ func (p *Provider) EnsureSSHKey(ctx context.Context, name, publicKey string) (st
 	return p.client.EnsureSSHKey(ctx, name, publicKey)
 }
 
+// Resize changes the server type of a VM, handling the stop/change/start cycle.
+// Implements provider.Resizer.
+func (p *Provider) Resize(ctx context.Context, id string, serverType string, upgradeDisk bool) error {
+	serverID, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid server ID: %w", err)
+	}
+
+	hc := p.client.HCloudClient()
+
+	server, _, err := hc.Server.GetByID(ctx, serverID)
+	if err != nil {
+		return fmt.Errorf("failed to get server: %w", err)
+	}
+	if server == nil {
+		return provider.ErrNotFound
+	}
+
+	// Step 1: Power off if running
+	if server.Status != hcloud.ServerStatusOff {
+		_, _, err = hc.Server.Shutdown(ctx, server)
+		if err != nil {
+			return fmt.Errorf("failed to shut down server: %w", err)
+		}
+
+		// Poll until server is off
+		if err := p.waitForStatus(ctx, serverID, hcloud.ServerStatusOff); err != nil {
+			return fmt.Errorf("failed waiting for server to stop: %w", err)
+		}
+
+		// Re-fetch server after status change
+		server, _, err = hc.Server.GetByID(ctx, serverID)
+		if err != nil {
+			return fmt.Errorf("failed to get server after shutdown: %w", err)
+		}
+	}
+
+	// Step 2: Change server type
+	changeOpts := hcloud.ServerChangeTypeOpts{
+		ServerType:  &hcloud.ServerType{Name: serverType},
+		UpgradeDisk: upgradeDisk,
+	}
+	_, _, err = hc.Server.ChangeType(ctx, server, changeOpts)
+	if err != nil {
+		return fmt.Errorf("failed to change server type: %w", err)
+	}
+
+	// Poll until server is off again (change_type keeps it off)
+	if err := p.waitForStatus(ctx, serverID, hcloud.ServerStatusOff); err != nil {
+		return fmt.Errorf("failed waiting for type change: %w", err)
+	}
+
+	// Step 3: Power on
+	server, _, err = hc.Server.GetByID(ctx, serverID)
+	if err != nil {
+		return fmt.Errorf("failed to get server after type change: %w", err)
+	}
+
+	_, _, err = hc.Server.Poweron(ctx, server)
+	if err != nil {
+		return fmt.Errorf("failed to power on server: %w", err)
+	}
+
+	// Poll until server is running
+	if err := p.waitForStatus(ctx, serverID, hcloud.ServerStatusRunning); err != nil {
+		return fmt.Errorf("failed waiting for server to start: %w", err)
+	}
+
+	return nil
+}
+
+// waitForStatus polls until the server reaches the desired status.
+func (p *Provider) waitForStatus(ctx context.Context, serverID int64, desired hcloud.ServerStatus) error {
+	timeout := 2 * time.Minute
+	deadline := time.Now().Add(timeout)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		if time.Now().After(deadline) {
+			return provider.ErrTimeout
+		}
+
+		server, _, err := p.client.HCloudClient().Server.GetByID(ctx, serverID)
+		if err != nil {
+			time.Sleep(pollInterval)
+			continue
+		}
+		if server == nil {
+			return provider.ErrNotFound
+		}
+
+		if server.Status == desired {
+			return nil
+		}
+
+		time.Sleep(pollInterval)
+	}
+}
+
 // mapServerStatus converts Hetzner server status to provider.VMStatus.
 func mapServerStatus(status hcloud.ServerStatus) provider.VMStatus {
 	switch status {
