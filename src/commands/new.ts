@@ -61,6 +61,7 @@ interface NewOptions {
 	timeout?: string;
 	template?: string;
 	noConsole?: boolean;
+	prompt?: string;
 }
 
 interface NewCommandSpinner {
@@ -648,9 +649,14 @@ export async function runNewCommand(
 			const client = dependencies.createSSHClient(
 				buildSSHOptions(config, session.ip_address),
 			);
+			const initialCommands = [...(config.post_ssh_commands ?? [])];
+			if (options.prompt) {
+				const escaped = options.prompt.replace(/'/g, "'\\''");
+				initialCommands.push(`claude -p '${escaped}'`);
+			}
 			await withSSHClient(client, async (c) => {
 				await dependencies.openRemoteConsole(c, {
-					initialCommands: config.post_ssh_commands,
+					initialCommands,
 				});
 			});
 		} catch (error) {
@@ -672,8 +678,12 @@ export async function runNewCommand(
 export function registerNewCommand(): Command {
 	return new Command("new")
 		.description("Create a new sandboxed session")
-		.option("-p, --provider <provider>", "Provider name")
+		.option("--provider <provider>", "Provider name")
 		.option("-T, --template <template>", "Template to initialize the session")
+		.option(
+			"-p, --prompt <prompt>",
+			"Autolaunch claude with the provided prompt",
+		)
 		.option("--region <region>", "Region override")
 		.option("--server-type <serverType>", "Server type override")
 		.option("--image <image>", "Image override")

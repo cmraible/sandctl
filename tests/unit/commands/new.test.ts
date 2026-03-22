@@ -165,6 +165,82 @@ describe("commands/new", () => {
 		]);
 	});
 
+	test("--prompt launches claude with provided prompt in console", async () => {
+		let capturedOptions: { initialCommands?: string[] } | undefined;
+		await runNewCommand({ prompt: "fix the bug" }, undefined, {
+			runNew: async () => ({
+				id: "violet",
+				status: "running",
+				provider: "hetzner",
+				provider_id: "vm-123",
+				ip_address: "203.0.113.10",
+				created_at: "2026-02-22T00:00:00Z",
+			}),
+			createSpinner: () => ({
+				succeed: () => {},
+				fail: () => {},
+				update: () => {},
+			}),
+			log: () => {},
+			loadConfig: async () => baseProviderConfig,
+			createSSHClient: () =>
+				({
+					connect: async () => {},
+					shell: async () => {},
+					exec: async () => {},
+					end: () => {},
+				}) as never,
+			openRemoteConsole: async (_client, options) => {
+				capturedOptions = options;
+			},
+			isInteractive: () => true,
+			warn: () => {},
+		});
+
+		expect(capturedOptions).toBeDefined();
+		expect(capturedOptions?.initialCommands).toContain(
+			"claude -p 'fix the bug'",
+		);
+	});
+
+	test("--prompt escapes single quotes in prompt text", async () => {
+		let capturedOptions: { initialCommands?: string[] } | undefined;
+		await runNewCommand({ prompt: "fix the user's bug" }, undefined, {
+			runNew: async () => ({
+				id: "violet",
+				status: "running",
+				provider: "hetzner",
+				provider_id: "vm-123",
+				ip_address: "203.0.113.10",
+				created_at: "2026-02-22T00:00:00Z",
+			}),
+			createSpinner: () => ({
+				succeed: () => {},
+				fail: () => {},
+				update: () => {},
+			}),
+			log: () => {},
+			loadConfig: async () => baseProviderConfig,
+			createSSHClient: () =>
+				({
+					connect: async () => {},
+					shell: async () => {},
+					exec: async () => {},
+					end: () => {},
+				}) as never,
+			openRemoteConsole: async (_client, options) => {
+				capturedOptions = options;
+			},
+			isInteractive: () => true,
+			warn: () => {},
+		});
+
+		expect(capturedOptions).toBeDefined();
+		expect(capturedOptions?.initialCommands).toContain(
+			"claude -p 'fix the user'\\''s bug'",
+		);
+	});
+
 	test("command wrapper marks spinner as failed on errors", async () => {
 		const events: string[] = [];
 		await expect(
