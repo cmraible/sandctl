@@ -77,6 +77,13 @@ export interface SSHConnectionLike {
 		callback: (error?: Error, channel?: SSHShellChannelLike) => void,
 	): void;
 	sftp(callback: (error?: Error, sftp?: SFTPWrapperLike) => void): void;
+	forwardOut(
+		srcIP: string,
+		srcPort: number,
+		dstIP: string,
+		dstPort: number,
+		callback: (error?: Error, channel?: NodeJS.ReadWriteStream) => void,
+	): void;
 	end(): void;
 }
 
@@ -100,6 +107,12 @@ export interface SSHClientLike {
 		rows?: number;
 	}): Promise<SSHShellChannelLike>;
 	sftp(): Promise<SFTPWrapperLike>;
+	forwardOut(
+		srcIP: string,
+		srcPort: number,
+		dstIP: string,
+		dstPort: number,
+	): Promise<NodeJS.ReadWriteStream>;
 }
 
 export class SSHClient implements SSHClientLike {
@@ -208,6 +221,33 @@ export class SSHClient implements SSHClientLike {
 				}
 				resolve(channel);
 			});
+		});
+	}
+
+	async forwardOut(
+		srcIP: string,
+		srcPort: number,
+		dstIP: string,
+		dstPort: number,
+	): Promise<NodeJS.ReadWriteStream> {
+		if (!this.connected) {
+			throw new Error("ssh client is not connected");
+		}
+
+		return await new Promise<NodeJS.ReadWriteStream>((resolve, reject) => {
+			this.connection.forwardOut(
+				srcIP,
+				srcPort,
+				dstIP,
+				dstPort,
+				(error, channel) => {
+					if (error || !channel) {
+						reject(error ?? new Error("failed to open forwarding channel"));
+						return;
+					}
+					resolve(channel);
+				},
+			);
 		});
 	}
 
