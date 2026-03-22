@@ -44,6 +44,31 @@ export function detectContentType(content: string): string {
 	return "text/x-shellscript";
 }
 
+const MERGE_HOW_DIRECTIVE = `merge_how:
+  - name: list
+    settings: [append]
+  - name: dict
+    settings: [no_replace, recurse_list]`;
+
+/**
+ * Inject merge_how into cloud-config layers (not the global base) so that
+ * list directives like runcmd and packages are appended rather than replaced.
+ * Skips layers that already declare merge_how or that are shell scripts.
+ */
+function ensureMergeDirective(content: string): string {
+	if (detectContentType(content) !== "text/cloud-config") {
+		return content;
+	}
+	if (content.includes("merge_how")) {
+		return content;
+	}
+	// Insert merge_how right after the #cloud-config header line
+	return content.replace(
+		/^#cloud-config\n/,
+		`#cloud-config\n${MERGE_HOW_DIRECTIVE}\n`,
+	);
+}
+
 export function assembleUserData(
 	globalBase: string,
 	layers: string[] = [],
@@ -53,7 +78,8 @@ export function assembleUserData(
 	}
 
 	const boundary = "==SANDCTL==";
-	const allLayers = [globalBase, ...layers];
+	const processedLayers = layers.map(ensureMergeDirective);
+	const allLayers = [globalBase, ...processedLayers];
 
 	const parts = allLayers.map((content) => {
 		const contentType = detectContentType(content);

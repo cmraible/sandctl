@@ -126,5 +126,45 @@ describe("hetzner/setup", () => {
 			expect(result).toContain("--==SANDCTL==\nContent-Type:");
 			expect(result).toContain("--==SANDCTL==--");
 		});
+
+		test("injects merge_how into cloud-config layers", () => {
+			const base = "#cloud-config\nusers:\n  - name: agent\n";
+			const layer = "#cloud-config\npackages:\n  - git\n";
+			const result = assembleUserData(base, [layer]);
+
+			expect(result).toContain("merge_how:");
+			expect(result).toContain("settings: [append]");
+		});
+
+		test("does not inject merge_how into the global base", () => {
+			const base = "#cloud-config\nusers:\n  - name: agent\n";
+			const layer = "#cloud-config\npackages:\n  - git\n";
+			const result = assembleUserData(base, [layer]);
+
+			// Split by boundary, the first cloud-config part (global base) should not have merge_how
+			const parts = result.split("--==SANDCTL==");
+			const basePart = parts[1]; // first part after initial boundary
+			expect(basePart).not.toContain("merge_how");
+		});
+
+		test("does not inject merge_how into shell script layers", () => {
+			const base = "#cloud-config\nusers:\n  - name: agent\n";
+			const layer = "#!/bin/bash\necho hello\n";
+			const result = assembleUserData(base, [layer]);
+
+			expect(result).not.toContain("merge_how");
+		});
+
+		test("preserves existing merge_how in layers", () => {
+			const base = "#cloud-config\nusers:\n  - name: agent\n";
+			const layer =
+				"#cloud-config\nmerge_how:\n  - name: list\n    settings: [replace]\n";
+			const result = assembleUserData(base, [layer]);
+
+			// Should have exactly one merge_how (the user's own)
+			const count = (result.match(/merge_how:/g) || []).length;
+			expect(count).toBe(1);
+			expect(result).toContain("settings: [replace]");
+		});
 	});
 });
