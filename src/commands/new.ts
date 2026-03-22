@@ -356,6 +356,16 @@ async function setupClaudeConfigViaSSH(
 				c,
 				`echo '${encoded}' | base64 -d > /etc/profile.d/claude-oauth.sh && chmod 644 /etc/profile.d/claude-oauth.sh`,
 			);
+
+			// Claude Code requires hasCompletedOnboarding to skip the interactive
+			// auth/onboarding flow even when a token is provided via env var.
+			const onboarding = Buffer.from(
+				JSON.stringify({ hasCompletedOnboarding: true }),
+			).toString("base64");
+			await sshExec(
+				c,
+				`echo '${onboarding}' | base64 -d > /home/agent/.claude.json && chown agent:agent /home/agent/.claude.json`,
+			);
 		}
 
 		await sshExec(
