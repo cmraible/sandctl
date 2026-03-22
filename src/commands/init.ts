@@ -22,6 +22,7 @@ interface InitOptions {
 	gitUserEmail?: string;
 	githubToken?: string;
 	claudeConfigPath?: string;
+	claudeOauthToken?: string;
 }
 
 const DEFAULT_REGION = "ash";
@@ -269,6 +270,12 @@ export async function runInit(
 		claudeConfigPath = existing?.claude_config_path;
 	}
 
+	const claudeOauthToken =
+		(await password({
+			message: `Claude Code OAuth token (from 'claude setup-token')${existing?.claude_oauth_token ? " (leave blank to keep existing)" : " (optional)"}`,
+			mask: true,
+		})) || existing?.claude_oauth_token;
+
 	await save(
 		resolvedConfigPath,
 		buildConfig({
@@ -283,6 +290,7 @@ export async function runInit(
 			gitUserEmail,
 			githubToken,
 			claudeConfigPath,
+			claudeOauthToken,
 		}),
 	);
 	return { config_path: resolvedConfigPath, saved: true };
@@ -310,6 +318,7 @@ function buildConfig(options: InitOptions): Config {
 		git_user_email: options.gitUserEmail,
 		github_token: options.githubToken,
 		claude_config_path: options.claudeConfigPath,
+		claude_oauth_token: options.claudeOauthToken,
 	};
 }
 
@@ -333,6 +342,10 @@ export function registerInitCommand(): Command {
 		.option("--git-user-name <name>", "Git user.name")
 		.option("--git-user-email <email>", "Git user.email")
 		.option("--github-token <token>", "GitHub personal access token")
+		.option(
+			"--claude-oauth-token <token>",
+			"Claude Code OAuth token (from 'claude setup-token')",
+		)
 		.action(async (options: InitOptions, command) => {
 			const globals = command.optsWithGlobals() as {
 				config?: string;
