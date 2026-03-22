@@ -259,5 +259,9 @@ function mapServer(server: HetznerServer): VM {
 		region: server.datacenter?.location?.name ?? DEFAULT_REGION,
 		serverType: server.server_type?.name ?? DEFAULT_SERVER_TYPE,
 		createdAt: server.created,
+		cores: server.server_type?.cores,
+		memoryGB: server.server_type?.memory,
+		diskGB: server.server_type?.disk,
+		cpuType: server.server_type?.cpu_type,
 	};
 }

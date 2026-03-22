@@ -13,6 +13,10 @@ interface VMBase {
 	region: string;
 	serverType: string;
 	createdAt: string;
+	cores?: number;
+	memoryGB?: number;
+	diskGB?: number;
+	cpuType?: string;
 }
 
 type VMProvisioningStatus = "provisioning" | "starting";

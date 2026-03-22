@@ -3,7 +3,7 @@ import { Command } from "commander";
 import { registerConsoleCommand } from "@/commands/console";
 import { registerCpCommand } from "@/commands/cp";
 import { registerDestroyCommand } from "@/commands/destroy";
-
+import { registerDetailsCommand } from "@/commands/details";
 import { registerExecCommand } from "@/commands/exec";
 import { registerExtendCommand } from "@/commands/extend";
 import { registerInitCommand } from "@/commands/init";
@@ -33,7 +33,7 @@ program.addCommand(registerLogsCommand());
 program.addCommand(registerConsoleCommand());
 program.addCommand(registerOpenCommand());
 program.addCommand(registerStatusCommand());
-
+program.addCommand(registerDetailsCommand());
 program.addCommand(registerRenameCommand());
 program.addCommand(registerDestroyCommand());
 program.addCommand(registerExtendCommand());

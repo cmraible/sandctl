@@ -17,7 +17,13 @@ export interface HetznerServer {
 			ip: string | null;
 		} | null;
 	};
-	server_type?: { name: string };
+	server_type?: {
+		name: string;
+		cores?: number;
+		memory?: number;
+		disk?: number;
+		cpu_type?: string;
+	};
 	datacenter?: { location?: { name: string } };
 }
 
