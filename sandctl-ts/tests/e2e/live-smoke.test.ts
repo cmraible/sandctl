@@ -9,16 +9,26 @@ import { runBinary, shouldRunLiveSmoke } from "./helpers";
 
 interface SessionRecord {
 	id: string;
+	server_type?: string;
 }
 
 const NEW_TIMEOUT_MS = 8 * 60 * 1000;
 const LIST_TIMEOUT_MS = 60 * 1000;
 const EXEC_TIMEOUT_MS = 2 * 60 * 1000;
+const RESIZE_TIMEOUT_MS = 5 * 60 * 1000;
 const DESTROY_TIMEOUT_MS = 5 * 60 * 1000;
 const LIVE_SMOKE_TEST_TIMEOUT_MS =
 	NEW_TIMEOUT_MS +
 	LIST_TIMEOUT_MS +
 	EXEC_TIMEOUT_MS +
+	DESTROY_TIMEOUT_MS +
+	DESTROY_TIMEOUT_MS +
+	60_000;
+const RESIZE_SMOKE_TEST_TIMEOUT_MS =
+	NEW_TIMEOUT_MS +
+	LIST_TIMEOUT_MS +
+	RESIZE_TIMEOUT_MS +
+	LIST_TIMEOUT_MS +
 	DESTROY_TIMEOUT_MS +
 	DESTROY_TIMEOUT_MS +
 	60_000;
@@ -227,5 +237,99 @@ describe("sandctl live smoke gating", () => {
 			}
 		},
 		LIVE_SMOKE_TEST_TIMEOUT_MS,
+	);
+
+	liveSmokeTest(
+		"runs new -> resize -> list (verify type) -> destroy against Hetzner",
+		() => {
+			const token = process.env.HETZNER_API_TOKEN;
+			if (!token) {
+				throw new Error(
+					"HETZNER_API_TOKEN is required when live smoke is enabled",
+				);
+			}
+
+			const homeDir = mkdtempSync(path.join(tmpdir(), "sandctl-resize-smoke-"));
+			const configPath = path.join(homeDir, "config");
+			const sshPublicKey =
+				process.env.SSH_PUBLIC_KEY && existsSync(process.env.SSH_PUBLIC_KEY)
+					? process.env.SSH_PUBLIC_KEY
+					: generateSSHKeyPair(homeDir);
+
+			writeConfig(configPath, token, sshPublicKey);
+
+			const env = {
+				HOME: homeDir,
+			};
+
+			const createdSessionIDs: string[] = [];
+			try {
+				// Step 1: Create new session (defaults to cpx11)
+				const newResult = runBinary(["--config", configPath, "new"], {
+					env,
+					timeoutMs: NEW_TIMEOUT_MS,
+				});
+				assertCliSuccess("new", newResult);
+
+				// Step 2: List to get the session ID
+				const listResult = runBinary(
+					["--config", configPath, "list", "--format", "json"],
+					{ env, timeoutMs: LIST_TIMEOUT_MS },
+				);
+				assertCliSuccess("list", listResult);
+
+				const sessions = JSON.parse(listResult.stdout) as SessionRecord[];
+				expect(sessions.length).toBeGreaterThan(0);
+
+				const target = sessions[0];
+				expect(target.id.length).toBeGreaterThan(0);
+				createdSessionIDs.push(target.id);
+
+				// Step 3: Resize from cpx11 to cpx21
+				const resizeResult = runBinary(
+					[
+						"--config",
+						configPath,
+						"resize",
+						target.id,
+						"cpx21",
+						"--force",
+					],
+					{ env, timeoutMs: RESIZE_TIMEOUT_MS },
+				);
+				assertCliSuccess("resize", resizeResult);
+				expect(resizeResult.stdout).toContain("resized to cpx21");
+
+				// Step 4: List again and verify the server type changed
+				const postResizeList = runBinary(
+					["--config", configPath, "list", "--format", "json"],
+					{ env, timeoutMs: LIST_TIMEOUT_MS },
+				);
+				assertCliSuccess("post-resize list", postResizeList);
+
+				const postResizeSessions = JSON.parse(
+					postResizeList.stdout,
+				) as SessionRecord[];
+				const resized = postResizeSessions.find((s) => s.id === target.id);
+				expect(resized).toBeDefined();
+				expect(resized?.server_type).toBe("cpx21");
+
+				// Step 5: Destroy
+				const destroyResult = runBinary(
+					["--config", configPath, "destroy", target.id, "--force"],
+					{ env, timeoutMs: DESTROY_TIMEOUT_MS },
+				);
+				assertCliSuccess("destroy", destroyResult);
+				createdSessionIDs.splice(createdSessionIDs.indexOf(target.id), 1);
+			} finally {
+				for (const sessionID of createdSessionIDs) {
+					runBinary(["--config", configPath, "destroy", sessionID, "--force"], {
+						env,
+						timeoutMs: DESTROY_TIMEOUT_MS,
+					});
+				}
+			}
+		},
+		RESIZE_SMOKE_TEST_TIMEOUT_MS,
 	);
 });

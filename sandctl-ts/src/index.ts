@@ -6,6 +6,7 @@ import { registerExecCommand } from "@/commands/exec";
 import { registerInitCommand } from "@/commands/init";
 import { registerListCommand } from "@/commands/list";
 import { registerNewCommand } from "@/commands/new";
+import { registerResizeCommand } from "@/commands/resize";
 import { registerTemplateCommand } from "@/commands/template";
 import { registerVersionCommand } from "@/commands/version";
 
@@ -22,6 +23,7 @@ program.addCommand(registerListCommand());
 program.addCommand(registerExecCommand());
 program.addCommand(registerConsoleCommand());
 program.addCommand(registerDestroyCommand());
+program.addCommand(registerResizeCommand());
 program.addCommand(registerTemplateCommand());
 
 if (import.meta.main) {

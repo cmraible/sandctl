@@ -32,6 +32,13 @@ export interface HetznerClientLike {
 	createSSHKey(name: string, publicKey: string): Promise<HetznerSSHKey>;
 	listSSHKeys(fingerprint?: string): Promise<HetznerSSHKey[]>;
 	listDatacenters(): Promise<Array<{ id: number; name: string }>>;
+	shutdownServer(id: string): Promise<void>;
+	poweronServer(id: string): Promise<void>;
+	changeServerType(
+		id: string,
+		serverType: string,
+		upgradeDisk: boolean,
+	): Promise<void>;
 }
 
 export class HetznerProvider implements Provider, SSHKeyManager {
@@ -183,6 +190,65 @@ export class HetznerProvider implements Provider, SSHKeyManager {
 		}
 
 		return false;
+	}
+
+	async resize(
+		id: string,
+		serverType: string,
+		upgradeDisk = false,
+	): Promise<void> {
+		const RESIZE_TIMEOUT_MS = 2 * 60 * 1000;
+
+		// Step 1: Shut down if not already off
+		const server = await this.get(id);
+		if (server.status !== "stopped") {
+			await this.client.shutdownServer(id);
+			await this.waitForStatus(id, "off", RESIZE_TIMEOUT_MS);
+		}
+
+		// Step 2: Change server type
+		await this.client.changeServerType(id, serverType, upgradeDisk);
+		// Wait for it to settle (stays off after type change)
+		await this.waitForStatus(id, "off", RESIZE_TIMEOUT_MS);
+
+		// Step 3: Power on
+		await this.client.poweronServer(id);
+		await this.waitForStatus(id, "running", RESIZE_TIMEOUT_MS);
+	}
+
+	private async waitForStatus(
+		id: string,
+		desired: string,
+		timeoutMs: number,
+	): Promise<void> {
+		const deadline = this.now() + timeoutMs;
+
+		while (this.now() < deadline) {
+			try {
+				const server = await this.client.getServer(id);
+				if (server.status === desired) {
+					return;
+				}
+			} catch (error) {
+				if (error instanceof ErrNotFound) {
+					throw error;
+				}
+				// transient error, retry
+			}
+
+			const delay = Math.min(
+				POLL_INTERVAL_MS,
+				Math.max(0, deadline - this.now()),
+			);
+			if (delay <= 0) {
+				break;
+			}
+			await this.sleep(delay);
+		}
+
+		throw new ErrTimeout(
+			`timed out waiting for server ${id} to reach status '${desired}'`,
+		);
 	}
 
 	ensureSSHKey(name: string, publicKey: string): Promise<string> {
