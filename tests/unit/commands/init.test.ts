@@ -125,6 +125,30 @@ describe("init command (non-interactive)", () => {
 		}
 	});
 
+	test("saves claude_oauth_token when provided", async () => {
+		const tmpDir = mkdtempSync(path.join(os.tmpdir(), "sandctl-ts-init-"));
+		try {
+			const configPath = path.join(tmpDir, "config.yaml");
+
+			await runInit(
+				{
+					hetznerToken: "token",
+					sshAgent: true,
+					claudeOauthToken: "sk-ant-oat01-test-token",
+				},
+				configPath,
+			);
+
+			const config = parse(readFileSync(configPath, "utf8")) as Record<
+				string,
+				unknown
+			>;
+			expect(config.claude_oauth_token).toBe("sk-ant-oat01-test-token");
+		} finally {
+			rmSync(tmpDir, { recursive: true, force: true });
+		}
+	});
+
 	test("returns result object with config path", async () => {
 		const tmpDir = mkdtempSync(path.join(os.tmpdir(), "sandctl-ts-init-"));
 		try {

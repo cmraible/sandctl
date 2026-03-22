@@ -17,6 +17,7 @@ import {
 	getProviderConfig,
 	getPublicKeyFromAgent,
 	getSSHPublicKey,
+	hasClaudeOAuthToken,
 	hasGitConfig,
 	hasGitHubToken,
 	InsecurePermissionsError,
@@ -176,6 +177,13 @@ providers:
 			});
 			expect(hasGitConfig(config)).toBeTrue();
 			expect(hasGitHubToken(config)).toBeTrue();
+			expect(hasClaudeOAuthToken(config)).toBeFalse();
+			expect(
+				hasClaudeOAuthToken({
+					...config,
+					claude_oauth_token: "sk-ant-oat01-x",
+				}),
+			).toBeTrue();
 		} finally {
 			rmSync(tmpDir, { recursive: true, force: true });
 		}

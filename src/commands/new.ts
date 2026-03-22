@@ -14,6 +14,7 @@ import {
 	getProviderConfig,
 	getSSHPublicKey,
 	hasClaudeConfig,
+	hasClaudeOAuthToken,
 	hasGitConfig,
 	load,
 	type ProviderConfig,
@@ -311,35 +312,50 @@ async function setupClaudeConfigViaSSH(
 	host: string,
 	deps: Pick<Dependencies, "createSSHClient">,
 ): Promise<void> {
-	if (!hasClaudeConfig(config) || !config.claude_config_path) {
+	const hasConfig = hasClaudeConfig(config) && config.claude_config_path;
+	const hasToken = hasClaudeOAuthToken(config);
+
+	if (!hasConfig && !hasToken) {
 		return;
 	}
 
-	const claudeDir = expandTilde(config.claude_config_path);
 	const sshOptions = { ...buildSSHOptions(config, host), username: "root" };
 	const client = deps.createSSHClient(sshOptions);
 
 	await withSSHClient(client, async (c) => {
 		await sshExec(c, "mkdir -p /home/agent/.claude");
 
-		const filesToCopy = ["settings.json", "CLAUDE.md"];
-		for (const file of filesToCopy) {
-			const filePath = path.join(claudeDir, file);
-			try {
-				const info = await stat(filePath);
-				if (!info.isFile()) continue;
-				const content = await readFile(filePath, "utf8");
-				const encoded = Buffer.from(content).toString("base64");
-				await sshExec(
-					c,
-					`echo '${encoded}' | base64 -d > /home/agent/.claude/${file}`,
-				);
-			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-					continue;
+		if (hasConfig && config.claude_config_path) {
+			const claudeDir = expandTilde(config.claude_config_path);
+			const filesToCopy = ["settings.json", "CLAUDE.md"];
+			for (const file of filesToCopy) {
+				const filePath = path.join(claudeDir, file);
+				try {
+					const info = await stat(filePath);
+					if (!info.isFile()) continue;
+					const content = await readFile(filePath, "utf8");
+					const encoded = Buffer.from(content).toString("base64");
+					await sshExec(
+						c,
+						`echo '${encoded}' | base64 -d > /home/agent/.claude/${file}`,
+					);
+				} catch (error) {
+					if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+						continue;
+					}
+					throw error;
 				}
-				throw error;
 			}
+		}
+
+		if (hasToken && config.claude_oauth_token) {
+			const encoded = Buffer.from(
+				`export CLAUDE_CODE_OAUTH_TOKEN='${config.claude_oauth_token}'\n`,
+			).toString("base64");
+			await sshExec(
+				c,
+				`echo '${encoded}' | base64 -d > /etc/profile.d/claude-oauth.sh && chmod 644 /etc/profile.d/claude-oauth.sh`,
+			);
 		}
 
 		await sshExec(

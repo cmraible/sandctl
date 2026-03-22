@@ -31,6 +31,7 @@ export interface Config {
 	git_user_email?: string;
 	github_token?: string;
 	claude_config_path?: string;
+	claude_oauth_token?: string;
 	post_ssh_commands?: string[];
 }
 
@@ -272,6 +273,10 @@ export function hasGitConfig(config: Config): boolean {
 
 export function hasClaudeConfig(config: Config): boolean {
 	return Boolean(config.claude_config_path);
+}
+
+export function hasClaudeOAuthToken(config: Config): boolean {
+	return Boolean(config.claude_oauth_token);
 }
 
 export function hasGitHubToken(config: Config): boolean {
