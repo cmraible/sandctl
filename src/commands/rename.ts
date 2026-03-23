@@ -13,8 +13,8 @@ import { NotFoundError } from "@/session/types";
 import { SSHClient, type SSHClientOptions } from "@/ssh/client";
 import { exec as sshExec } from "@/ssh/exec";
 import {
-	type SSHRuntimeClient,
 	buildSSHOptions,
+	type SSHRuntimeClient,
 	withSSHClient,
 } from "./shared/session-runtime";
 

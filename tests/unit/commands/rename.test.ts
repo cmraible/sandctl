@@ -202,9 +202,7 @@ describe("commands/rename", () => {
 	});
 
 	test("skips hostname update when session is not running", async () => {
-		const store = makeStore([
-			makeRunningSession({ status: "stopped" }),
-		]);
+		const store = makeStore([makeRunningSession({ status: "stopped" })]);
 		const commands: string[] = [];
 
 		await runRename(
