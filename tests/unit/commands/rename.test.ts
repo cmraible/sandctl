@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { runRename } from "@/commands/rename";
+import type { SSHClientLike } from "@/ssh/client";
 import { makeRunningSession } from "../../support/fixtures";
 
 function makeStore(sessions = [makeRunningSession()]) {
@@ -36,6 +37,20 @@ function noopConfig() {
 			throw new Error("no provider");
 		},
 	};
+}
+
+function fakeSSHClient(commands: string[]) {
+	return () => ({
+		connect: async () => {},
+		close: async () => {},
+		exec: async (cmd: string) => {
+			commands.push(cmd);
+			return {
+				on: (_event: string, _cb: unknown) => ({ on: () => ({}) }),
+				stderr: { on: (_event: string, _cb: unknown) => {} },
+			} as unknown as ReturnType<SSHClientLike["exec"]>;
+		},
+	});
 }
 
 describe("commands/rename", () => {
@@ -154,6 +169,84 @@ describe("commands/rename", () => {
 				resolveProvider: () => {
 					throw new Error("no provider");
 				},
+			},
+		);
+
+		expect(result).toEqual({ old_id: "alice", new_id: "bob" });
+		expect(store.sessions()[0].id).toBe("bob");
+	});
+
+	test("updates hostname on VM via SSH when session is running", async () => {
+		const store = makeStore();
+		const commands: string[] = [];
+
+		await runRename(
+			"alice",
+			"bob",
+			{ silent: true },
+			{
+				store,
+				loadConfig: async () => ({
+					default_provider: "hetzner",
+					ssh_public_key: "~/.ssh/id_ed25519.pub",
+					providers: {},
+				}),
+				resolveProvider: () => {
+					throw new Error("no provider");
+				},
+				createSSHClient: fakeSSHClient(commands),
+			},
+		);
+
+		expect(commands).toContain("hostnamectl set-hostname bob");
+	});
+
+	test("skips hostname update when session is not running", async () => {
+		const store = makeStore([
+			makeRunningSession({ status: "stopped" }),
+		]);
+		const commands: string[] = [];
+
+		await runRename(
+			"alice",
+			"bob",
+			{ silent: true },
+			{
+				store,
+				...noopConfig(),
+				createSSHClient: fakeSSHClient(commands),
+			},
+		);
+
+		expect(commands).toHaveLength(0);
+	});
+
+	test("proceeds with local rename even if SSH hostname update fails", async () => {
+		const store = makeStore();
+
+		const result = await runRename(
+			"alice",
+			"bob",
+			{ silent: true },
+			{
+				store,
+				loadConfig: async () => ({
+					default_provider: "hetzner",
+					ssh_public_key: "~/.ssh/id_ed25519.pub",
+					providers: {},
+				}),
+				resolveProvider: () => {
+					throw new Error("no provider");
+				},
+				createSSHClient: () => ({
+					connect: async () => {
+						throw new Error("connection refused");
+					},
+					close: async () => {},
+					exec: async () => {
+						throw new Error("unreachable");
+					},
+				}),
 			},
 		);
 
