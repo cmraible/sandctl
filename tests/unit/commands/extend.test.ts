@@ -110,9 +110,9 @@ describe("commands/extend", () => {
 	});
 
 	test("throws error for invalid session name format", async () => {
-		await expect(
-			runExtend("-bad", "1h", {}, store),
-		).rejects.toThrow("invalid session name format");
+		await expect(runExtend("-bad", "1h", {}, store)).rejects.toThrow(
+			"invalid session name format",
+		);
 	});
 
 	test("json mode suppresses console output and returns result", async () => {
