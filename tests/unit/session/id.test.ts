@@ -11,13 +11,17 @@ describe("session/id", () => {
 	test("validateID accepts valid names", () => {
 		expect(validateID("alice")).toBeTrue();
 		expect(validateID("bob")).toBeTrue();
+		expect(validateID("my-project")).toBeTrue();
+		expect(validateID("abc123")).toBeTrue();
+		expect(validateID("dev-server-2")).toBeTrue();
 	});
 
 	test("validateID rejects invalid names", () => {
 		expect(validateID("Alice")).toBeFalse();
-		expect(validateID("abc123")).toBeFalse();
 		expect(validateID("a")).toBeFalse();
-		expect(validateID("abcdefghijklmnop")).toBeFalse();
+		expect(validateID("-abc")).toBeFalse();
+		expect(validateID("abc-")).toBeFalse();
+		expect(validateID("a".repeat(31))).toBeFalse();
 	});
 
 	test("normalizeName lowercases input", () => {

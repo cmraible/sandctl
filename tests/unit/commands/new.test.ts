@@ -133,6 +133,88 @@ describe("commands/new", () => {
 		});
 	});
 
+	test("uses custom name when --name is provided", async () => {
+		const added: Session[] = [];
+		const provider = makeProvider();
+
+		const session = await runNew(
+			{ name: "my-project" },
+			{
+				loadConfig: async () => baseProviderConfig,
+				resolveProvider: () => provider,
+				generateSessionID: () => "violet",
+				getPublicKey: async () => "ssh-ed25519 AAAA test@local",
+				waitForCloudInit: async () => {},
+				setupGitConfig: async () => {},
+				store: {
+					list: async () => [],
+					add: async (s: Session) => {
+						added.push(s);
+					},
+					update: async () => {},
+				},
+			},
+		);
+
+		expect(session.id).toBe("my-project");
+		expect(added[0].id).toBe("my-project");
+	});
+
+	test("rejects invalid custom name", async () => {
+		const provider = makeProvider();
+
+		await expect(
+			runNew(
+				{ name: "-bad" },
+				{
+					loadConfig: async () => baseProviderConfig,
+					resolveProvider: () => provider,
+					generateSessionID: () => "violet",
+					getPublicKey: async () => "ssh-ed25519 AAAA test@local",
+					waitForCloudInit: async () => {},
+					setupGitConfig: async () => {},
+					store: {
+						list: async () => [],
+						add: async () => {},
+						update: async () => {},
+					},
+				},
+			),
+		).rejects.toThrow("invalid session name");
+	});
+
+	test("rejects duplicate custom name", async () => {
+		const provider = makeProvider();
+
+		await expect(
+			runNew(
+				{ name: "existing" },
+				{
+					loadConfig: async () => baseProviderConfig,
+					resolveProvider: () => provider,
+					generateSessionID: () => "violet",
+					getPublicKey: async () => "ssh-ed25519 AAAA test@local",
+					waitForCloudInit: async () => {},
+					setupGitConfig: async () => {},
+					store: {
+						list: async () => [
+							{
+								id: "existing",
+								status: "running",
+								provider: "hetzner",
+								provider_id: "vm-456",
+								ip_address: "203.0.113.11",
+								created_at: "2026-02-22T00:00:00Z",
+							},
+						],
+						add: async () => {},
+						update: async () => {},
+					},
+				},
+			),
+		).rejects.toThrow("already exists");
+	});
+
 	test("command wrapper shows progress and logs VM name", async () => {
 		const events: string[] = [];
 		await runNewCommand({}, undefined, {
