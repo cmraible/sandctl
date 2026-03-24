@@ -22,10 +22,9 @@ describe("hetzner/setup", () => {
 			);
 		});
 
-		test("is a minimal base without packages", () => {
+		test("installs Claude Code via native installer", () => {
 			const output = generateCloudInit();
-			expect(output).not.toContain("package_update");
-			expect(output).not.toContain("nodejs");
+			expect(output).toContain("claude.ai/install.sh");
 		});
 
 		test("adds agent user to docker group", () => {
