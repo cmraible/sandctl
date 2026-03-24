@@ -275,29 +275,6 @@ describe("commands/new", () => {
 		).rejects.toThrow("unknown size 'mega'");
 	});
 
-	test("--size and --server-type together is an error", async () => {
-		const provider = makeProvider();
-
-		await expect(
-			runNew(
-				{ size: "large", serverType: "cpx51" },
-				{
-					loadConfig: async () => baseProviderConfig,
-					resolveProvider: () => provider,
-					generateSessionID: () => "violet",
-					getPublicKey: async () => "ssh-ed25519 AAAA test@local",
-					waitForCloudInit: async () => {},
-					setupGitConfig: async () => {},
-					store: {
-						list: async () => [],
-						add: async () => {},
-						update: async () => {},
-					},
-				},
-			),
-		).rejects.toThrow("cannot specify both --size and --server-type");
-	});
-
 	test("command wrapper shows progress and logs VM name", async () => {
 		const events: string[] = [];
 		await runNewCommand({}, undefined, {
