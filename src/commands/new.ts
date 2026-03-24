@@ -33,6 +33,7 @@ import {
 	type SnapshotClientLike,
 } from "@/hetzner/snapshots";
 import { get as getProviderFromRegistry } from "@/provider/registry";
+import { resolveSize, sizesHelpText } from "@/provider/sizes";
 import { generateID, normalizeName, validateID } from "@/session/id";
 import { SessionStore } from "@/session/store";
 import { Duration, type Session } from "@/session/types";
@@ -43,7 +44,6 @@ import {
 } from "@/ssh/client";
 import { type ConsoleOptions, openConsole } from "@/ssh/console";
 import { exec as sshExec } from "@/ssh/exec";
-import { resolveSize, sizesHelpText } from "@/provider/sizes";
 import { normalizeTemplateName } from "@/template/normalize";
 import { TemplateNotFoundError, TemplateStore } from "@/template/store";
 import type { TemplateStoreLike } from "@/template/types";
