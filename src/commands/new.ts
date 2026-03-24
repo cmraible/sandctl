@@ -33,6 +33,7 @@ import {
 	type SnapshotClientLike,
 } from "@/hetzner/snapshots";
 import { get as getProviderFromRegistry } from "@/provider/registry";
+import { resolveSize, sizesHelpText } from "@/provider/sizes";
 import { generateID, normalizeName, validateID } from "@/session/id";
 import { SessionStore } from "@/session/store";
 import { Duration, type Session } from "@/session/types";
@@ -57,7 +58,7 @@ interface NewOptions {
 	name?: string;
 	provider?: string;
 	region?: string;
-	serverType?: string;
+	size?: string;
 	image?: string;
 	timeout?: string;
 	template?: string;
@@ -401,6 +402,18 @@ export async function runNew(
 
 	const config = await dependencies.loadConfig(configPath);
 
+	// Resolve --size to a server type
+	let resolvedServerType: string | undefined;
+	if (options.size) {
+		const vmSize = resolveSize(options.size);
+		if (!vmSize) {
+			throw new Error(
+				`unknown size '${options.size}'. Available sizes:\n${sizesHelpText()}`,
+			);
+		}
+		resolvedServerType = vmSize.serverType;
+	}
+
 	// -T base is not allowed — the base template is applied automatically
 	if (options.template && normalizeTemplateName(options.template) === "base") {
 		throw new Error(
@@ -502,7 +515,7 @@ export async function runNew(
 			createdVM = await provider.create({
 				name: sessionID,
 				region: options.region,
-				serverType: options.serverType,
+				serverType: resolvedServerType,
 				image: String(snapshot.id),
 				sshKeyIDs: [sshKeyID],
 				skipUserData: true,
@@ -511,7 +524,7 @@ export async function runNew(
 			createdVM = await provider.create({
 				name: sessionID,
 				region: options.region,
-				serverType: options.serverType,
+				serverType: resolvedServerType,
 				image: options.image,
 				sshKeyIDs: [sshKeyID],
 				userData,
@@ -704,7 +717,10 @@ export function registerNewCommand(): Command {
 		.option("-p, --provider <provider>", "Provider name")
 		.option("-T, --template <template>", "Template to initialize the session")
 		.option("--region <region>", "Region override")
-		.option("--server-type <serverType>", "Server type override")
+		.option(
+			"-s, --size <size>",
+			"VM size: small (3 vCPU/4 GB), medium (4 vCPU/8 GB), large (8 vCPU/16 GB), xlarge (16 vCPU/32 GB)",
+		)
 		.option("--image <image>", "Image override")
 		.option("-t, --timeout <timeout>", "Wait timeout (for example: 5m, 10m)")
 		.option(
