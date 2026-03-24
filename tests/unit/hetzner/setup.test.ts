@@ -32,6 +32,12 @@ describe("hetzner/setup", () => {
 			const output = generateCloudInit();
 			expect(output).toContain("docker");
 		});
+
+		test("installs gh CLI from official GitHub repository", () => {
+			const output = generateCloudInit();
+			expect(output).toContain("apt-get install -y gh");
+			expect(output).toContain("githubcli-archive-keyring.gpg");
+		});
 	});
 
 	describe("generatePostSnapshotSSHSetup", () => {
