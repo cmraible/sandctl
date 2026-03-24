@@ -17,6 +17,7 @@ interface VMBase {
 	memoryGB?: number;
 	diskGB?: number;
 	cpuType?: string;
+	image?: string;
 }
 
 type VMProvisioningStatus = "provisioning" | "starting";

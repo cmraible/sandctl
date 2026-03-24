@@ -72,6 +72,7 @@ export interface DetailsResult {
 	memory_gb: number | null;
 	disk_gb: number | null;
 	cpu_type: string | null;
+	image: string | null;
 	created_at: string;
 	uptime: string;
 	timeout: string | null;
@@ -93,6 +94,7 @@ function buildResult(session: Session, vm: VM | null): DetailsResult {
 		memory_gb: vm?.memoryGB ?? null,
 		disk_gb: vm?.diskGB ?? null,
 		cpu_type: vm?.cpuType ?? null,
+		image: vm?.image ?? null,
 		created_at: session.created_at,
 		uptime: formatAge(age(session)),
 		timeout: session.timeout ?? null,
@@ -136,6 +138,7 @@ function outputTable(result: DetailsResult, log: (msg: string) => void): void {
 		["Memory", result.memory_gb != null ? `${result.memory_gb} GB` : "-"],
 		["Disk", result.disk_gb != null ? `${result.disk_gb} GB` : "-"],
 		["CPU Type", result.cpu_type ?? "-"],
+		["Image", result.image ?? "-"],
 		["Created", formatCreatedAt(result.created_at)],
 		["Uptime", result.uptime],
 		["Timeout", result.timeout ?? "-"],
@@ -154,6 +157,7 @@ function outputTable(result: DetailsResult, log: (msg: string) => void): void {
 
 export function registerDetailsCommand(): Command {
 	return new Command("details")
+		.alias("info")
 		.description("Show detailed VM information including hardware specs")
 		.argument("<name>")
 		.action(async (name: string, _options: unknown, command: Command) => {

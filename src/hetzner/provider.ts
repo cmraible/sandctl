@@ -263,5 +263,6 @@ function mapServer(server: HetznerServer): VM {
 		memoryGB: server.server_type?.memory,
 		diskGB: server.server_type?.disk,
 		cpuType: server.server_type?.cpu_type,
+		image: server.image?.description || server.image?.name,
 	};
 }

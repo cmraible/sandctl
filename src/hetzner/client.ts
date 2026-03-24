@@ -25,6 +25,7 @@ export interface HetznerServer {
 		cpu_type?: string;
 	};
 	datacenter?: { location?: { name: string } };
+	image?: { name: string; description: string } | null;
 }
 
 export interface HetznerSSHKey {
