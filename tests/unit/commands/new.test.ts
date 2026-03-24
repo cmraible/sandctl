@@ -215,6 +215,89 @@ describe("commands/new", () => {
 		).rejects.toThrow("already exists");
 	});
 
+	test("--size resolves to correct server type", async () => {
+		let createdOpts: Record<string, unknown> = {};
+		const provider = makeProvider({
+			create: async (opts) => {
+				createdOpts = opts;
+				return {
+					id: "vm-123",
+					name: "violet",
+					status: "running",
+					ipAddress: "203.0.113.10",
+					region: "ash",
+					serverType: "cpx41",
+					createdAt: "2026-02-22T00:00:00Z",
+				};
+			},
+		});
+
+		await runNew(
+			{ size: "large" },
+			{
+				loadConfig: async () => baseProviderConfig,
+				resolveProvider: () => provider,
+				generateSessionID: () => "violet",
+				getPublicKey: async () => "ssh-ed25519 AAAA test@local",
+				waitForCloudInit: async () => {},
+				setupGitConfig: async () => {},
+				store: {
+					list: async () => [],
+					add: async () => {},
+					update: async () => {},
+				},
+			},
+		);
+
+		expect(createdOpts.serverType).toBe("cpx41");
+	});
+
+	test("--size rejects unknown size names", async () => {
+		const provider = makeProvider();
+
+		await expect(
+			runNew(
+				{ size: "mega" },
+				{
+					loadConfig: async () => baseProviderConfig,
+					resolveProvider: () => provider,
+					generateSessionID: () => "violet",
+					getPublicKey: async () => "ssh-ed25519 AAAA test@local",
+					waitForCloudInit: async () => {},
+					setupGitConfig: async () => {},
+					store: {
+						list: async () => [],
+						add: async () => {},
+						update: async () => {},
+					},
+				},
+			),
+		).rejects.toThrow("unknown size 'mega'");
+	});
+
+	test("--size and --server-type together is an error", async () => {
+		const provider = makeProvider();
+
+		await expect(
+			runNew(
+				{ size: "large", serverType: "cpx51" },
+				{
+					loadConfig: async () => baseProviderConfig,
+					resolveProvider: () => provider,
+					generateSessionID: () => "violet",
+					getPublicKey: async () => "ssh-ed25519 AAAA test@local",
+					waitForCloudInit: async () => {},
+					setupGitConfig: async () => {},
+					store: {
+						list: async () => [],
+						add: async () => {},
+						update: async () => {},
+					},
+				},
+			),
+		).rejects.toThrow("cannot specify both --size and --server-type");
+	});
+
 	test("command wrapper shows progress and logs VM name", async () => {
 		const events: string[] = [];
 		await runNewCommand({}, undefined, {

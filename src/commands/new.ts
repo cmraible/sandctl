@@ -43,6 +43,7 @@ import {
 } from "@/ssh/client";
 import { type ConsoleOptions, openConsole } from "@/ssh/console";
 import { exec as sshExec } from "@/ssh/exec";
+import { resolveSize, sizesHelpText } from "@/provider/sizes";
 import { normalizeTemplateName } from "@/template/normalize";
 import { TemplateNotFoundError, TemplateStore } from "@/template/store";
 import type { TemplateStoreLike } from "@/template/types";
@@ -57,6 +58,7 @@ interface NewOptions {
 	name?: string;
 	provider?: string;
 	region?: string;
+	size?: string;
 	serverType?: string;
 	image?: string;
 	timeout?: string;
@@ -401,6 +403,22 @@ export async function runNew(
 
 	const config = await dependencies.loadConfig(configPath);
 
+	// Resolve --size to a server type
+	if (options.size) {
+		if (options.serverType) {
+			throw new Error(
+				"cannot specify both --size and --server-type. Use one or the other.",
+			);
+		}
+		const vmSize = resolveSize(options.size);
+		if (!vmSize) {
+			throw new Error(
+				`unknown size '${options.size}'. Available sizes:\n${sizesHelpText()}`,
+			);
+		}
+		options.serverType = vmSize.serverType;
+	}
+
 	// -T base is not allowed — the base template is applied automatically
 	if (options.template && normalizeTemplateName(options.template) === "base") {
 		throw new Error(
@@ -704,6 +722,10 @@ export function registerNewCommand(): Command {
 		.option("-p, --provider <provider>", "Provider name")
 		.option("-T, --template <template>", "Template to initialize the session")
 		.option("--region <region>", "Region override")
+		.option(
+			"-s, --size <size>",
+			"VM size: small (3 vCPU/4 GB), medium (4 vCPU/8 GB), large (8 vCPU/16 GB), xlarge (16 vCPU/32 GB)",
+		)
 		.option("--server-type <serverType>", "Server type override")
 		.option("--image <image>", "Image override")
 		.option("-t, --timeout <timeout>", "Wait timeout (for example: 5m, 10m)")
