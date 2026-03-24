@@ -5,6 +5,7 @@ export interface Provider {
 	create(opts: CreateOpts): Promise<VM>;
 	get(id: string): Promise<VM>;
 	delete(id: string): Promise<void>;
+	reboot(id: string): Promise<void>;
 	list(): Promise<VM[]>;
 	waitReady(id: string, timeoutMs: number): Promise<void>;
 }

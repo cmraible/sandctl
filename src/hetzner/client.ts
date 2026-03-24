@@ -171,6 +171,12 @@ export class HetznerClient {
 		await this.request<void>(`/images/${id}`, { method: "DELETE" });
 	}
 
+	async rebootServer(id: string): Promise<void> {
+		await this.request<void>(`/servers/${id}/actions/reboot`, {
+			method: "POST",
+		});
+	}
+
 	async listDatacenters(): Promise<Array<{ id: number; name: string }>> {
 		const response = await this.request<{
 			datacenters: Array<{ id: number; name: string }>;
