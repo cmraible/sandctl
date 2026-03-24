@@ -22,10 +22,9 @@ describe("hetzner/setup", () => {
 			);
 		});
 
-		test("installs Node.js and Claude Code", () => {
+		test("installs Claude Code via native installer", () => {
 			const output = generateCloudInit();
-			expect(output).toContain("apt-get install -y nodejs");
-			expect(output).toContain("npm install -g @anthropic-ai/claude-code");
+			expect(output).toContain("claude.ai/install.sh");
 		});
 
 		test("adds agent user to docker group", () => {
