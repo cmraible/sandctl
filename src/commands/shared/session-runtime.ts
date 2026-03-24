@@ -7,22 +7,22 @@
  */
 
 import {
-	resolveSession as coreResolveSession,
-	assertRunnable as coreAssertRunnable,
-} from "@/core/sessions";
-import {
 	SessionNotFoundError,
 	SessionNotReadyError,
 	ValidationError,
 } from "@/core/errors";
+import {
+	assertRunnable as coreAssertRunnable,
+	resolveSession as coreResolveSession,
+} from "@/core/sessions";
 import type { SessionStoreReader } from "@/core/types";
 import type { Session } from "@/session/types";
 
 // Re-export SSH helpers from their canonical location
 export {
+	buildSSHOptions,
 	type SSHRuntimeClient,
 	withSSHClient,
-	buildSSHOptions,
 } from "@/ssh/client";
 
 // ---------------------------------------------------------------------------

@@ -1,15 +1,6 @@
 import { Command } from "commander";
-
-import {
-	listSessions,
-	formatTimeout,
-	formatCreatedAt,
-} from "@/core/sessions";
-import {
-	type Config,
-	load,
-	type ProviderConfig,
-} from "@/config/config";
+import { type Config, load, type ProviderConfig } from "@/config/config";
+import { formatCreatedAt, formatTimeout, listSessions } from "@/core/sessions";
 import { get as getProviderFromRegistry } from "@/provider/registry";
 import { SessionStore } from "@/session/store";
 import { type Session, timeoutRemaining } from "@/session/types";

@@ -1,16 +1,11 @@
 import { Command } from "commander";
-
-import { renameSession, type RenameResult } from "@/core/sessions";
 import { mapDomainError } from "@/commands/shared/session-runtime";
-import {
-	type Config,
-	load,
-	type ProviderConfig,
-} from "@/config/config";
+import { type Config, load, type ProviderConfig } from "@/config/config";
+import { type RenameResult, renameSession } from "@/core/sessions";
 import { get as getProviderFromRegistry } from "@/provider/registry";
 import { SessionStore } from "@/session/store";
 
-export { type RenameResult };
+export type { RenameResult };
 
 export { CommandExitError } from "@/commands/shared/session-runtime";
 
@@ -58,9 +53,7 @@ export async function runRename(
 		);
 
 		if (!options.silent) {
-			console.log(
-				`Renamed session '${result.old_id}' to '${result.new_id}'.`,
-			);
+			console.log(`Renamed session '${result.old_id}' to '${result.new_id}'.`);
 		}
 
 		return result;

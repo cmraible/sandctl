@@ -1,9 +1,8 @@
 import { Command } from "commander";
-
-import { getLogs } from "@/core/ssh";
 import { mapDomainError } from "@/commands/shared/session-runtime";
-import type { SessionStoreReader } from "@/core/types";
 import { type Config, load } from "@/config/config";
+import { getLogs } from "@/core/ssh";
+import type { SessionStoreReader } from "@/core/types";
 import { SessionStore } from "@/session/store";
 import {
 	SSHClient,

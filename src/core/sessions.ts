@@ -13,8 +13,8 @@ import {
 	getProviderConfig,
 	type ProviderConfig,
 } from "@/config/config";
-import type { Provider } from "@/provider/interface";
 import type { VMStatus } from "@/provider";
+import type { Provider } from "@/provider/interface";
 import type { VM } from "@/provider/types";
 import { normalizeName, validateID } from "@/session/id";
 import type { Session, Status } from "@/session/types";
@@ -32,7 +32,7 @@ import {
 	SessionNotReadyError,
 	ValidationError,
 } from "./errors";
-import type { OnProgress, SessionStoreReader, SessionStoreReadWriter } from "./types";
+import type { SessionStoreReader, SessionStoreReadWriter } from "./types";
 
 // ---------------------------------------------------------------------------
 // Session resolution — shared by all commands
@@ -114,9 +114,7 @@ export function formatTimeout(remaining: number | null): string {
 	}
 	if (remaining >= 60 * 60 * 1000) {
 		const hours = Math.floor(remaining / (60 * 60 * 1000));
-		const minutes = Math.floor(
-			(remaining % (60 * 60 * 1000)) / (60 * 1000),
-		);
+		const minutes = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000));
 		if (minutes > 0) {
 			return `${hours}h${minutes}m remaining`;
 		}
@@ -137,9 +135,7 @@ function formatAge(ms: number): string {
 	}
 	if (hours > 0) {
 		const remainingMinutes = minutes % 60;
-		return remainingMinutes > 0
-			? `${hours}h${remainingMinutes}m`
-			: `${hours}h`;
+		return remainingMinutes > 0 ? `${hours}h${remainingMinutes}m` : `${hours}h`;
 	}
 	if (minutes > 0) {
 		return `${minutes}m`;
@@ -158,10 +154,7 @@ export function formatCreatedAt(createdAt: string): string {
 interface ListSessionsDeps {
 	store: SessionStoreReadWriter;
 	loadConfig?: (configPath?: string) => Promise<Config>;
-	resolveProvider?: (
-		name: string,
-		config: ProviderConfig,
-	) => Provider;
+	resolveProvider?: (name: string, config: ProviderConfig) => Provider;
 	warn?: (message: string) => void;
 }
 
@@ -172,7 +165,7 @@ interface ListSessionsDeps {
 export async function listSessions(
 	options: { all: boolean; sync?: boolean },
 	deps: ListSessionsDeps,
-	configPath?: string,
+	_configPath?: string,
 ): Promise<Session[]> {
 	let sessions = (
 		options.all ? await deps.store.list() : await deps.store.listActive()
@@ -261,10 +254,7 @@ async function syncProviderSessions(
 		for (const session of providerSessions) {
 			const vm = vmByID.get(session.provider_id);
 			if (!vm) {
-				if (
-					session.status === "running" ||
-					session.status === "provisioning"
-				) {
+				if (session.status === "running" || session.status === "provisioning") {
 					session.status = "stopped";
 					await deps.store.update(session.id, { status: "stopped" });
 				}
@@ -346,10 +336,7 @@ export interface DestroyResult {
 interface DestroyDeps {
 	store: SessionStoreReader & { remove(id: string): Promise<void> };
 	loadConfig: (configPath?: string) => Promise<Config>;
-	resolveProvider: (
-		name: string,
-		config: ProviderConfig,
-	) => Provider;
+	resolveProvider: (name: string, config: ProviderConfig) => Provider;
 	resolveLegacyProvider: (
 		name: string,
 	) => { deleteVM(id: string): Promise<void> } | undefined;
@@ -392,10 +379,7 @@ export async function destroySession(
 		const config = await deps.loadConfig(configPath);
 		const providerConfig = getProviderConfig(config, session.provider);
 		if (providerConfig) {
-			const provider = deps.resolveProvider(
-				session.provider,
-				providerConfig,
-			);
+			const provider = deps.resolveProvider(session.provider, providerConfig);
 			await provider.delete(session.provider_id);
 			deletionAttempted = true;
 		}
@@ -452,10 +436,7 @@ interface RenameStoreLike {
 interface RenameDeps {
 	store: RenameStoreLike;
 	loadConfig: (configPath?: string) => Promise<Config>;
-	resolveProvider: (
-		name: string,
-		config: ProviderConfig,
-	) => Provider;
+	resolveProvider: (name: string, config: ProviderConfig) => Provider;
 }
 
 interface ProviderWithClient {

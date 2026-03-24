@@ -146,7 +146,10 @@ export async function withSSHClient<T>(
 /**
  * Builds `SSHClientOptions` from a config and a target host address.
  */
-export function buildSSHOptions(config: Config, host: string): SSHClientOptions {
+export function buildSSHOptions(
+	config: Config,
+	host: string,
+): SSHClientOptions {
 	if (config.ssh_key_source === "agent") {
 		return {
 			host,

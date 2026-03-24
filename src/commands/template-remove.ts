@@ -1,8 +1,7 @@
 import { confirm as inquirerConfirm } from "@inquirer/prompts";
 import { Command } from "commander";
-
-import { removeTemplate } from "@/core/templates";
 import { ValidationError } from "@/core/errors";
+import { removeTemplate } from "@/core/templates";
 import { TemplateStore } from "@/template/store";
 import type { TemplateStoreLike } from "@/template/types";
 

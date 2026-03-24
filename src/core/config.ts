@@ -6,13 +6,10 @@
  */
 
 import type { Config } from "@/config/config";
-import { getProviderConfig } from "@/config/config";
 import type { Provider } from "@/provider/interface";
 import type { VM } from "@/provider/types";
 import { age, type Session, timeoutRemaining } from "@/session/types";
-
-import { resolveSession, formatTimeout, formatCreatedAt } from "./sessions";
-import { assertRunnable } from "./sessions";
+import { assertRunnable, formatTimeout, resolveSession } from "./sessions";
 import type { SessionStoreReader } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -46,9 +43,7 @@ export function buildConfig(values: InitConfigValues): Config {
 		default_provider: "hetzner",
 		ssh_key_source: values.sshAgent ? "agent" : undefined,
 		ssh_public_key: values.sshAgent ? undefined : values.sshPublicKey,
-		ssh_key_fingerprint: values.sshAgent
-			? values.sshKeyFingerprint
-			: undefined,
+		ssh_key_fingerprint: values.sshAgent ? values.sshKeyFingerprint : undefined,
 		providers: {
 			hetzner: {
 				token: values.hetznerToken ?? "",
@@ -102,9 +97,7 @@ function formatAge(ms: number): string {
 	}
 	if (hours > 0) {
 		const remainingMinutes = minutes % 60;
-		return remainingMinutes > 0
-			? `${hours}h${remainingMinutes}m`
-			: `${hours}h`;
+		return remainingMinutes > 0 ? `${hours}h${remainingMinutes}m` : `${hours}h`;
 	}
 	if (minutes > 0) {
 		return `${minutes}m`;

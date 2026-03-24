@@ -5,11 +5,6 @@ import { isatty } from "node:tty";
 import { Command } from "commander";
 import { createSpinner } from "nanospinner";
 import {
-	buildSSHOptions,
-	type SSHRuntimeClient,
-	withSSHClient,
-} from "@/ssh/client";
-import {
 	type Config,
 	getProviderConfig,
 	getSSHPublicKey,
@@ -37,9 +32,12 @@ import { generateID, normalizeName, validateID } from "@/session/id";
 import { SessionStore } from "@/session/store";
 import { Duration, type Session } from "@/session/types";
 import {
+	buildSSHOptions,
 	SSHClient,
 	type SSHClientLike,
 	type SSHClientOptions,
+	type SSHRuntimeClient,
+	withSSHClient,
 } from "@/ssh/client";
 import { type ConsoleOptions, openConsole } from "@/ssh/console";
 import { exec as sshExec } from "@/ssh/exec";

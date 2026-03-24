@@ -1,9 +1,8 @@
 import { spawn } from "node:child_process";
 import { platform } from "node:os";
 import { Command } from "commander";
-
-import { getSessionUrl } from "@/core/config";
 import { mapDomainError } from "@/commands/shared/session-runtime";
+import { getSessionUrl } from "@/core/config";
 import type { SessionStoreReader } from "@/core/types";
 import { SessionStore } from "@/session/store";
 

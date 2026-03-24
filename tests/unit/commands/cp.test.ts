@@ -51,9 +51,7 @@ function makeMockSFTP(): SFTPWrapperLike {
 	};
 }
 
-function makeBaseDeps(
-	overrides: Partial<CpDeps> = {},
-): Partial<CpDeps> {
+function makeBaseDeps(overrides: Partial<CpDeps> = {}): Partial<CpDeps> {
 	const events: string[] = [];
 	return {
 		store: {

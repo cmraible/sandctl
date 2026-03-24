@@ -1,7 +1,6 @@
 import { Command } from "commander";
-
-import { addTemplate } from "@/core/templates";
 import { ValidationError } from "@/core/errors";
+import { addTemplate } from "@/core/templates";
 import { TemplateStore } from "@/template/store";
 import { openInEditor } from "@/utils/editor";
 
@@ -23,12 +22,16 @@ export async function runTemplateAdd(
 	store = new TemplateStore(),
 	deps: Partial<Dependencies> = {},
 ): Promise<void> {
-	const { log, errLog, openEditor: edit } = {
+	const {
+		log,
+		errLog,
+		openEditor: edit,
+	} = {
 		...defaultDependencies,
 		...deps,
 	};
 
-	let result;
+	let result: Awaited<ReturnType<typeof addTemplate>>;
 	try {
 		result = await addTemplate(name, store);
 	} catch (error) {

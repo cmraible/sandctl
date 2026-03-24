@@ -1,11 +1,10 @@
 import { Command } from "commander";
-
+import { mapDomainError } from "@/commands/shared/session-runtime";
 import {
-	getSessionStatus,
 	formatCreatedAt,
+	getSessionStatus,
 	type StatusResult,
 } from "@/core/sessions";
-import { mapDomainError } from "@/commands/shared/session-runtime";
 import type { SessionStoreReader } from "@/core/types";
 import { SessionStore } from "@/session/store";
 

@@ -1,15 +1,14 @@
 import { Command } from "commander";
-
-import { resolveSession, assertRunnable } from "@/core/sessions";
 import {
+	buildSSHOptions,
 	CommandExitError,
 	mapDomainError,
 	type SSHRuntimeClient,
-	buildSSHOptions,
 	withSSHClient,
 } from "@/commands/shared/session-runtime";
-import type { SessionStoreReader } from "@/core/types";
 import { type Config, load } from "@/config/config";
+import { assertRunnable, resolveSession } from "@/core/sessions";
+import type { SessionStoreReader } from "@/core/types";
 import { SessionStore } from "@/session/store";
 import {
 	SSHClient,
@@ -47,7 +46,7 @@ export async function runConsole(
 		...deps,
 	};
 
-	let session;
+	let session: Awaited<ReturnType<typeof resolveSession>>;
 	try {
 		session = await resolveSession(name, dependencies.store);
 		assertRunnable(session);

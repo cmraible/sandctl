@@ -1,15 +1,14 @@
 import { Command } from "commander";
-
-import { execCommand } from "@/core/ssh";
-import { resolveSession, assertRunnable } from "@/core/sessions";
 import {
+	buildSSHOptions,
 	CommandExitError,
 	mapDomainError,
 	type SSHRuntimeClient,
-	buildSSHOptions,
 	withSSHClient,
 } from "@/commands/shared/session-runtime";
 import { type Config, load } from "@/config/config";
+import { assertRunnable, resolveSession } from "@/core/sessions";
+import { execCommand } from "@/core/ssh";
 import type { SessionStoreReader } from "@/core/types";
 import { SessionStore } from "@/session/store";
 import {
@@ -99,7 +98,7 @@ export async function runExec(
 	}
 
 	// No command provided — open interactive console
-	let session;
+	let session: Awaited<ReturnType<typeof resolveSession>>;
 	try {
 		session = await resolveSession(name, dependencies.store);
 		assertRunnable(session);
@@ -175,12 +174,7 @@ export function registerExecCommand(): Command {
 					return;
 				}
 
-				const exitCode = await runExec(
-					name,
-					options,
-					{},
-					globals.config,
-				);
+				const exitCode = await runExec(name, options, {}, globals.config);
 				if (exitCode !== 0) {
 					process.exitCode = exitCode;
 				}

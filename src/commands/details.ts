@@ -1,13 +1,9 @@
 import { Command } from "commander";
-
-import {
-	getSessionDetails,
-	type DetailsResult,
-} from "@/core/config";
-import { formatCreatedAt } from "@/core/sessions";
 import { mapDomainError } from "@/commands/shared/session-runtime";
-import type { SessionStoreReader } from "@/core/types";
 import { type Config, getProviderConfig, load } from "@/config/config";
+import { type DetailsResult, getSessionDetails } from "@/core/config";
+import { formatCreatedAt } from "@/core/sessions";
+import type { SessionStoreReader } from "@/core/types";
 import type { Provider } from "@/provider/interface";
 import { get as getProviderFromRegistry } from "@/provider/registry";
 import { SessionStore } from "@/session/store";

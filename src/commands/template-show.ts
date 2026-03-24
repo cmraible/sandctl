@@ -1,7 +1,6 @@
 import { Command } from "commander";
-
-import { showTemplate } from "@/core/templates";
 import { ValidationError } from "@/core/errors";
+import { showTemplate } from "@/core/templates";
 import { TemplateStore } from "@/template/store";
 
 interface Dependencies {

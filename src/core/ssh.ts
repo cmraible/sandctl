@@ -10,18 +10,17 @@ import { mkdir, readdir, stat } from "node:fs/promises";
 import { dirname, join, posix } from "node:path";
 
 import type { Config } from "@/config/config";
-import type { Session } from "@/session/types";
 import {
+	buildSSHOptions,
 	type SFTPWrapperLike,
 	type SSHClientLike,
 	type SSHClientOptions,
 	type SSHRuntimeClient,
-	buildSSHOptions,
 	withSSHClient,
 } from "@/ssh/client";
-import { type ExecResult, exec, execWithStreamingOutput } from "@/ssh/exec";
+import type { ExecResult } from "@/ssh/exec";
 
-import { resolveSession, assertRunnable } from "./sessions";
+import { assertRunnable, resolveSession } from "./sessions";
 import type { SessionStoreReader } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -475,11 +474,7 @@ export async function copyFiles(
 							`'${plan.local}' is a directory. Use -r to copy directories.`,
 						);
 					}
-					return await deps.uploadDirectory(
-						sftp,
-						plan.local,
-						plan.remote.path,
-					);
+					return await deps.uploadDirectory(sftp, plan.local, plan.remote.path);
 				}
 				return await deps.uploadFile(sftp, plan.local, plan.remote.path);
 			}
@@ -499,11 +494,7 @@ export async function copyFiles(
 						`'${plan.remote.path}' is a directory. Use -r to copy directories.`,
 					);
 				}
-				return await deps.downloadDirectory(
-					sftp,
-					plan.remote.path,
-					plan.local,
-				);
+				return await deps.downloadDirectory(sftp, plan.remote.path, plan.local);
 			}
 			return await deps.downloadFile(sftp, plan.remote.path, plan.local);
 		} finally {

@@ -1,27 +1,19 @@
 import { confirm } from "@inquirer/prompts";
 import { Command } from "commander";
-
 import {
+	CommandExitError,
+	mapDomainError,
+} from "@/commands/shared/session-runtime";
+import { type Config, load, type ProviderConfig } from "@/config/config";
+import { ProviderDeletionError } from "@/core/errors";
+import {
+	type DestroyResult,
 	destroySession,
 	resolveSession,
-	type DestroyResult,
 } from "@/core/sessions";
-import {
-	ProviderDeletionError,
-	SessionNotFoundError,
-	ValidationError,
-} from "@/core/errors";
-import {
-	type Config,
-	getProviderConfig,
-	load,
-	type ProviderConfig,
-} from "@/config/config";
 import { getProvider } from "@/provider";
 import { get as getProviderFromRegistry } from "@/provider/registry";
 import { SessionStore } from "@/session/store";
-
-import { CommandExitError, mapDomainError } from "@/commands/shared/session-runtime";
 
 export { CommandExitError, type DestroyResult };
 
@@ -54,7 +46,7 @@ export async function runDestroy(
 
 	// If not forcing, look up session and prompt for confirmation
 	if (!options.force) {
-		let session;
+		let session: Awaited<ReturnType<typeof resolveSession>>;
 		try {
 			session = await resolveSession(name, store);
 		} catch (error) {

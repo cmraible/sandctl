@@ -1,7 +1,6 @@
 import { Command } from "commander";
-
-import { extendSession, type ExtendResult } from "@/core/sessions";
 import { mapDomainError } from "@/commands/shared/session-runtime";
+import { type ExtendResult, extendSession } from "@/core/sessions";
 import { SessionStore } from "@/session/store";
 
 export type { ExtendResult };

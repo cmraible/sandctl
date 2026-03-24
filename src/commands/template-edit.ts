@@ -1,7 +1,6 @@
 import { Command } from "commander";
-
-import { getTemplateScriptPath } from "@/core/templates";
 import { ValidationError } from "@/core/errors";
+import { getTemplateScriptPath } from "@/core/templates";
 import { TemplateStore } from "@/template/store";
 import { openInEditor } from "@/utils/editor";
 

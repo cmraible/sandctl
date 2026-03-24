@@ -123,7 +123,9 @@ export async function showTemplate(
  */
 export async function getTemplateScriptPath(
 	name: string,
-	store: TemplateStoreLike & { getInitScriptPath(name: string): Promise<string> },
+	store: TemplateStoreLike & {
+		getInitScriptPath(name: string): Promise<string>;
+	},
 ): Promise<string> {
 	try {
 		return await store.getInitScriptPath(name);
