@@ -219,19 +219,25 @@ export class HetznerClient {
 			const errorBody = (await response
 				.json()
 				.catch(() => ({}))) as HetznerErrorResponse;
-			const message =
+			const apiMessage =
 				errorBody.error?.message ??
 				`${response.status} ${response.statusText}`.trim();
 			const code = errorBody.error?.code;
 
 			if (response.status === 401 || response.status === 403) {
-				throw new ErrAuthFailed(message);
+				throw new ErrAuthFailed(apiMessage);
 			}
 			if (response.status === 404) {
-				throw new ErrNotFound(message);
+				throw new ErrNotFound(apiMessage);
 			}
 			if (response.status === 429 || code === "resource_limit_exceeded") {
-				throw new ErrQuotaExceeded(message);
+				throw new ErrQuotaExceeded(apiMessage);
+			}
+
+			let message = code ? `${apiMessage} (${code})` : apiMessage;
+			if (code === "placement_error") {
+				message +=
+					". This usually means the server type is unavailable in the selected location. Try a different region (--region) or server type (--server-type).";
 			}
 			throw new ErrProvisionFailed(message);
 		}
