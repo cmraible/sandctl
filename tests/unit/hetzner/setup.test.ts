@@ -22,11 +22,15 @@ describe("hetzner/setup", () => {
 			);
 		});
 
-		test("is a minimal base without packages or docker", () => {
+		test("is a minimal base without packages", () => {
 			const output = generateCloudInit();
 			expect(output).not.toContain("package_update");
-			expect(output).not.toContain("docker");
 			expect(output).not.toContain("nodejs");
+		});
+
+		test("adds agent user to docker group", () => {
+			const output = generateCloudInit();
+			expect(output).toContain("docker");
 		});
 	});
 
