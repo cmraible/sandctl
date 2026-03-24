@@ -1,13 +1,14 @@
 import { Command } from "commander";
+
+import { resolveSession, assertRunnable } from "@/core/sessions";
 import {
-	assertRunnable,
-	buildSSHOptions,
 	CommandExitError,
-	lookupSession,
-	type SessionStoreLike,
+	mapDomainError,
 	type SSHRuntimeClient,
+	buildSSHOptions,
 	withSSHClient,
 } from "@/commands/shared/session-runtime";
+import type { SessionStoreReader } from "@/core/types";
 import { type Config, load } from "@/config/config";
 import { SessionStore } from "@/session/store";
 import {
@@ -20,7 +21,7 @@ import { type ConsoleOptions, openConsole } from "@/ssh/console";
 export { CommandExitError };
 
 interface Dependencies {
-	store: SessionStoreLike;
+	store: SessionStoreReader;
 	loadConfig: (configPath?: string) => Promise<Config>;
 	createSSHClient: (options: SSHClientOptions) => SSHRuntimeClient;
 	openRemoteConsole: (
@@ -46,8 +47,13 @@ export async function runConsole(
 		...deps,
 	};
 
-	const session = await lookupSession(name, dependencies.store);
-	assertRunnable(session);
+	let session;
+	try {
+		session = await resolveSession(name, dependencies.store);
+		assertRunnable(session);
+	} catch (error) {
+		mapDomainError(error);
+	}
 
 	const config = await dependencies.loadConfig(configPath);
 	const client = dependencies.createSSHClient(

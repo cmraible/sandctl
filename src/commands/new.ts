@@ -8,7 +8,7 @@ import {
 	buildSSHOptions,
 	type SSHRuntimeClient,
 	withSSHClient,
-} from "@/commands/shared/session-runtime";
+} from "@/ssh/client";
 import {
 	type Config,
 	getProviderConfig,

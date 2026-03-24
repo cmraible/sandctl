@@ -25,6 +25,9 @@ describe("commands/logs", () => {
 					shell: async () => {
 						throw new Error("not used");
 					},
+					sftp: async () => {
+						throw new Error("not used");
+					},
 				}),
 				runCommand: async (_client, command) => {
 					commands.push(command);
@@ -77,6 +80,9 @@ describe("commands/logs", () => {
 					shell: async () => {
 						throw new Error("not used");
 					},
+					sftp: async () => {
+						throw new Error("not used");
+					},
 				}),
 				runCommand: async (_client, command) => {
 					commands.push(command);
@@ -121,6 +127,9 @@ describe("commands/logs", () => {
 						throw new Error("not used");
 					},
 					shell: async () => {
+						throw new Error("not used");
+					},
+					sftp: async () => {
 						throw new Error("not used");
 					},
 				}),
@@ -169,6 +178,9 @@ describe("commands/logs", () => {
 						throw new Error("not used");
 					},
 					shell: async () => {
+						throw new Error("not used");
+					},
+					sftp: async () => {
 						throw new Error("not used");
 					},
 				}),
@@ -238,6 +250,9 @@ describe("commands/logs", () => {
 					shell: async () => {
 						throw new Error("not used");
 					},
+					sftp: async () => {
+						throw new Error("not used");
+					},
 				}),
 				runCommand: async () => ({
 					stdout: "",
@@ -281,6 +296,9 @@ describe("commands/logs", () => {
 						throw new Error("not used");
 					},
 					shell: async () => {
+						throw new Error("not used");
+					},
+					sftp: async () => {
 						throw new Error("not used");
 					},
 				}),

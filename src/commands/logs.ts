@@ -1,22 +1,17 @@
 import { Command } from "commander";
-import {
-	assertRunnable,
-	buildSSHOptions,
-	lookupSession,
-	type SessionStoreLike,
-	type SSHRuntimeClient,
-	withSSHClient,
-} from "@/commands/shared/session-runtime";
+
+import { getLogs } from "@/core/ssh";
+import { mapDomainError } from "@/commands/shared/session-runtime";
+import type { SessionStoreReader } from "@/core/types";
 import { type Config, load } from "@/config/config";
 import { SessionStore } from "@/session/store";
 import {
 	SSHClient,
 	type SSHClientLike,
 	type SSHClientOptions,
+	type SSHRuntimeClient,
 } from "@/ssh/client";
 import { type ExecResult, exec, execWithStreamingOutput } from "@/ssh/exec";
-
-const LOG_FILE = "/var/log/cloud-init-output.log";
 
 interface LogsOptions {
 	follow?: boolean;
@@ -24,7 +19,7 @@ interface LogsOptions {
 }
 
 interface Dependencies {
-	store: SessionStoreLike;
+	store: SessionStoreReader;
 	loadConfig: (configPath?: string) => Promise<Config>;
 	createSSHClient: (options: SSHClientOptions) => SSHRuntimeClient;
 	runCommand: (client: SSHClientLike, command: string) => Promise<ExecResult>;
@@ -58,17 +53,6 @@ const defaultDependencies: Dependencies = {
 	stderr: process.stderr,
 };
 
-function buildCommand(options: LogsOptions): string {
-	if (options.follow) {
-		const lines = options.lines ?? "10";
-		return `tail -n ${lines} -f ${LOG_FILE}`;
-	}
-	if (options.lines) {
-		return `tail -n ${options.lines} ${LOG_FILE}`;
-	}
-	return `cat ${LOG_FILE}`;
-}
-
 export async function runLogs(
 	name: string,
 	options: LogsOptions = {},
@@ -80,33 +64,38 @@ export async function runLogs(
 		...deps,
 	};
 
-	const session = await lookupSession(name, dependencies.store);
-	assertRunnable(session);
-
-	const config = await dependencies.loadConfig(configPath);
-	const client = dependencies.createSSHClient(
-		buildSSHOptions(config, session.ip_address),
-	);
-
-	const command = buildCommand(options);
-
-	return withSSHClient(client, async (c) => {
-		if (options.follow) {
-			return await dependencies.runStreamingCommand(c, command, {
+	try {
+		const result = await getLogs(
+			name,
+			{
+				follow: options.follow,
+				lines: options.lines,
 				onStdout: (data) => dependencies.stdout.write(data),
 				onStderr: (data) => dependencies.stderr.write(data),
-			});
+			},
+			{
+				store: dependencies.store,
+				loadConfig: dependencies.loadConfig,
+				createSSHClient: dependencies.createSSHClient,
+				runCommand: dependencies.runCommand,
+				runStreamingCommand: dependencies.runStreamingCommand,
+			},
+			configPath,
+		);
+
+		if (!options.follow) {
+			if (result.stdout) {
+				dependencies.stdout.write(result.stdout);
+			}
+			if (result.stderr) {
+				dependencies.stderr.write(result.stderr);
+			}
 		}
 
-		const result = await dependencies.runCommand(c, command);
-		if (result.stdout) {
-			dependencies.stdout.write(result.stdout);
-		}
-		if (result.stderr) {
-			dependencies.stderr.write(result.stderr);
-		}
 		return result;
-	});
+	} catch (error) {
+		mapDomainError(error);
+	}
 }
 
 export function registerLogsCommand(): Command {

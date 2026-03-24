@@ -131,7 +131,7 @@ describe("commands/rename", () => {
 								return {};
 							},
 						},
-					}) as ReturnType<typeof import("@/provider/registry").get>,
+					}) as unknown as ReturnType<typeof import("@/provider/registry").get>,
 			},
 		);
 

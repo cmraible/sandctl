@@ -1,7 +1,8 @@
 import { Command } from "commander";
 
-import { TemplateAlreadyExistsError, TemplateStore } from "@/template/store";
-import type { TemplateConfig } from "@/template/types";
+import { addTemplate } from "@/core/templates";
+import { ValidationError } from "@/core/errors";
+import { TemplateStore } from "@/template/store";
 import { openInEditor } from "@/utils/editor";
 
 interface Dependencies {
@@ -22,46 +23,45 @@ export async function runTemplateAdd(
 	store = new TemplateStore(),
 	deps: Partial<Dependencies> = {},
 ): Promise<void> {
-	const { log, errLog, openEditor: edit } = { ...defaultDependencies, ...deps };
+	const { log, errLog, openEditor: edit } = {
+		...defaultDependencies,
+		...deps,
+	};
 
-	if (!name.trim()) {
-		throw new Error("template name is required");
-	}
-
-	let config: TemplateConfig;
+	let result;
 	try {
-		config = await store.add(name);
+		result = await addTemplate(name, store);
 	} catch (error) {
-		if (error instanceof TemplateAlreadyExistsError) {
-			errLog(
-				`Error: Template '${name}' already exists. Use 'sandctl template edit ${name}' to modify it.`,
-			);
-			return;
+		if (error instanceof ValidationError) {
+			if (error.message.includes("already exists")) {
+				errLog(`Error: ${error.message}`);
+				return;
+			}
+			throw new Error(error.message);
 		}
 		throw error;
 	}
 
 	if (options.json) {
-		console.log(JSON.stringify(config, null, 2));
+		console.log(JSON.stringify(result.config, null, 2));
 		return;
 	}
 
-	const scriptPath = await store.getInitScriptPath(name);
-	log(`Created template '${config.original_name}'`);
+	log(`Created template '${result.config.original_name}'`);
 	log("Opening init script in editor...");
 
 	try {
-		await edit(scriptPath);
+		await edit(result.scriptPath);
 	} catch (error) {
 		errLog(
 			`Warning: ${error instanceof Error ? error.message : String(error)}`,
 		);
-		errLog(`Edit your script at: ${scriptPath}`);
+		errLog(`Edit your script at: ${result.scriptPath}`);
 	}
 
 	log("");
 	log(
-		`Template '${config.original_name}' is ready. Use 'sandctl new -T ${config.template}' to create a session.`,
+		`Template '${result.config.original_name}' is ready. Use 'sandctl new -T ${result.config.template}' to create a session.`,
 	);
 }
 

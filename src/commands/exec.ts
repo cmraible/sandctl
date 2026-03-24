@@ -1,14 +1,16 @@
 import { Command } from "commander";
+
+import { execCommand } from "@/core/ssh";
+import { resolveSession, assertRunnable } from "@/core/sessions";
 import {
-	assertRunnable,
-	buildSSHOptions,
 	CommandExitError,
-	lookupSession,
-	type SessionStoreLike,
+	mapDomainError,
 	type SSHRuntimeClient,
+	buildSSHOptions,
 	withSSHClient,
 } from "@/commands/shared/session-runtime";
 import { type Config, load } from "@/config/config";
+import type { SessionStoreReader } from "@/core/types";
 import { SessionStore } from "@/session/store";
 import {
 	SSHClient,
@@ -29,7 +31,7 @@ interface WritableLike {
 }
 
 interface Dependencies {
-	store: SessionStoreLike;
+	store: SessionStoreReader;
 	loadConfig: (configPath?: string) => Promise<Config>;
 	createSSHClient: (options: SSHClientOptions) => SSHRuntimeClient;
 	runRemoteCommand: (
@@ -65,23 +67,25 @@ export async function runExec(
 		...deps,
 	};
 
-	const session = await lookupSession(name, dependencies.store);
-	assertRunnable(session);
+	const commandProvided = Object.hasOwn(options, "command");
+	if (commandProvided) {
+		const command = options.command ?? "";
+		if (command.trim().length === 0) {
+			throw new Error("--command cannot be empty or whitespace");
+		}
 
-	const config = await dependencies.loadConfig(configPath);
-	const client = dependencies.createSSHClient(
-		buildSSHOptions(config, session.ip_address),
-	);
-
-	return withSSHClient(client, async (c) => {
-		const commandProvided = Object.hasOwn(options, "command");
-		if (commandProvided) {
-			const command = options.command ?? "";
-			if (command.trim().length === 0) {
-				throw new Error("--command cannot be empty or whitespace");
-			}
-
-			const result = await dependencies.runRemoteCommand(c, command);
+		try {
+			const result = await execCommand(
+				name,
+				command,
+				{
+					store: dependencies.store,
+					loadConfig: dependencies.loadConfig,
+					createSSHClient: dependencies.createSSHClient,
+					runRemoteCommand: dependencies.runRemoteCommand,
+				},
+				configPath,
+			);
 			if (result.stdout) {
 				dependencies.stdout.write(result.stdout);
 			}
@@ -89,8 +93,26 @@ export async function runExec(
 				dependencies.stderr.write(result.stderr);
 			}
 			return result.exitCode;
+		} catch (error) {
+			mapDomainError(error);
 		}
+	}
 
+	// No command provided — open interactive console
+	let session;
+	try {
+		session = await resolveSession(name, dependencies.store);
+		assertRunnable(session);
+	} catch (error) {
+		mapDomainError(error);
+	}
+
+	const config = await dependencies.loadConfig(configPath);
+	const client = dependencies.createSSHClient(
+		buildSSHOptions(config, session.ip_address),
+	);
+
+	return withSSHClient(client, async (c) => {
 		await dependencies.openRemoteConsole(c, {
 			initialCommands: config.post_ssh_commands,
 		});
@@ -138,7 +160,11 @@ export function registerExecCommand(): Command {
 					);
 					console.log(
 						JSON.stringify(
-							{ exit_code: exitCode, stdout: stdoutBuf, stderr: stderrBuf },
+							{
+								exit_code: exitCode,
+								stdout: stdoutBuf,
+								stderr: stderrBuf,
+							},
 							null,
 							2,
 						),
@@ -149,7 +175,12 @@ export function registerExecCommand(): Command {
 					return;
 				}
 
-				const exitCode = await runExec(name, options, {}, globals.config);
+				const exitCode = await runExec(
+					name,
+					options,
+					{},
+					globals.config,
+				);
 				if (exitCode !== 0) {
 					process.exitCode = exitCode;
 				}

@@ -40,6 +40,9 @@ describe("commands/exec", () => {
 						shell: async () => {
 							throw new Error("not used");
 						},
+						sftp: async () => {
+							throw new Error("not used");
+						},
 					};
 				},
 				runRemoteCommand: async (_client, command: string) => {
@@ -122,6 +125,9 @@ describe("commands/exec", () => {
 						shell: async () => {
 							throw new Error("not used");
 						},
+						sftp: async () => {
+							throw new Error("not used");
+						},
 					};
 				},
 				runRemoteCommand: async () => {
@@ -162,6 +168,9 @@ describe("commands/exec", () => {
 									throw new Error("not used");
 								},
 								shell: async () => {
+									throw new Error("not used");
+								},
+								sftp: async () => {
 									throw new Error("not used");
 								},
 							};
@@ -206,6 +215,9 @@ describe("commands/exec", () => {
 							shell: async () => {
 								throw new Error("not used");
 							},
+							sftp: async () => {
+								throw new Error("not used");
+							},
 						};
 					},
 					runRemoteCommand: async () => {
@@ -246,6 +258,9 @@ describe("commands/exec", () => {
 								throw new Error("not used");
 							},
 							shell: async () => {
+								throw new Error("not used");
+							},
+							sftp: async () => {
 								throw new Error("not used");
 							},
 						};

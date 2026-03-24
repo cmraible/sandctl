@@ -6,6 +6,7 @@ import { Command } from "commander";
 import type { Config } from "@/config/config";
 import { load, NotFoundError } from "@/config/config";
 import { save } from "@/config/writer";
+import { buildConfig } from "@/core/config";
 import { isValidEmail } from "@/utils/email";
 import { expandTilde } from "@/utils/paths";
 
@@ -296,31 +297,7 @@ export async function runInit(
 	return { config_path: resolvedConfigPath, saved: true };
 }
 
-function buildConfig(options: InitOptions): Config {
-	return {
-		default_provider: "hetzner",
-		ssh_key_source: options.sshAgent ? "agent" : undefined,
-		ssh_public_key: options.sshAgent ? undefined : options.sshPublicKey,
-		ssh_key_fingerprint: options.sshAgent
-			? options.sshKeyFingerprint
-			: undefined,
-		providers: {
-			hetzner: {
-				token: options.hetznerToken ?? "",
-				region: options.region ?? DEFAULT_REGION,
-				server_type: options.serverType ?? DEFAULT_SERVER_TYPE,
-				image: "ubuntu-24.04",
-			},
-		},
-		opencode_zen_key: options.opencodeZenKey,
-		git_config_path: options.gitConfigPath,
-		git_user_name: options.gitUserName,
-		git_user_email: options.gitUserEmail,
-		github_token: options.githubToken,
-		claude_config_path: options.claudeConfigPath,
-		claude_oauth_token: options.claudeOauthToken,
-	};
-}
+// buildConfig is now imported from @/core/config
 
 export function registerInitCommand(): Command {
 	return new Command("init")

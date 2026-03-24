@@ -43,6 +43,9 @@ describe("commands/console", () => {
 					shell: async () => {
 						throw new Error("not used");
 					},
+					sftp: async () => {
+						throw new Error("not used");
+					},
 				};
 			},
 			openRemoteConsole: async () => {
@@ -79,6 +82,9 @@ describe("commands/console", () => {
 							throw new Error("not used");
 						},
 						shell: async () => {
+							throw new Error("not used");
+						},
+						sftp: async () => {
 							throw new Error("not used");
 						},
 					};

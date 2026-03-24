@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { DateTime } from "luxon";
 
+import { listTemplates } from "@/core/templates";
 import { TemplateStore } from "@/template/store";
 
 interface Dependencies {
@@ -24,7 +25,7 @@ export async function runTemplateList(
 ): Promise<void> {
 	const { log } = { ...defaultDependencies, ...deps };
 
-	const configs = await store.list();
+	const configs = await listTemplates(store);
 
 	if (options.json) {
 		console.log(JSON.stringify(configs, null, 2));

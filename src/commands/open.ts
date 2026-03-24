@@ -1,11 +1,10 @@
 import { spawn } from "node:child_process";
 import { platform } from "node:os";
 import { Command } from "commander";
-import {
-	assertRunnable,
-	lookupSession,
-	type SessionStoreLike,
-} from "@/commands/shared/session-runtime";
+
+import { getSessionUrl } from "@/core/config";
+import { mapDomainError } from "@/commands/shared/session-runtime";
+import type { SessionStoreReader } from "@/core/types";
 import { SessionStore } from "@/session/store";
 
 interface OpenOptions {
@@ -14,7 +13,7 @@ interface OpenOptions {
 }
 
 interface Dependencies {
-	store: SessionStoreLike;
+	store: SessionStoreReader;
 	openURL: (url: string) => Promise<void>;
 	log: (message: string) => void;
 }
@@ -63,22 +62,18 @@ export async function runOpen(
 		...deps,
 	};
 
-	const session = await lookupSession(name, dependencies.store);
-	assertRunnable(session);
+	try {
+		const url = await getSessionUrl(name, options, {
+			store: dependencies.store,
+		});
 
-	const protocol = options.https ? "https" : "http";
-	const port = options.port ?? (options.https ? "443" : "80");
-	const portSuffix =
-		(protocol === "http" && port === "80") ||
-		(protocol === "https" && port === "443")
-			? ""
-			: `:${port}`;
-	const url = `${protocol}://${session.ip_address}${portSuffix}`;
+		dependencies.log(`Opening ${url}...`);
+		await dependencies.openURL(url);
 
-	dependencies.log(`Opening ${url}...`);
-	await dependencies.openURL(url);
-
-	return url;
+		return url;
+	} catch (error) {
+		mapDomainError(error);
+	}
 }
 
 export function registerOpenCommand(): Command {

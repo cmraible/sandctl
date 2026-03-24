@@ -1,6 +1,8 @@
 import { Command } from "commander";
 
-import { TemplateNotFoundError, TemplateStore } from "@/template/store";
+import { getTemplateScriptPath } from "@/core/templates";
+import { ValidationError } from "@/core/errors";
+import { TemplateStore } from "@/template/store";
 import { openInEditor } from "@/utils/editor";
 
 interface Dependencies {
@@ -20,12 +22,10 @@ export async function runTemplateEdit(
 
 	let scriptPath: string;
 	try {
-		scriptPath = await store.getInitScriptPath(name);
+		scriptPath = await getTemplateScriptPath(name, store);
 	} catch (error) {
-		if (error instanceof TemplateNotFoundError) {
-			throw new Error(
-				`template '${name}' not found. Use 'sandctl template list' to see available templates`,
-			);
+		if (error instanceof ValidationError) {
+			throw new Error(error.message);
 		}
 		throw error;
 	}

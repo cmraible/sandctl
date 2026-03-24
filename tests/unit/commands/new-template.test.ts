@@ -310,6 +310,7 @@ describe("commands/new --template layering", () => {
 					store: {
 						list: async () => [],
 						add: async () => {},
+						update: async () => {},
 					},
 					templateStore: makeTemplateStore({}),
 				},
@@ -351,6 +352,9 @@ describe("commands/new --template layering", () => {
 							throw new Error("not used");
 						},
 						shell: async () => {
+							throw new Error("not used");
+						},
+						sftp: async () => {
 							throw new Error("not used");
 						},
 					};

@@ -1,7 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { Client } from "ssh2";
 
+import type { Config } from "@/config/config";
 import { discoverPrimaryAgentSocket } from "@/ssh/agent";
+import { expandTilde } from "@/utils/paths";
 
 const DEFAULT_PORT = 22;
 const DEFAULT_USERNAME = "agent";
@@ -102,7 +104,78 @@ export interface SSHClientLike {
 	sftp(): Promise<SFTPWrapperLike>;
 }
 
-export class SSHClient implements SSHClientLike {
+// ---------------------------------------------------------------------------
+// SSHRuntimeClient — lifecycle-aware client interface
+// ---------------------------------------------------------------------------
+
+export interface SSHRuntimeClient extends SSHClientLike {
+	connect(): Promise<void>;
+	close(): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// withSSHClient — connect / run / close helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Connects `client`, runs `fn(client)`, then always closes `client`.
+ * Guarantees `close()` is called even when `connect()` or `fn` throw.
+ */
+export async function withSSHClient<T>(
+	client: SSHRuntimeClient,
+	fn: (client: SSHRuntimeClient) => Promise<T>,
+): Promise<T> {
+	try {
+		await client.connect();
+	} catch (error) {
+		await client.close();
+		throw error;
+	}
+
+	try {
+		return await fn(client);
+	} finally {
+		await client.close();
+	}
+}
+
+// ---------------------------------------------------------------------------
+// buildSSHOptions — build SSHClientOptions from Config
+// ---------------------------------------------------------------------------
+
+/**
+ * Builds `SSHClientOptions` from a config and a target host address.
+ */
+export function buildSSHOptions(config: Config, host: string): SSHClientOptions {
+	if (config.ssh_key_source === "agent") {
+		return {
+			host,
+			username: "agent",
+			useAgent: true,
+		};
+	}
+
+	if (!config.ssh_public_key) {
+		throw new Error("ssh_public_key not configured");
+	}
+
+	const publicKeyPath = expandTilde(config.ssh_public_key);
+	const privateKeyPath = publicKeyPath.endsWith(".pub")
+		? publicKeyPath.slice(0, -4)
+		: publicKeyPath;
+
+	return {
+		host,
+		username: "agent",
+		privateKeyPath,
+	};
+}
+
+// ---------------------------------------------------------------------------
+// SSHClient implementation
+// ---------------------------------------------------------------------------
+
+export class SSHClient implements SSHRuntimeClient {
 	private readonly connection: SSHConnectionLike;
 	private connected = false;
 

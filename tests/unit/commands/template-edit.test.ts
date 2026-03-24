@@ -11,11 +11,11 @@ describe("template edit", () => {
 		const store = new TemplateStore(root);
 		await store.add("Ghost");
 
-		const openEditor = mock(async () => {});
+		const openEditor = mock(async (_filePath: string) => {});
 		await runTemplateEdit("Ghost", store, { openEditor });
 
 		expect(openEditor).toHaveBeenCalledTimes(1);
-		const calledPath = openEditor.mock.calls[0][0] as string;
+		const calledPath = openEditor.mock.calls[0][0];
 		expect(calledPath).toContain("ghost");
 		expect(calledPath).toContain("/init");
 	});

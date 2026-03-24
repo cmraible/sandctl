@@ -1,15 +1,18 @@
 import { Command } from "commander";
-import { DateTime } from "luxon";
-import { formatTimeout } from "@/commands/list";
+
 import {
-	lookupSession,
-	type SessionStoreLike,
-} from "@/commands/shared/session-runtime";
+	getSessionStatus,
+	formatCreatedAt,
+	type StatusResult,
+} from "@/core/sessions";
+import { mapDomainError } from "@/commands/shared/session-runtime";
+import type { SessionStoreReader } from "@/core/types";
 import { SessionStore } from "@/session/store";
-import { age, type Session, timeoutRemaining } from "@/session/types";
+
+export type { StatusResult };
 
 interface Dependencies {
-	store: SessionStoreLike;
+	store: SessionStoreReader;
 	log: (message: string) => void;
 }
 
@@ -20,63 +23,6 @@ const defaultDependencies: Dependencies = {
 	},
 };
 
-function formatAge(ms: number): string {
-	const seconds = Math.floor(ms / 1000);
-	const minutes = Math.floor(seconds / 60);
-	const hours = Math.floor(minutes / 60);
-	const days = Math.floor(hours / 24);
-
-	if (days > 0) {
-		const remainingHours = hours % 24;
-		return remainingHours > 0 ? `${days}d${remainingHours}h` : `${days}d`;
-	}
-	if (hours > 0) {
-		const remainingMinutes = minutes % 60;
-		return remainingMinutes > 0 ? `${hours}h${remainingMinutes}m` : `${hours}h`;
-	}
-	if (minutes > 0) {
-		return `${minutes}m`;
-	}
-	return `${seconds}s`;
-}
-
-function formatCreatedAt(createdAt: string): string {
-	return DateTime.fromISO(createdAt).toLocal().toFormat("yyyy-MM-dd HH:mm:ss");
-}
-
-export interface StatusResult {
-	id: string;
-	status: string;
-	provider: string;
-	provider_id: string;
-	ip_address: string;
-	region: string;
-	server_type: string;
-	created_at: string;
-	uptime: string;
-	timeout: string | null;
-	timeout_remaining: string;
-	failure_reason: string | null;
-}
-
-function buildResult(session: Session): StatusResult {
-	const remaining = timeoutRemaining(session);
-	return {
-		id: session.id,
-		status: session.status,
-		provider: session.provider,
-		provider_id: session.provider_id,
-		ip_address: session.ip_address || "-",
-		region: session.region ?? "-",
-		server_type: session.server_type ?? "-",
-		created_at: session.created_at,
-		uptime: formatAge(age(session)),
-		timeout: session.timeout ?? null,
-		timeout_remaining: formatTimeout(remaining),
-		failure_reason: session.failure_reason ?? null,
-	};
-}
-
 export async function runStatus(
 	name: string,
 	deps: Partial<Dependencies> = {},
@@ -86,8 +32,11 @@ export async function runStatus(
 		...deps,
 	};
 
-	const session = await lookupSession(name, dependencies.store);
-	return buildResult(session);
+	try {
+		return await getSessionStatus(name, { store: dependencies.store });
+	} catch (error) {
+		mapDomainError(error);
+	}
 }
 
 function outputTable(result: StatusResult, log: (msg: string) => void): void {

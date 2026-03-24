@@ -2,6 +2,16 @@ import { confirm } from "@inquirer/prompts";
 import { Command } from "commander";
 
 import {
+	destroySession,
+	resolveSession,
+	type DestroyResult,
+} from "@/core/sessions";
+import {
+	ProviderDeletionError,
+	SessionNotFoundError,
+	ValidationError,
+} from "@/core/errors";
+import {
 	type Config,
 	getProviderConfig,
 	load,
@@ -9,18 +19,11 @@ import {
 } from "@/config/config";
 import { getProvider } from "@/provider";
 import { get as getProviderFromRegistry } from "@/provider/registry";
-import { normalizeName, validateID } from "@/session/id";
 import { SessionStore } from "@/session/store";
-import { NotFoundError } from "@/session/types";
 
-export class CommandExitError extends Error {
-	constructor(
-		message: string,
-		readonly exitCode: number,
-	) {
-		super(message);
-	}
-}
+import { CommandExitError, mapDomainError } from "@/commands/shared/session-runtime";
+
+export { CommandExitError, type DestroyResult };
 
 interface Dependencies {
 	loadConfig: (configPath?: string) => Promise<Config>;
@@ -37,11 +40,6 @@ const defaultDependencies: Dependencies = {
 	resolveLegacyProvider: getProvider,
 };
 
-export interface DestroyResult {
-	id: string;
-	destroyed: boolean;
-}
-
 export async function runDestroy(
 	name: string,
 	options: { force: boolean; silent?: boolean },
@@ -54,96 +52,52 @@ export async function runDestroy(
 		...deps,
 	};
 
-	const normalized = normalizeName(name);
-	if (!validateID(normalized)) {
-		throw new Error(`invalid session name format: ${name}`);
-	}
-
-	const session = await store.get(normalized).catch((error: unknown) => {
-		if (error instanceof NotFoundError) {
-			throw new CommandExitError(
-				`Session '${normalized}' not found. Use 'sandctl list' to see available sessions.`,
-				4,
-			);
-		}
-		throw error;
-	});
-
-	if (!session.provider_id) {
-		if (!options.force) {
-			throw new Error(
-				`Session '${session.id}' is in legacy format. Re-run with --force to remove local state only.`,
-			);
-		}
-		await store.remove(session.id);
-		if (!options.silent) {
-			console.log(`Session '${session.id}' destroyed.`);
-		}
-		return { id: session.id, destroyed: true };
-	}
-
+	// If not forcing, look up session and prompt for confirmation
 	if (!options.force) {
-		const accepted = await confirm({
-			message: `Destroy session '${session.id}'? This cannot be undone.`,
-			default: false,
-		});
-		if (!accepted) {
-			if (!options.silent) {
-				console.log("Canceled.");
+		let session;
+		try {
+			session = await resolveSession(name, store);
+		} catch (error) {
+			mapDomainError(error);
+		}
+
+		if (session.provider_id) {
+			const accepted = await confirm({
+				message: `Destroy session '${session.id}'? This cannot be undone.`,
+				default: false,
+			});
+			if (!accepted) {
+				if (!options.silent) {
+					console.log("Canceled.");
+				}
+				return { id: session.id, destroyed: false };
 			}
-			return { id: session.id, destroyed: false };
 		}
 	}
-
-	let deleteError: unknown;
-	let deletionAttempted = false;
 
 	try {
-		const config = await dependencies.loadConfig(configPath);
-		const providerConfig = getProviderConfig(config, session.provider);
-		if (providerConfig) {
-			const provider = dependencies.resolveProvider(
-				session.provider,
-				providerConfig,
-			);
-			await provider.delete(session.provider_id);
-			deletionAttempted = true;
+		const result = await destroySession(
+			name,
+			{ force: options.force },
+			{
+				store,
+				loadConfig: dependencies.loadConfig,
+				resolveProvider: dependencies.resolveProvider,
+				resolveLegacyProvider: dependencies.resolveLegacyProvider,
+				warn: (msg) => console.warn(msg),
+			},
+			configPath,
+		);
+		if (!options.silent) {
+			console.log(`Session '${result.id}' destroyed.`);
 		}
+		return result;
 	} catch (error) {
-		deleteError = error;
-	}
-
-	if (!deletionAttempted) {
-		const legacyProvider = dependencies.resolveLegacyProvider(session.provider);
-		if (legacyProvider) {
-			try {
-				await legacyProvider.deleteVM(session.provider_id);
-				deletionAttempted = true;
-			} catch (error) {
-				deleteError = error;
-			}
+		if (error instanceof ProviderDeletionError) {
+			throw new Error(error.message);
 		}
+		mapDomainError(error);
 	}
-
-	if (!deletionAttempted) {
-		const details = deleteError
-			? deleteError instanceof Error
-				? deleteError.message
-				: String(deleteError)
-			: `provider '${session.provider}' is not configured`;
-		console.warn(
-			`[warn] Failed to delete provider VM '${session.provider_id}': ${details}`,
-		);
-		throw new Error(
-			`Failed to delete provider VM '${session.provider_id}': ${details}`,
-		);
-	}
-
-	await store.remove(session.id);
-	if (!options.silent) {
-		console.log(`Session '${session.id}' destroyed.`);
-	}
-	return { id: session.id, destroyed: true };
 }
 
 export function registerDestroyCommand(): Command {

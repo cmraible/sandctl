@@ -1,7 +1,10 @@
 import { confirm as inquirerConfirm } from "@inquirer/prompts";
 import { Command } from "commander";
 
-import { TemplateNotFoundError, TemplateStore } from "@/template/store";
+import { removeTemplate } from "@/core/templates";
+import { ValidationError } from "@/core/errors";
+import { TemplateStore } from "@/template/store";
+import type { TemplateStoreLike } from "@/template/types";
 
 interface Dependencies {
 	log: (message: string) => void;
@@ -16,7 +19,7 @@ const defaultDependencies: Dependencies = {
 export async function runTemplateRemove(
 	name: string,
 	options: { force: boolean; json?: boolean },
-	store = new TemplateStore(),
+	store: TemplateStoreLike = new TemplateStore(),
 	deps: Partial<Dependencies> = {},
 ): Promise<void> {
 	const { log, confirm: askConfirm } = { ...defaultDependencies, ...deps };
@@ -30,12 +33,10 @@ export async function runTemplateRemove(
 	}
 
 	try {
-		await store.remove(name);
+		await removeTemplate(name, store);
 	} catch (error) {
-		if (error instanceof TemplateNotFoundError) {
-			throw new Error(
-				`template '${name}' not found. Use 'sandctl template list' to see available templates`,
-			);
+		if (error instanceof ValidationError) {
+			throw new Error(error.message);
 		}
 		throw error;
 	}

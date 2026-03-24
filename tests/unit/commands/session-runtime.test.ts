@@ -30,6 +30,9 @@ function makeFakeClient(events: string[]) {
 		shell: async () => {
 			throw new Error("not used");
 		},
+		sftp: async () => {
+			throw new Error("not used");
+		},
 	};
 }
 

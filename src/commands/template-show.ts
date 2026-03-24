@@ -1,6 +1,8 @@
 import { Command } from "commander";
 
-import { TemplateNotFoundError, TemplateStore } from "@/template/store";
+import { showTemplate } from "@/core/templates";
+import { ValidationError } from "@/core/errors";
+import { TemplateStore } from "@/template/store";
 
 interface Dependencies {
 	write: (content: string) => void;
@@ -19,7 +21,7 @@ export async function runTemplateShow(
 	const { write } = { ...defaultDependencies, ...deps };
 
 	try {
-		const initScript = await store.getInitScript(name);
+		const initScript = await showTemplate(name, store);
 		if (options.json) {
 			console.log(
 				JSON.stringify(
@@ -35,10 +37,8 @@ export async function runTemplateShow(
 			: `${initScript.script}\n`;
 		write(content);
 	} catch (error) {
-		if (error instanceof TemplateNotFoundError) {
-			throw new Error(
-				`template '${name}' not found. Use 'sandctl template list' to see available templates`,
-			);
+		if (error instanceof ValidationError) {
+			throw new Error(error.message);
 		}
 		throw error;
 	}

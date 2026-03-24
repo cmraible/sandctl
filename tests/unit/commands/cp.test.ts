@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-	type CpDependencies,
+	type CpDeps,
 	parseTarget,
 	resolveDirection,
 	runCp,
@@ -52,8 +52,8 @@ function makeMockSFTP(): SFTPWrapperLike {
 }
 
 function makeBaseDeps(
-	overrides: Partial<CpDependencies> = {},
-): Partial<CpDependencies> {
+	overrides: Partial<CpDeps> = {},
+): Partial<CpDeps> {
 	const events: string[] = [];
 	return {
 		store: {

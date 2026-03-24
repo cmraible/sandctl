@@ -1,8 +1,29 @@
-import type { Config } from "@/config/config";
-import { normalizeName, validateID } from "@/session/id";
-import { NotFoundError, type Session } from "@/session/types";
-import type { SSHClientLike, SSHClientOptions } from "@/ssh/client";
-import { expandTilde } from "@/utils/paths";
+/**
+ * CLI-specific session runtime helpers.
+ *
+ * These wrap core helpers with CLI error handling (CommandExitError with
+ * exit codes). Core modules should import from @/core/* and @/ssh/client
+ * instead.
+ */
+
+import {
+	resolveSession as coreResolveSession,
+	assertRunnable as coreAssertRunnable,
+} from "@/core/sessions";
+import {
+	SessionNotFoundError,
+	SessionNotReadyError,
+	ValidationError,
+} from "@/core/errors";
+import type { SessionStoreReader } from "@/core/types";
+import type { Session } from "@/session/types";
+
+// Re-export SSH helpers from their canonical location
+export {
+	type SSHRuntimeClient,
+	withSSHClient,
+	buildSSHOptions,
+} from "@/ssh/client";
 
 // ---------------------------------------------------------------------------
 // Exit codes
@@ -26,123 +47,63 @@ export class CommandExitError extends Error {
 }
 
 // ---------------------------------------------------------------------------
-// Session lookup
+// Session store interface (re-exported for backward compat)
 // ---------------------------------------------------------------------------
 
-export interface SessionStoreLike {
-	get(id: string): Promise<Session>;
+export type SessionStoreLike = SessionStoreReader;
+
+// ---------------------------------------------------------------------------
+// mapDomainError — maps core domain errors to CommandExitError
+// ---------------------------------------------------------------------------
+
+/**
+ * Converts domain errors from core into CLI-specific CommandExitErrors.
+ * Rethrows unknown errors unchanged.
+ */
+export function mapDomainError(error: unknown): never {
+	if (error instanceof SessionNotFoundError) {
+		throw new CommandExitError(error.message, EXIT_SESSION_NOT_FOUND);
+	}
+	if (error instanceof SessionNotReadyError) {
+		throw new CommandExitError(error.message, EXIT_SESSION_NOT_READY);
+	}
+	if (error instanceof ValidationError) {
+		throw new Error(error.message);
+	}
+	throw error;
 }
+
+// ---------------------------------------------------------------------------
+// Session lookup (CLI wrapper around core resolveSession)
+// ---------------------------------------------------------------------------
 
 /**
  * Normalise `name`, validate its format, look it up in the store, and return
- * the session.  Converts `NotFoundError` into a `CommandExitError(4)`.
+ * the session. Converts domain errors into CLI-specific CommandExitErrors.
  */
 export async function lookupSession(
 	name: string,
-	store: SessionStoreLike,
+	store: SessionStoreReader,
 ): Promise<Session> {
-	const normalized = normalizeName(name);
-	if (!validateID(normalized)) {
-		throw new Error(`invalid session name format: ${name}`);
+	try {
+		return await coreResolveSession(name, store);
+	} catch (error) {
+		mapDomainError(error);
 	}
-
-	return store.get(normalized).catch((error: unknown) => {
-		if (error instanceof NotFoundError) {
-			throw new CommandExitError(
-				`Session '${normalized}' not found. Use 'sandctl list' to see available sessions.`,
-				EXIT_SESSION_NOT_FOUND,
-			);
-		}
-		throw error;
-	});
 }
 
 // ---------------------------------------------------------------------------
-// Running-status validation
+// Running-status validation (CLI wrapper around core assertRunnable)
 // ---------------------------------------------------------------------------
 
 /**
- * Asserts that a session is running and has an IP address.  Throws
+ * Asserts that a session is running and has an IP address. Throws
  * `CommandExitError(5)` otherwise.
  */
 export function assertRunnable(session: Session): void {
-	if (session.status !== "running") {
-		throw new CommandExitError(
-			`Session '${session.id}' is not running (status: ${session.status}).`,
-			EXIT_SESSION_NOT_READY,
-		);
-	}
-	if (!session.ip_address) {
-		throw new CommandExitError(
-			`Session '${session.id}' has no IP address.`,
-			EXIT_SESSION_NOT_READY,
-		);
-	}
-}
-
-// ---------------------------------------------------------------------------
-// SSH options builder
-// ---------------------------------------------------------------------------
-
-/**
- * Builds `SSHClientOptions` from a config and a target host address.
- */
-export function buildSSHOptions(
-	config: Config,
-	host: string,
-): SSHClientOptions {
-	if (config.ssh_key_source === "agent") {
-		return {
-			host,
-			username: "agent",
-			useAgent: true,
-		};
-	}
-
-	if (!config.ssh_public_key) {
-		throw new Error("ssh_public_key not configured");
-	}
-
-	const publicKeyPath = expandTilde(config.ssh_public_key);
-	const privateKeyPath = publicKeyPath.endsWith(".pub")
-		? publicKeyPath.slice(0, -4)
-		: publicKeyPath;
-
-	return {
-		host,
-		username: "agent",
-		privateKeyPath,
-	};
-}
-
-// ---------------------------------------------------------------------------
-// SSH lifecycle helper
-// ---------------------------------------------------------------------------
-
-export interface SSHRuntimeClient extends SSHClientLike {
-	connect(): Promise<void>;
-	close(): Promise<void>;
-}
-
-/**
- * Connects `client`, runs `fn(client)`, then always closes `client`.
- *
- * Guarantees `close()` is called even when `connect()` or `fn` throw.
- */
-export async function withSSHClient<T>(
-	client: SSHRuntimeClient,
-	fn: (client: SSHRuntimeClient) => Promise<T>,
-): Promise<T> {
 	try {
-		await client.connect();
+		coreAssertRunnable(session);
 	} catch (error) {
-		await client.close();
-		throw error;
-	}
-
-	try {
-		return await fn(client);
-	} finally {
-		await client.close();
+		mapDomainError(error);
 	}
 }
