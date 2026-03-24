@@ -111,7 +111,7 @@ describe("commands/extend", () => {
 
 	test("throws error for invalid session name format", async () => {
 		await expect(
-			runExtend("INVALID-NAME-123", "1h", {}, store),
+			runExtend("-bad", "1h", {}, store),
 		).rejects.toThrow("invalid session name format");
 	});
 
