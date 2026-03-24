@@ -19,6 +19,7 @@ users:
     shell: /bin/bash
     groups:
       - sudo
+      - docker
     sudo: "ALL=(ALL) NOPASSWD:ALL"
     ssh_authorized_keys: []
 
