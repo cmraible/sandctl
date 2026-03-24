@@ -22,10 +22,10 @@ describe("hetzner/setup", () => {
 			);
 		});
 
-		test("is a minimal base without packages", () => {
+		test("installs Node.js and Claude Code", () => {
 			const output = generateCloudInit();
-			expect(output).not.toContain("package_update");
-			expect(output).not.toContain("nodejs");
+			expect(output).toContain("apt-get install -y nodejs");
+			expect(output).toContain("npm install -g @anthropic-ai/claude-code");
 		});
 
 		test("adds agent user to docker group", () => {
