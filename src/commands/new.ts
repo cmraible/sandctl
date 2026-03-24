@@ -33,7 +33,7 @@ import {
 	type SnapshotClientLike,
 } from "@/hetzner/snapshots";
 import { get as getProviderFromRegistry } from "@/provider/registry";
-import { generateID } from "@/session/id";
+import { generateID, normalizeName, validateID } from "@/session/id";
 import { SessionStore } from "@/session/store";
 import { Duration, type Session } from "@/session/types";
 import {
@@ -54,6 +54,7 @@ const DEFAULT_CLOUD_INIT_TIMEOUT_MS = 10 * 60 * 1000;
 const CLOUD_INIT_POLL_INTERVAL_MS = 5_000;
 
 interface NewOptions {
+	name?: string;
 	provider?: string;
 	region?: string;
 	serverType?: string;
@@ -454,7 +455,24 @@ export async function runNew(
 	const existingNames = (await dependencies.store.list()).map(
 		(session) => session.id,
 	);
-	const sessionID = dependencies.generateSessionID(existingNames);
+
+	let sessionID: string;
+	if (options.name) {
+		const normalized = normalizeName(options.name);
+		if (!validateID(normalized)) {
+			throw new Error(
+				`invalid session name '${options.name}'. Names must start with a letter, be 2-30 characters, and contain only lowercase letters, digits, and hyphens.`,
+			);
+		}
+		if (existingNames.includes(normalized)) {
+			throw new Error(
+				`session '${normalized}' already exists. Use a different name or destroy the existing session first.`,
+			);
+		}
+		sessionID = normalized;
+	} else {
+		sessionID = dependencies.generateSessionID(existingNames);
+	}
 	const createdAt = dependencies.now().toISOString();
 
 	const publicKey = await dependencies.getPublicKey(config);
@@ -682,6 +700,7 @@ export async function runNewCommand(
 export function registerNewCommand(): Command {
 	return new Command("new")
 		.description("Create a new sandboxed session")
+		.option("-n, --name <name>", "Custom session name")
 		.option("-p, --provider <provider>", "Provider name")
 		.option("-T, --template <template>", "Template to initialize the session")
 		.option("--region <region>", "Region override")

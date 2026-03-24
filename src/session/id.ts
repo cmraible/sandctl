@@ -5,7 +5,7 @@ export function generateID(existingNames: string[]): string {
 }
 
 export function validateID(id: string): boolean {
-	return /^[a-z]{2,15}$/.test(id);
+	return /^[a-z][a-z0-9-]{0,28}[a-z0-9]$/.test(id);
 }
 
 export function normalizeName(name: string): string {
