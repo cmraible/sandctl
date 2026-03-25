@@ -93,7 +93,8 @@ describe("ssh macOS parity", () => {
 		};
 
 		const openPromise = openConsole(client, {}, runtime);
-		await Promise.resolve();
+		// Allow syncTerminfo + shell setup to resolve
+		await new Promise((r) => setTimeout(r, 0));
 		channel.emit("close");
 		await openPromise;
 
