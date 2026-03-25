@@ -10,6 +10,13 @@ import { get as getProviderFromRegistry } from "@/provider/registry";
 import { normalizeName, validateID } from "@/session/id";
 import { SessionStore } from "@/session/store";
 import { NotFoundError } from "@/session/types";
+import { SSHClient, type SSHClientOptions } from "@/ssh/client";
+import { exec as sshExec } from "@/ssh/exec";
+import {
+	buildSSHOptions,
+	type SSHRuntimeClient,
+	withSSHClient,
+} from "./shared/session-runtime";
 
 export class CommandExitError extends Error {
 	constructor(
@@ -23,8 +30,10 @@ export class CommandExitError extends Error {
 interface SessionStoreLike {
 	get: (id: string) => Promise<{
 		id: string;
+		status: string;
 		provider: string;
 		provider_id: string;
+		ip_address: string;
 	}>;
 	rename: (oldId: string, newId: string) => Promise<void>;
 }
@@ -42,12 +51,14 @@ interface Dependencies {
 		name: string,
 		config: ProviderConfig,
 	) => ReturnType<typeof getProviderFromRegistry>;
+	createSSHClient: (options: SSHClientOptions) => SSHRuntimeClient;
 }
 
 const defaultDependencies: Dependencies = {
 	store: new SessionStore(),
 	loadConfig: load,
 	resolveProvider: getProviderFromRegistry,
+	createSSHClient: (options) => new SSHClient(options),
 };
 
 export interface RenameResult {
@@ -89,10 +100,17 @@ export async function runRename(
 			throw error;
 		});
 
+	// Load config once for provider rename and hostname update
+	let config: Config | undefined;
+	try {
+		config = await dependencies.loadConfig(configPath);
+	} catch {
+		// Config loading is best-effort
+	}
+
 	// Rename on the provider (best-effort)
-	if (session.provider_id) {
+	if (session.provider_id && config) {
 		try {
-			const config = await dependencies.loadConfig(configPath);
 			const providerConfig = getProviderConfig(config, session.provider);
 			if (providerConfig) {
 				const provider = dependencies.resolveProvider(
@@ -105,6 +123,26 @@ export async function runRename(
 			}
 		} catch {
 			// Provider rename is best-effort — local rename still proceeds
+		}
+	}
+
+	// Update hostname on the VM (best-effort, only if running with an IP)
+	if (session.status === "running" && session.ip_address && config) {
+		try {
+			const sshOptions = {
+				...buildSSHOptions(config, session.ip_address),
+				username: "root",
+			};
+			const client = dependencies.createSSHClient(sshOptions);
+			await withSSHClient(client, async (c) => {
+				await sshExec(c, `hostnamectl set-hostname ${normalizedNew}`);
+				await sshExec(
+					c,
+					`sed -i 's/\\b${normalizedOld}\\b/${normalizedNew}/g' /etc/hosts`,
+				);
+			});
+		} catch {
+			// Hostname update is best-effort — local rename still proceeds
 		}
 	}
 

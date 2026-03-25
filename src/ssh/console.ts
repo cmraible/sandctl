@@ -1,4 +1,5 @@
 import type { SSHClientLike, SSHShellChannelLike } from "@/ssh/client";
+import { syncTerminfo } from "@/ssh/terminfo";
 
 export interface ConsoleOptions {
 	term?: string;
@@ -38,10 +39,12 @@ export async function openConsole(
 	}
 
 	const requestedTerm = options.term ?? runtime.term;
-	const term =
+	const candidateTerm =
 		typeof requestedTerm === "string" && requestedTerm.length > 0
 			? requestedTerm
 			: "xterm-256color";
+
+	const term = await syncTerminfo(client, candidateTerm);
 
 	const shell = await client.shell({
 		term,
