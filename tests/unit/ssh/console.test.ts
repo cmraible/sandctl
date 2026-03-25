@@ -46,7 +46,8 @@ describe("ssh/console", () => {
 		};
 
 		const openPromise = openConsole(client, {}, runtime);
-		await Promise.resolve();
+		// Allow syncTerminfo + shell setup to resolve
+		await new Promise((r) => setTimeout(r, 0));
 
 		runtime.stdout.emit("resize");
 		channel.emit("close");
@@ -86,7 +87,8 @@ describe("ssh/console", () => {
 		};
 
 		const openPromise = openConsole(client, {}, runtime);
-		await Promise.resolve();
+		// Allow syncTerminfo + shell setup to resolve
+		await new Promise((r) => setTimeout(r, 0));
 
 		channel.emit("error", new Error("shell failed"));
 		await expect(openPromise).rejects.toThrow("shell failed");
