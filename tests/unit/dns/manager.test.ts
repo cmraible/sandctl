@@ -5,7 +5,10 @@ import { createDNSManager } from "@/dns/manager";
 
 describe("dns/manager", () => {
 	test("returns null when DNS config is missing", () => {
-		const config: Config = { default_provider: "hetzner", ssh_key_source: "agent" };
+		const config: Config = {
+			default_provider: "hetzner",
+			ssh_key_source: "agent",
+		};
 		expect(createDNSManager(config)).toBeNull();
 	});
 

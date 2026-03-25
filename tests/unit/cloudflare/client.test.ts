@@ -9,7 +9,10 @@ describe("cloudflare/client", () => {
 
 	beforeEach(() => {
 		requests = [];
-		nextResponse = { status: 200, body: { success: true, errors: [], result: {} } };
+		nextResponse = {
+			status: 200,
+			body: { success: true, errors: [], result: {} },
+		};
 
 		server = Bun.serve({
 			port: 0,
@@ -64,7 +67,10 @@ describe("cloudflare/client", () => {
 			body: { success: true, errors: [], result: record },
 		};
 
-		const result = await client().createDNSRecord("test.example.com", "1.2.3.4");
+		const result = await client().createDNSRecord(
+			"test.example.com",
+			"1.2.3.4",
+		);
 
 		expect(requests).toHaveLength(1);
 		expect(requests[0].method).toBe("POST");
@@ -89,9 +95,7 @@ describe("cloudflare/client", () => {
 
 		expect(requests).toHaveLength(1);
 		expect(requests[0].method).toBe("DELETE");
-		expect(requests[0].url).toBe(
-			"/zones/zone-123/dns_records/rec-1",
-		);
+		expect(requests[0].url).toBe("/zones/zone-123/dns_records/rec-1");
 	});
 
 	test("listDNSRecords filters by name", async () => {
