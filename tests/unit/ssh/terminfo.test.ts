@@ -4,10 +4,7 @@ import { PassThrough } from "node:stream";
 import type { SSHClientLike, SSHExecChannelLike } from "@/ssh/client";
 import { syncTerminfo } from "@/ssh/terminfo";
 
-function createMockChannel(
-	exitCode: number,
-	stdout = "",
-): SSHExecChannelLike {
+function createMockChannel(exitCode: number, stdout = ""): SSHExecChannelLike {
 	const channel = new PassThrough() as SSHExecChannelLike;
 	channel.stderr = new PassThrough();
 
