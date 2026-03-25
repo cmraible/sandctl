@@ -33,7 +33,8 @@ import {
 	type SnapshotClientLike,
 } from "@/hetzner/snapshots";
 import { get as getProviderFromRegistry } from "@/provider/registry";
-import { generateID } from "@/session/id";
+import { resolveSize, sizesHelpText } from "@/provider/sizes";
+import { generateID, normalizeName, validateID } from "@/session/id";
 import { SessionStore } from "@/session/store";
 import { Duration, type Session } from "@/session/types";
 import {
@@ -54,9 +55,10 @@ const DEFAULT_CLOUD_INIT_TIMEOUT_MS = 10 * 60 * 1000;
 const CLOUD_INIT_POLL_INTERVAL_MS = 5_000;
 
 interface NewOptions {
+	name?: string;
 	provider?: string;
 	region?: string;
-	serverType?: string;
+	size?: string;
 	image?: string;
 	timeout?: string;
 	template?: string;
@@ -77,7 +79,7 @@ interface NewCommandDependencies {
 		callbacks?: {
 			onProgress?: (message: string) => void;
 		},
-	) => Promise<Session>;
+	) => Promise<NewResult>;
 	createSpinner: (text: string) => NewCommandSpinner;
 	log: (message: string) => void;
 	loadConfig: (configPath?: string) => Promise<Config>;
@@ -357,6 +359,16 @@ async function setupClaudeConfigViaSSH(
 				c,
 				`echo '${encoded}' | base64 -d > /etc/profile.d/claude-oauth.sh && chmod 644 /etc/profile.d/claude-oauth.sh`,
 			);
+
+			// Claude Code requires hasCompletedOnboarding to skip the interactive
+			// auth/onboarding flow even when a token is provided via env var.
+			const onboarding = Buffer.from(
+				JSON.stringify({ hasCompletedOnboarding: true }),
+			).toString("base64");
+			await sshExec(
+				c,
+				`echo '${onboarding}' | base64 -d > /home/agent/.claude.json && chown agent:agent /home/agent/.claude.json`,
+			);
 		}
 
 		await sshExec(
@@ -379,17 +391,36 @@ async function defaultRunSSHSetup(
 	});
 }
 
+export interface NewResult {
+	session: Session;
+	/** Optional background work (e.g. snapshot creation) that can be awaited after
+	 *  the user is already working in the console. Resolves silently on failure. */
+	backgroundTasks?: Promise<void>;
+}
+
 export async function runNew(
 	options: NewOptions,
 	deps: Partial<Dependencies> = {},
 	configPath?: string,
-): Promise<Session> {
+): Promise<NewResult> {
 	const dependencies = {
 		...defaultDependencies,
 		...deps,
 	};
 
 	const config = await dependencies.loadConfig(configPath);
+
+	// Resolve --size to a server type
+	let resolvedServerType: string | undefined;
+	if (options.size) {
+		const vmSize = resolveSize(options.size);
+		if (!vmSize) {
+			throw new Error(
+				`unknown size '${options.size}'. Available sizes:\n${sizesHelpText()}`,
+			);
+		}
+		resolvedServerType = vmSize.serverType;
+	}
 
 	// -T base is not allowed — the base template is applied automatically
 	if (options.template && normalizeTemplateName(options.template) === "base") {
@@ -445,7 +476,24 @@ export async function runNew(
 	const existingNames = (await dependencies.store.list()).map(
 		(session) => session.id,
 	);
-	const sessionID = dependencies.generateSessionID(existingNames);
+
+	let sessionID: string;
+	if (options.name) {
+		const normalized = normalizeName(options.name);
+		if (!validateID(normalized)) {
+			throw new Error(
+				`invalid session name '${options.name}'. Names must start with a letter, be 2-30 characters, and contain only lowercase letters, digits, and hyphens.`,
+			);
+		}
+		if (existingNames.includes(normalized)) {
+			throw new Error(
+				`session '${normalized}' already exists. Use a different name or destroy the existing session first.`,
+			);
+		}
+		sessionID = normalized;
+	} else {
+		sessionID = dependencies.generateSessionID(existingNames);
+	}
 	const createdAt = dependencies.now().toISOString();
 
 	const publicKey = await dependencies.getPublicKey(config);
@@ -475,7 +523,7 @@ export async function runNew(
 			createdVM = await provider.create({
 				name: sessionID,
 				region: options.region,
-				serverType: options.serverType,
+				serverType: resolvedServerType,
 				image: String(snapshot.id),
 				sshKeyIDs: [sshKeyID],
 				skipUserData: true,
@@ -484,7 +532,7 @@ export async function runNew(
 			createdVM = await provider.create({
 				name: sessionID,
 				region: options.region,
-				serverType: options.serverType,
+				serverType: resolvedServerType,
 				image: options.image,
 				sshKeyIDs: [sshKeyID],
 				userData,
@@ -507,6 +555,11 @@ export async function runNew(
 
 		const readyVM = await provider.get(createdVM.id);
 
+		// Build background snapshot task (deferred until after console opens)
+		let backgroundTasks: Promise<void> | undefined;
+		// Capture createdVM.id for the background closure before it could change
+		const vmId = createdVM.id;
+
 		if (readyVM.ipAddress) {
 			if (snapshot) {
 				// Booting from snapshot — copy SSH keys to agent user
@@ -527,21 +580,22 @@ export async function runNew(
 					DEFAULT_CLOUD_INIT_TIMEOUT_MS,
 				);
 
-				// Create a base snapshot for next time (Hetzner only)
+				// Defer snapshot creation to background (Hetzner only)
 				if (isHetzner && !options.image) {
-					try {
-						dependencies.log("Creating base snapshot...");
-						await dependencies.createSnapshot(
-							provider.client,
-							createdVM.id,
-							userData,
-						);
-						await dependencies.cleanupSnapshots(provider.client, userData);
-					} catch (error) {
-						dependencies.warn(
-							`[warn] Snapshot creation failed: ${messageFromError(error)}`,
-						);
-					}
+					backgroundTasks = (async () => {
+						try {
+							await dependencies.createSnapshot(
+								provider.client,
+								vmId,
+								userData,
+							);
+							await dependencies.cleanupSnapshots(provider.client, userData);
+						} catch (error) {
+							dependencies.warn(
+								`[warn] Snapshot creation failed: ${messageFromError(error)}`,
+							);
+						}
+					})();
 				}
 			}
 
@@ -579,7 +633,7 @@ export async function runNew(
 			server_type: readyVM.serverType,
 		});
 
-		return {
+		const session: Session = {
 			id: sessionID,
 			status: "running",
 			provider: providerName,
@@ -589,6 +643,8 @@ export async function runNew(
 			server_type: readyVM.serverType,
 			created_at: createdAt,
 		};
+
+		return { session, backgroundTasks };
 	} catch (error) {
 		if (createdVM) {
 			try {
@@ -626,18 +682,20 @@ export async function runNewCommand(
 	};
 
 	const spinner = dependencies.createSpinner("Creating VM...");
-	let session: Session;
+	let result: NewResult;
 	try {
-		session = await dependencies.runNew(options, configPath, {
+		result = await dependencies.runNew(options, configPath, {
 			onProgress: (message: string) => {
 				spinner.update(message);
 			},
 		});
-		spinner.succeed(`Created VM '${session.id}'.`);
+		spinner.succeed(`Created VM '${result.session.id}'.`);
 	} catch (error) {
 		spinner.fail("Failed to provision VM.");
 		throw error;
 	}
+
+	const { session, backgroundTasks } = result;
 
 	const shouldConsole =
 		!options.noConsole && dependencies.isInteractive() && session.ip_address;
@@ -672,12 +730,18 @@ export async function runNewCommand(
 		dependencies.log(`Use 'sandctl destroy ${session.id}' when done.`);
 	}
 
+	// Wait for background tasks (e.g. snapshot creation) after the console exits
+	if (backgroundTasks) {
+		await backgroundTasks;
+	}
+
 	return session;
 }
 
 export function registerNewCommand(): Command {
 	return new Command("new")
 		.description("Create a new sandboxed session")
+		.option("-n, --name <name>", "Custom session name")
 		.option("--provider <provider>", "Provider name")
 		.option("-T, --template <template>", "Template to initialize the session")
 		.option(
@@ -685,7 +749,10 @@ export function registerNewCommand(): Command {
 			"Autolaunch claude with the provided prompt",
 		)
 		.option("--region <region>", "Region override")
-		.option("--server-type <serverType>", "Server type override")
+		.option(
+			"-s, --size <size>",
+			"VM size: small (3 vCPU/4 GB), medium (4 vCPU/8 GB), large (8 vCPU/16 GB), xlarge (16 vCPU/32 GB)",
+		)
 		.option("--image <image>", "Image override")
 		.option("-t, --timeout <timeout>", "Wait timeout (for example: 5m, 10m)")
 		.option(

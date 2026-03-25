@@ -22,11 +22,20 @@ describe("hetzner/setup", () => {
 			);
 		});
 
-		test("is a minimal base without packages or docker", () => {
+		test("installs Claude Code via native installer", () => {
 			const output = generateCloudInit();
-			expect(output).not.toContain("package_update");
-			expect(output).not.toContain("docker");
-			expect(output).not.toContain("nodejs");
+			expect(output).toContain("claude.ai/install.sh");
+		});
+
+		test("adds agent user to docker group", () => {
+			const output = generateCloudInit();
+			expect(output).toContain("docker");
+		});
+
+		test("installs gh CLI from official GitHub repository", () => {
+			const output = generateCloudInit();
+			expect(output).toContain("apt-get install -y gh");
+			expect(output).toContain("githubcli-archive-keyring.gpg");
 		});
 	});
 

@@ -62,7 +62,7 @@ export async function runConsole(
 }
 
 export function registerConsoleCommand(): Command {
-	return new Command("console")
+	return new Command("ssh")
 		.description("Open an interactive SSH console to a running session")
 		.argument("<name>")
 		.action(async (name: string, _options: unknown, command: Command) => {

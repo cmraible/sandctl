@@ -33,6 +33,7 @@ export interface HetznerClientLike {
 	listServers(labelSelector?: string): Promise<HetznerServer[]>;
 	createSSHKey(name: string, publicKey: string): Promise<HetznerSSHKey>;
 	listSSHKeys(fingerprint?: string): Promise<HetznerSSHKey[]>;
+	rebootServer(id: string): Promise<void>;
 	listDatacenters(): Promise<Array<{ id: number; name: string }>>;
 	createImage(serverId: string, opts: CreateImageOpts): Promise<HetznerImage>;
 	getImage(id: string): Promise<HetznerImage>;
@@ -110,6 +111,10 @@ export class HetznerProvider implements Provider, SSHKeyManager {
 			}
 			throw error;
 		}
+	}
+
+	async reboot(id: string): Promise<void> {
+		await this.client.rebootServer(id);
 	}
 
 	async list(): Promise<VM[]> {
