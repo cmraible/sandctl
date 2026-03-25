@@ -213,7 +213,7 @@ export class HetznerProvider implements Provider, SSHKeyManager {
 		serverType: string,
 		upgradeDisk = false,
 	): Promise<void> {
-		const RESIZE_TIMEOUT_MS = 2 * 60 * 1000;
+		const RESIZE_TIMEOUT_MS = 4 * 60 * 1000;
 
 		// Step 1: Shut down if not already off
 		const server = await this.get(id);
