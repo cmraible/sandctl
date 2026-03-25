@@ -213,22 +213,26 @@ export class HetznerProvider implements Provider, SSHKeyManager {
 		id: string,
 		serverType: string,
 		upgradeDisk = false,
+		onProgress?: (message: string) => void,
 	): Promise<void> {
 		const STEP_TIMEOUT_MS = 2 * 60 * 1000;
+		const log = onProgress ?? (() => {});
 
 		// Step 1: Power off if not already off
 		const server = await this.get(id);
 		if (server.status !== "stopped") {
+			log("Powering off server...");
 			await this.client.poweroffServer(id);
 			await this.waitForStatus(id, "off", STEP_TIMEOUT_MS);
 		}
 
 		// Step 2: Change server type
+		log(`Changing server type to ${serverType}...`);
 		await this.client.changeServerType(id, serverType, upgradeDisk);
-		// Wait briefly for it to settle (stays off after type change)
 		await this.waitForStatus(id, "off", STEP_TIMEOUT_MS);
 
 		// Step 3: Power on
+		log("Powering on server...");
 		await this.client.poweronServer(id);
 		await this.waitForStatus(id, "running", STEP_TIMEOUT_MS);
 	}

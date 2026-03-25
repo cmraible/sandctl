@@ -1,5 +1,6 @@
 import { confirm } from "@inquirer/prompts";
 import { Command } from "commander";
+import { createSpinner } from "nanospinner";
 
 import {
 	lookupSession,
@@ -15,6 +16,12 @@ import type { HetznerProvider } from "@/hetzner/provider";
 import { get as getProviderFromRegistry } from "@/provider/registry";
 import { SessionStore } from "@/session/store";
 
+interface ResizeSpinner {
+	succeed(message: string): void;
+	fail(message: string): void;
+	update(message: string): void;
+}
+
 interface Dependencies {
 	loadConfig: (configPath?: string) => Promise<Config>;
 	resolveProvider: (
@@ -24,12 +31,33 @@ interface Dependencies {
 	store: SessionStoreLike & {
 		update(id: string, updates: Record<string, unknown>): Promise<void>;
 	};
+	createSpinner: (text: string) => ResizeSpinner;
 }
+
+const noopSpinner: ResizeSpinner = {
+	succeed() {},
+	fail() {},
+	update() {},
+};
 
 const defaultDependencies: Dependencies = {
 	loadConfig: load,
 	resolveProvider: getProviderFromRegistry,
 	store: new SessionStore(),
+	createSpinner: (text) => {
+		const spinner = createSpinner(text).start();
+		return {
+			succeed(message: string): void {
+				spinner.success({ text: message });
+			},
+			fail(message: string): void {
+				spinner.error({ text: message });
+			},
+			update(message: string): void {
+				spinner.update({ text: message });
+			},
+		};
+	},
 };
 
 export interface ResizeResult {
@@ -93,20 +121,28 @@ export async function runResize(
 		}
 	}
 
-	if (!options.silent) {
-		console.log(`Resizing session '${session.id}' to ${serverType}...`);
-	}
+	const spinner = options.silent
+		? noopSpinner
+		: dependencies.createSpinner(
+				`Powering off session '${session.id}'...`,
+			);
 
-	await (provider as HetznerProvider).resize(
-		session.provider_id,
-		serverType,
-		options.upgradeDisk,
-	);
+	try {
+		await (provider as HetznerProvider).resize(
+			session.provider_id,
+			serverType,
+			options.upgradeDisk,
+			(step: string) => {
+				spinner.update(step);
+			},
+		);
 
-	await dependencies.store.update(session.id, { server_type: serverType });
+		await dependencies.store.update(session.id, { server_type: serverType });
 
-	if (!options.silent) {
-		console.log(`Session '${session.id}' resized to ${serverType}.`);
+		spinner.succeed(`Session '${session.id}' resized to ${serverType}.`);
+	} catch (error) {
+		spinner.fail(`Failed to resize session '${session.id}'.`);
+		throw error;
 	}
 
 	return { id: session.id, serverType, resized: true };
