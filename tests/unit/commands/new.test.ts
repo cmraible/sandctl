@@ -346,7 +346,7 @@ describe("commands/new", () => {
 
 		expect(capturedOptions).toBeDefined();
 		expect(capturedOptions?.initialCommands).toContain(
-			"claude -p 'fix the bug'",
+			`PATH="$HOME/.claude/local/bin:$PATH" claude -p 'fix the bug'`,
 		);
 	});
 
@@ -386,7 +386,7 @@ describe("commands/new", () => {
 
 		expect(capturedOptions).toBeDefined();
 		expect(capturedOptions?.initialCommands).toContain(
-			"claude -p 'fix the user'\\''s bug'",
+			`PATH="$HOME/.claude/local/bin:$PATH" claude -p 'fix the user'\\''s bug'`,
 		);
 	});
 

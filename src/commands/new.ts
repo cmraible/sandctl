@@ -710,7 +710,9 @@ export async function runNewCommand(
 			const initialCommands = [...(config.post_ssh_commands ?? [])];
 			if (options.prompt) {
 				const escaped = options.prompt.replace(/'/g, "'\\''");
-				initialCommands.push(`claude -p '${escaped}'`);
+				initialCommands.push(
+					`PATH="$HOME/.claude/local/bin:$PATH" claude -p '${escaped}'`,
+				);
 			}
 			await withSSHClient(client, async (c) => {
 				await dependencies.openRemoteConsole(c, {
