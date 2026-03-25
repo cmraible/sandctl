@@ -6,6 +6,7 @@ import {
 	load,
 	type ProviderConfig,
 } from "@/config/config";
+import { createDNSManager } from "@/dns/manager";
 import { get as getProviderFromRegistry } from "@/provider/registry";
 import { normalizeName, validateID } from "@/session/id";
 import { SessionStore } from "@/session/store";
@@ -25,6 +26,7 @@ interface SessionStoreLike {
 		id: string;
 		provider: string;
 		provider_id: string;
+		ip_address: string;
 	}>;
 	rename: (oldId: string, newId: string) => Promise<void>;
 }
@@ -109,6 +111,23 @@ export async function runRename(
 	}
 
 	await dependencies.store.rename(normalizedOld, normalizedNew);
+
+	// Update DNS record (best-effort)
+	if (session.ip_address) {
+		try {
+			const config = await dependencies.loadConfig(configPath);
+			const dns = createDNSManager(config);
+			if (dns) {
+				await dns.updateRecord(
+					normalizedOld,
+					normalizedNew,
+					session.ip_address,
+				);
+			}
+		} catch {
+			// DNS update is best-effort — local rename still proceeds
+		}
+	}
 
 	if (!options.silent) {
 		console.log(`Renamed session '${normalizedOld}' to '${normalizedNew}'.`);

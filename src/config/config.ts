@@ -17,6 +17,13 @@ export interface ProviderConfig {
 	ssh_key_id?: number;
 }
 
+export interface DNSConfig {
+	provider?: string;
+	domain?: string;
+	cloudflare_api_token?: string;
+	cloudflare_zone_id?: string;
+}
+
 export interface Config {
 	default_provider?: string;
 	ssh_key_source?: "file" | "agent";
@@ -24,6 +31,7 @@ export interface Config {
 	ssh_public_key_inline?: string;
 	ssh_key_fingerprint?: string;
 	providers?: Record<string, ProviderConfig>;
+	dns?: DNSConfig;
 	sprites_token?: string;
 	opencode_zen_key?: string;
 	git_config_path?: string;
@@ -281,4 +289,12 @@ export function hasClaudeOAuthToken(config: Config): boolean {
 
 export function hasGitHubToken(config: Config): boolean {
 	return Boolean(config.github_token);
+}
+
+export function hasDNSConfig(config: Config): boolean {
+	return Boolean(
+		config.dns?.cloudflare_api_token &&
+			config.dns?.cloudflare_zone_id &&
+			config.dns?.domain,
+	);
 }

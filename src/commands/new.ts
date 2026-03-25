@@ -19,6 +19,7 @@ import {
 	load,
 	type ProviderConfig,
 } from "@/config/config";
+import { createDNSManager, type DNSManager } from "@/dns/manager";
 import type { HetznerImage } from "@/hetzner/client";
 import { HetznerProvider } from "@/hetzner/provider";
 import {
@@ -143,6 +144,7 @@ interface Dependencies {
 		host: string,
 		deps: Pick<Dependencies, "createSSHClient">,
 	) => Promise<void>;
+	createDNSManager: (config: Config) => DNSManager | null;
 	now: () => Date;
 	warn: (message: string) => void;
 	log: (message: string) => void;
@@ -163,6 +165,7 @@ const defaultDependencies: Dependencies = {
 	cleanupSnapshots: cleanupOldSnapshots,
 	runSSHSetup: defaultRunSSHSetup,
 	setupClaudeConfig: setupClaudeConfigViaSSH,
+	createDNSManager,
 	now: () => new Date(),
 	warn: (message: string) => {
 		console.warn(message);
@@ -631,6 +634,22 @@ export async function runNew(
 			region: readyVM.region,
 			server_type: readyVM.serverType,
 		});
+
+		// Create DNS record (best-effort)
+		if (readyVM.ipAddress) {
+			try {
+				const dns = dependencies.createDNSManager(config);
+				if (dns) {
+					dependencies.log("Creating DNS record...");
+					await dns.createRecord(sessionID, readyVM.ipAddress);
+					dependencies.log(`DNS record created: ${dns.fqdn(sessionID)}`);
+				}
+			} catch (error) {
+				dependencies.warn(
+					`[warn] DNS record creation failed: ${messageFromError(error)}`,
+				);
+			}
+		}
 
 		const session: Session = {
 			id: sessionID,

@@ -7,6 +7,7 @@ import {
 	load,
 	type ProviderConfig,
 } from "@/config/config";
+import { createDNSManager } from "@/dns/manager";
 import { getProvider } from "@/provider";
 import { get as getProviderFromRegistry } from "@/provider/registry";
 import { normalizeName, validateID } from "@/session/id";
@@ -137,6 +138,17 @@ export async function runDestroy(
 		throw new Error(
 			`Failed to delete provider VM '${session.provider_id}': ${details}`,
 		);
+	}
+
+	// Delete DNS record (best-effort)
+	try {
+		const config = await dependencies.loadConfig(configPath);
+		const dns = createDNSManager(config);
+		if (dns) {
+			await dns.deleteRecord(session.id);
+		}
+	} catch {
+		// DNS cleanup is best-effort — don't block session destruction
 	}
 
 	await store.remove(session.id);
