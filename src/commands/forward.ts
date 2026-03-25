@@ -98,13 +98,15 @@ export function registerForwardCommand(): Command {
 		.description("Forward local ports to a remote session via SSH tunnels")
 		.argument("<name>", "Session name")
 		.option(
-			"-L <spec...>",
+			"-L <spec>",
 			"Forward specification: localPort:remoteHost:remotePort (repeatable)",
+			(value: string, previous: string[]) => [...previous, value],
+			[] as string[],
 		)
 		.action(
-			async (name: string, options: { L?: string[] }, command: Command) => {
+			async (name: string, options: { L: string[] }, command: Command) => {
 				const globals = command.optsWithGlobals() as { config?: string };
-				await runForward(name, options.L ?? [], {}, globals.config);
+				await runForward(name, options.L, {}, globals.config);
 			},
 		);
 }
