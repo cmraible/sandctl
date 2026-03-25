@@ -353,14 +353,41 @@ describe("commands/new", () => {
 				created: "2026-02-22T00:00:00Z",
 			}),
 			listSSHKeys: async () => [],
-			createSSHKey: async () => ({ id: 1, name: "test", fingerprint: "abc", public_key: "ssh-ed25519 AAAA" }),
+			createSSHKey: async () => ({
+				id: 1,
+				name: "test",
+				fingerprint: "abc",
+				public_key: "ssh-ed25519 AAAA",
+			}),
 			listImages: async () => [],
-			createImage: async () => ({ id: 999, description: "sandctl-base", status: "available", type: "snapshot", labels: {}, created_from: { id: 1, name: "test" } }),
-			getImage: async () => ({ id: 999, description: "sandctl-base", status: "available", type: "snapshot", labels: {}, created_from: { id: 1, name: "test" } }),
+			createImage: async () => ({
+				id: 999,
+				description: "sandctl-base",
+				status: "available",
+				type: "snapshot",
+				labels: {},
+				created_from: { id: 1, name: "test" },
+			}),
+			getImage: async () => ({
+				id: 999,
+				description: "sandctl-base",
+				status: "available",
+				type: "snapshot",
+				labels: {},
+				created_from: { id: 1, name: "test" },
+			}),
 			deleteImage: async () => {},
 			deleteServer: async () => {},
 			listServers: async () => [],
-			updateServer: async () => ({ id: 1, name: "violet", status: "running", public_net: { ipv4: { ip: "203.0.113.10" } }, datacenter: { location: { name: "ash" } }, server_type: { name: "cpx31" }, created: "2026-02-22T00:00:00Z" }),
+			updateServer: async () => ({
+				id: 1,
+				name: "violet",
+				status: "running",
+				public_net: { ipv4: { ip: "203.0.113.10" } },
+				datacenter: { location: { name: "ash" } },
+				server_type: { name: "cpx31" },
+				created: "2026-02-22T00:00:00Z",
+			}),
 			listDatacenters: async () => [],
 		};
 		const provider = new HetznerProvider(
@@ -423,14 +450,41 @@ describe("commands/new", () => {
 				created: "2026-02-22T00:00:00Z",
 			}),
 			listSSHKeys: async () => [],
-			createSSHKey: async () => ({ id: 1, name: "test", fingerprint: "abc", public_key: "ssh-ed25519 AAAA" }),
+			createSSHKey: async () => ({
+				id: 1,
+				name: "test",
+				fingerprint: "abc",
+				public_key: "ssh-ed25519 AAAA",
+			}),
 			listImages: async () => [],
-			createImage: async () => ({ id: 999, description: "sandctl-base", status: "available", type: "snapshot", labels: {}, created_from: { id: 1, name: "test" } }),
-			getImage: async () => ({ id: 999, description: "sandctl-base", status: "available", type: "snapshot", labels: {}, created_from: { id: 1, name: "test" } }),
+			createImage: async () => ({
+				id: 999,
+				description: "sandctl-base",
+				status: "available",
+				type: "snapshot",
+				labels: {},
+				created_from: { id: 1, name: "test" },
+			}),
+			getImage: async () => ({
+				id: 999,
+				description: "sandctl-base",
+				status: "available",
+				type: "snapshot",
+				labels: {},
+				created_from: { id: 1, name: "test" },
+			}),
 			deleteImage: async () => {},
 			deleteServer: async () => {},
 			listServers: async () => [],
-			updateServer: async () => ({ id: 1, name: "violet", status: "running", public_net: { ipv4: { ip: "203.0.113.10" } }, datacenter: { location: { name: "ash" } }, server_type: { name: "cpx31" }, created: "2026-02-22T00:00:00Z" }),
+			updateServer: async () => ({
+				id: 1,
+				name: "violet",
+				status: "running",
+				public_net: { ipv4: { ip: "203.0.113.10" } },
+				datacenter: { location: { name: "ash" } },
+				server_type: { name: "cpx31" },
+				created: "2026-02-22T00:00:00Z",
+			}),
 			listDatacenters: async () => [],
 		};
 		const provider = new HetznerProvider(
@@ -450,10 +504,11 @@ describe("commands/new", () => {
 				waitForCloudInit: async () => {},
 				setupGitConfig: async () => {},
 				runSSHSetup: async () => {},
-				findSnapshot: async () => ({
-					id: 123,
-					description: "sandctl-base",
-				}) as never,
+				findSnapshot: async () =>
+					({
+						id: 123,
+						description: "sandctl-base",
+					}) as never,
 				store: {
 					list: async () => [],
 					add: async () => {},
@@ -489,14 +544,31 @@ describe("commands/new", () => {
 				created: "2026-02-22T00:00:00Z",
 			}),
 			listSSHKeys: async () => [],
-			createSSHKey: async () => ({ id: 1, name: "test", fingerprint: "abc", public_key: "ssh-ed25519 AAAA" }),
+			createSSHKey: async () => ({
+				id: 1,
+				name: "test",
+				fingerprint: "abc",
+				public_key: "ssh-ed25519 AAAA",
+			}),
 			listImages: async () => [],
 			deleteServer: async () => {},
 			listServers: async () => [],
-			updateServer: async () => ({ id: 1, name: "violet", status: "running", public_net: { ipv4: { ip: "203.0.113.10" } }, datacenter: { location: { name: "ash" } }, server_type: { name: "cpx31" }, created: "2026-02-22T00:00:00Z" }),
+			updateServer: async () => ({
+				id: 1,
+				name: "violet",
+				status: "running",
+				public_net: { ipv4: { ip: "203.0.113.10" } },
+				datacenter: { location: { name: "ash" } },
+				server_type: { name: "cpx31" },
+				created: "2026-02-22T00:00:00Z",
+			}),
 			listDatacenters: async () => [],
-			createImage: async () => { throw new Error("not used"); },
-			getImage: async () => { throw new Error("not used"); },
+			createImage: async () => {
+				throw new Error("not used");
+			},
+			getImage: async () => {
+				throw new Error("not used");
+			},
 			deleteImage: async () => {},
 		};
 		const provider = new HetznerProvider(
