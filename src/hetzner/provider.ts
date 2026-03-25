@@ -215,19 +215,12 @@ export class HetznerProvider implements Provider, SSHKeyManager {
 		upgradeDisk = false,
 	): Promise<void> {
 		const STEP_TIMEOUT_MS = 2 * 60 * 1000;
-		const GRACEFUL_SHUTDOWN_MS = 60 * 1000;
 
-		// Step 1: Shut down if not already off
+		// Step 1: Power off if not already off
 		const server = await this.get(id);
 		if (server.status !== "stopped") {
-			// Try graceful ACPI shutdown first, fall back to hard poweroff
-			await this.client.shutdownServer(id);
-			try {
-				await this.waitForStatus(id, "off", GRACEFUL_SHUTDOWN_MS);
-			} catch {
-				await this.client.poweroffServer(id);
-				await this.waitForStatus(id, "off", STEP_TIMEOUT_MS);
-			}
+			await this.client.poweroffServer(id);
+			await this.waitForStatus(id, "off", STEP_TIMEOUT_MS);
 		}
 
 		// Step 2: Change server type
