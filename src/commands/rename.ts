@@ -136,6 +136,10 @@ export async function runRename(
 			const client = dependencies.createSSHClient(sshOptions);
 			await withSSHClient(client, async (c) => {
 				await sshExec(c, `hostnamectl set-hostname ${normalizedNew}`);
+				await sshExec(
+					c,
+					`sed -i 's/\\b${normalizedOld}\\b/${normalizedNew}/g' /etc/hosts`,
+				);
 			});
 		} catch {
 			// Hostname update is best-effort — local rename still proceeds

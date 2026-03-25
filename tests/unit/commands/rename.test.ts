@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { EventEmitter } from "node:events";
 
 import { runRename } from "@/commands/rename";
 import type { SSHClientLike } from "@/ssh/client";
@@ -45,10 +46,17 @@ function fakeSSHClient(commands: string[]) {
 		close: async () => {},
 		exec: async (cmd: string) => {
 			commands.push(cmd);
-			return {
-				on: (_event: string, _cb: unknown) => ({ on: () => ({}) }),
-				stderr: { on: (_event: string, _cb: unknown) => {} },
-			} as unknown as ReturnType<SSHClientLike["exec"]>;
+			const channel = new EventEmitter() as EventEmitter & {
+				stderr: EventEmitter;
+				write: (data: string) => void;
+				end: () => void;
+			};
+			channel.stderr = new EventEmitter();
+			channel.write = () => {};
+			channel.end = () => {};
+			// Emit close on next tick so collectExecResult resolves
+			process.nextTick(() => channel.emit("close", 0));
+			return channel as unknown as ReturnType<SSHClientLike["exec"]>;
 		},
 	});
 }
@@ -199,6 +207,7 @@ describe("commands/rename", () => {
 		);
 
 		expect(commands).toContain("hostnamectl set-hostname bob");
+		expect(commands).toContain("sed -i 's/\\balice\\b/bob/g' /etc/hosts");
 	});
 
 	test("skips hostname update when session is not running", async () => {
