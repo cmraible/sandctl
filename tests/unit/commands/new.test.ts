@@ -314,12 +314,14 @@ describe("commands/new", () => {
 		let capturedOptions: { initialCommands?: string[] } | undefined;
 		await runNewCommand({ prompt: "fix the bug" }, undefined, {
 			runNew: async () => ({
-				id: "violet",
-				status: "running",
-				provider: "hetzner",
-				provider_id: "vm-123",
-				ip_address: "203.0.113.10",
-				created_at: "2026-02-22T00:00:00Z",
+				session: {
+					id: "violet",
+					status: "running",
+					provider: "hetzner",
+					provider_id: "vm-123",
+					ip_address: "203.0.113.10",
+					created_at: "2026-02-22T00:00:00Z",
+				},
 			}),
 			createSpinner: () => ({
 				succeed: () => {},
@@ -352,12 +354,14 @@ describe("commands/new", () => {
 		let capturedOptions: { initialCommands?: string[] } | undefined;
 		await runNewCommand({ prompt: "fix the user's bug" }, undefined, {
 			runNew: async () => ({
-				id: "violet",
-				status: "running",
-				provider: "hetzner",
-				provider_id: "vm-123",
-				ip_address: "203.0.113.10",
-				created_at: "2026-02-22T00:00:00Z",
+				session: {
+					id: "violet",
+					status: "running",
+					provider: "hetzner",
+					provider_id: "vm-123",
+					ip_address: "203.0.113.10",
+					created_at: "2026-02-22T00:00:00Z",
+				},
 			}),
 			createSpinner: () => ({
 				succeed: () => {},
