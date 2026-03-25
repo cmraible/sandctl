@@ -4,25 +4,7 @@ on:
   push:
     branches:
       - main
-    paths:
-      - "src/**"
-      - "tests/**"
-      - "package.json"
-      - "tsconfig.json"
-      - "biome.json"
-      - "bunfig.toml"
-      - "scripts/**"
-      - ".github/workflows/ts-ci.yml"
   pull_request:
-    paths:
-      - "src/**"
-      - "tests/**"
-      - "package.json"
-      - "tsconfig.json"
-      - "biome.json"
-      - "bunfig.toml"
-      - "scripts/**"
-      - ".github/workflows/ts-ci.yml"
 
 permissions:
   contents: read
