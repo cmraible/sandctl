@@ -78,7 +78,7 @@ interface NewCommandDependencies {
 		callbacks?: {
 			onProgress?: (message: string) => void;
 		},
-	) => Promise<Session>;
+	) => Promise<NewResult>;
 	createSpinner: (text: string) => NewCommandSpinner;
 	log: (message: string) => void;
 	loadConfig: (configPath?: string) => Promise<Config>;
@@ -390,11 +390,18 @@ async function defaultRunSSHSetup(
 	});
 }
 
+export interface NewResult {
+	session: Session;
+	/** Optional background work (e.g. snapshot creation) that can be awaited after
+	 *  the user is already working in the console. Resolves silently on failure. */
+	backgroundTasks?: Promise<void>;
+}
+
 export async function runNew(
 	options: NewOptions,
 	deps: Partial<Dependencies> = {},
 	configPath?: string,
-): Promise<Session> {
+): Promise<NewResult> {
 	const dependencies = {
 		...defaultDependencies,
 		...deps,
@@ -547,6 +554,11 @@ export async function runNew(
 
 		const readyVM = await provider.get(createdVM.id);
 
+		// Build background snapshot task (deferred until after console opens)
+		let backgroundTasks: Promise<void> | undefined;
+		// Capture createdVM.id for the background closure before it could change
+		const vmId = createdVM.id;
+
 		if (readyVM.ipAddress) {
 			if (snapshot) {
 				// Booting from snapshot — copy SSH keys to agent user
@@ -567,21 +579,22 @@ export async function runNew(
 					DEFAULT_CLOUD_INIT_TIMEOUT_MS,
 				);
 
-				// Create a base snapshot for next time (Hetzner only)
+				// Defer snapshot creation to background (Hetzner only)
 				if (isHetzner && !options.image) {
-					try {
-						dependencies.log("Creating base snapshot...");
-						await dependencies.createSnapshot(
-							provider.client,
-							createdVM.id,
-							userData,
-						);
-						await dependencies.cleanupSnapshots(provider.client, userData);
-					} catch (error) {
-						dependencies.warn(
-							`[warn] Snapshot creation failed: ${messageFromError(error)}`,
-						);
-					}
+					backgroundTasks = (async () => {
+						try {
+							await dependencies.createSnapshot(
+								provider.client,
+								vmId,
+								userData,
+							);
+							await dependencies.cleanupSnapshots(provider.client, userData);
+						} catch (error) {
+							dependencies.warn(
+								`[warn] Snapshot creation failed: ${messageFromError(error)}`,
+							);
+						}
+					})();
 				}
 			}
 
@@ -619,7 +632,7 @@ export async function runNew(
 			server_type: readyVM.serverType,
 		});
 
-		return {
+		const session: Session = {
 			id: sessionID,
 			status: "running",
 			provider: providerName,
@@ -629,6 +642,8 @@ export async function runNew(
 			server_type: readyVM.serverType,
 			created_at: createdAt,
 		};
+
+		return { session, backgroundTasks };
 	} catch (error) {
 		if (createdVM) {
 			try {
@@ -666,18 +681,20 @@ export async function runNewCommand(
 	};
 
 	const spinner = dependencies.createSpinner("Creating VM...");
-	let session: Session;
+	let result: NewResult;
 	try {
-		session = await dependencies.runNew(options, configPath, {
+		result = await dependencies.runNew(options, configPath, {
 			onProgress: (message: string) => {
 				spinner.update(message);
 			},
 		});
-		spinner.succeed(`Created VM '${session.id}'.`);
+		spinner.succeed(`Created VM '${result.session.id}'.`);
 	} catch (error) {
 		spinner.fail("Failed to provision VM.");
 		throw error;
 	}
+
+	const { session, backgroundTasks } = result;
 
 	const shouldConsole =
 		!options.noConsole && dependencies.isInteractive() && session.ip_address;
@@ -705,6 +722,11 @@ export async function runNewCommand(
 	} else if (!options.noConsole) {
 		dependencies.log(`Use 'sandctl console ${session.id}' to connect.`);
 		dependencies.log(`Use 'sandctl destroy ${session.id}' when done.`);
+	}
+
+	// Wait for background tasks (e.g. snapshot creation) after the console exits
+	if (backgroundTasks) {
+		await backgroundTasks;
 	}
 
 	return session;
