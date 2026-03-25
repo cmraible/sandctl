@@ -64,7 +64,15 @@ export async function runConsole(
 		const hookCommand = config.hooks?.["new-console-session"];
 		if (hookCommand) {
 			try {
-				await dependencies.runRemoteCommand(c, hookCommand);
+				const result = await dependencies.runRemoteCommand(c, hookCommand);
+				if (result.stderr) {
+					console.error(result.stderr);
+				}
+				if (result.exitCode !== 0) {
+					console.warn(
+						`Warning: new-console-session hook exited with code ${result.exitCode}`,
+					);
+				}
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				console.warn(`Warning: new-console-session hook failed: ${message}`);
