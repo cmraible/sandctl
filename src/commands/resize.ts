@@ -123,9 +123,7 @@ export async function runResize(
 
 	const spinner = options.silent
 		? noopSpinner
-		: dependencies.createSpinner(
-				`Powering off session '${session.id}'...`,
-			);
+		: dependencies.createSpinner(`Powering off session '${session.id}'...`);
 
 	try {
 		await (provider as HetznerProvider).resize(
