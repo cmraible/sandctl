@@ -183,6 +183,12 @@ export class HetznerClient {
 		});
 	}
 
+	async poweroffServer(id: string): Promise<void> {
+		await this.request<unknown>(`/servers/${id}/actions/poweroff`, {
+			method: "POST",
+		});
+	}
+
 	async poweronServer(id: string): Promise<void> {
 		await this.request<unknown>(`/servers/${id}/actions/poweron`, {
 			method: "POST",

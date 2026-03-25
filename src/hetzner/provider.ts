@@ -35,6 +35,7 @@ export interface HetznerClientLike {
 	listSSHKeys(fingerprint?: string): Promise<HetznerSSHKey[]>;
 	rebootServer(id: string): Promise<void>;
 	shutdownServer(id: string): Promise<void>;
+	poweroffServer(id: string): Promise<void>;
 	poweronServer(id: string): Promise<void>;
 	changeServerType(
 		id: string,
@@ -213,23 +214,30 @@ export class HetznerProvider implements Provider, SSHKeyManager {
 		serverType: string,
 		upgradeDisk = false,
 	): Promise<void> {
-		const RESIZE_TIMEOUT_MS = 4 * 60 * 1000;
+		const STEP_TIMEOUT_MS = 2 * 60 * 1000;
+		const GRACEFUL_SHUTDOWN_MS = 60 * 1000;
 
 		// Step 1: Shut down if not already off
 		const server = await this.get(id);
 		if (server.status !== "stopped") {
+			// Try graceful ACPI shutdown first, fall back to hard poweroff
 			await this.client.shutdownServer(id);
-			await this.waitForStatus(id, "off", RESIZE_TIMEOUT_MS);
+			try {
+				await this.waitForStatus(id, "off", GRACEFUL_SHUTDOWN_MS);
+			} catch {
+				await this.client.poweroffServer(id);
+				await this.waitForStatus(id, "off", STEP_TIMEOUT_MS);
+			}
 		}
 
 		// Step 2: Change server type
 		await this.client.changeServerType(id, serverType, upgradeDisk);
 		// Wait briefly for it to settle (stays off after type change)
-		await this.waitForStatus(id, "off", RESIZE_TIMEOUT_MS);
+		await this.waitForStatus(id, "off", STEP_TIMEOUT_MS);
 
 		// Step 3: Power on
 		await this.client.poweronServer(id);
-		await this.waitForStatus(id, "running", RESIZE_TIMEOUT_MS);
+		await this.waitForStatus(id, "running", STEP_TIMEOUT_MS);
 	}
 
 	private async waitForStatus(
