@@ -177,6 +177,38 @@ export class HetznerClient {
 		});
 	}
 
+	async shutdownServer(id: string): Promise<void> {
+		await this.request<unknown>(`/servers/${id}/actions/shutdown`, {
+			method: "POST",
+		});
+	}
+
+	async poweroffServer(id: string): Promise<void> {
+		await this.request<unknown>(`/servers/${id}/actions/poweroff`, {
+			method: "POST",
+		});
+	}
+
+	async poweronServer(id: string): Promise<void> {
+		await this.request<unknown>(`/servers/${id}/actions/poweron`, {
+			method: "POST",
+		});
+	}
+
+	async changeServerType(
+		id: string,
+		serverType: string,
+		upgradeDisk: boolean,
+	): Promise<void> {
+		await this.request<unknown>(`/servers/${id}/actions/change_type`, {
+			method: "POST",
+			body: JSON.stringify({
+				server_type: serverType,
+				upgrade_disk: upgradeDisk,
+			}),
+		});
+	}
+
 	async listDatacenters(): Promise<Array<{ id: number; name: string }>> {
 		const response = await this.request<{
 			datacenters: Array<{ id: number; name: string }>;

@@ -34,6 +34,14 @@ export interface HetznerClientLike {
 	createSSHKey(name: string, publicKey: string): Promise<HetznerSSHKey>;
 	listSSHKeys(fingerprint?: string): Promise<HetznerSSHKey[]>;
 	rebootServer(id: string): Promise<void>;
+	shutdownServer(id: string): Promise<void>;
+	poweroffServer(id: string): Promise<void>;
+	poweronServer(id: string): Promise<void>;
+	changeServerType(
+		id: string,
+		serverType: string,
+		upgradeDisk: boolean,
+	): Promise<void>;
 	listDatacenters(): Promise<Array<{ id: number; name: string }>>;
 	createImage(serverId: string, opts: CreateImageOpts): Promise<HetznerImage>;
 	getImage(id: string): Promise<HetznerImage>;
@@ -199,6 +207,69 @@ export class HetznerProvider implements Provider, SSHKeyManager {
 		}
 
 		return false;
+	}
+
+	async resize(
+		id: string,
+		serverType: string,
+		upgradeDisk = false,
+		onProgress?: (message: string) => void,
+	): Promise<void> {
+		const POWEROFF_TIMEOUT_MS = 3 * 60 * 1000;
+		const POWERON_TIMEOUT_MS = 2 * 60 * 1000;
+		const log = onProgress ?? (() => {});
+
+		// Step 1: Power off if not already off
+		const server = await this.get(id);
+		if (server.status !== "stopped") {
+			log("Powering off server...");
+			await this.client.poweroffServer(id);
+			await this.waitForStatus(id, "off", POWEROFF_TIMEOUT_MS);
+		}
+
+		// Step 2: Change server type (server stays off)
+		log(`Changing server type to ${serverType}...`);
+		await this.client.changeServerType(id, serverType, upgradeDisk);
+
+		// Step 3: Power on
+		log("Powering on server...");
+		await this.client.poweronServer(id);
+		await this.waitForStatus(id, "running", POWERON_TIMEOUT_MS);
+	}
+
+	private async waitForStatus(
+		id: string,
+		desired: string,
+		timeoutMs: number,
+	): Promise<void> {
+		const deadline = this.now() + timeoutMs;
+
+		while (this.now() < deadline) {
+			try {
+				const server = await this.client.getServer(id);
+				if (server.status === desired) {
+					return;
+				}
+			} catch (error) {
+				if (error instanceof ErrNotFound) {
+					throw error;
+				}
+				// transient error, retry
+			}
+
+			const delay = Math.min(
+				POLL_INTERVAL_MS,
+				Math.max(0, deadline - this.now()),
+			);
+			if (delay <= 0) {
+				break;
+			}
+			await this.sleep(delay);
+		}
+
+		throw new ErrTimeout(
+			`timed out waiting for server ${id} to reach status '${desired}'`,
+		);
 	}
 
 	ensureSSHKey(name: string, publicKey: string): Promise<string> {
