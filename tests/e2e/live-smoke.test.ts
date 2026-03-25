@@ -287,11 +287,24 @@ describe("sandctl live smoke gating", () => {
 
 				// Step 3: Resize from cpx11 to cpx21
 				const resizeResult = runBinary(
-					["--config", configPath, "resize", target.id, "cpx21", "--force"],
+					[
+						"--config",
+						configPath,
+						"--json",
+						"resize",
+						target.id,
+						"cpx21",
+						"--force",
+					],
 					{ env, timeoutMs: RESIZE_TIMEOUT_MS },
 				);
 				assertCliSuccess("resize", resizeResult);
-				expect(resizeResult.stdout).toContain("resized to cpx21");
+				const resizeOutput = JSON.parse(resizeResult.stdout) as {
+					resized: boolean;
+					serverType: string;
+				};
+				expect(resizeOutput.resized).toBe(true);
+				expect(resizeOutput.serverType).toBe("cpx21");
 
 				// Step 4: List again and verify the server type changed
 				const postResizeList = runBinary(
