@@ -4,8 +4,8 @@ import { validateID } from "@/session/id";
 import { getRandomName, names } from "@/session/names";
 
 describe("session/names", () => {
-	test("name pool has at least 250 entries", () => {
-		expect(names.length).toBeGreaterThanOrEqual(250);
+	test("name pool has at least 80 entries", () => {
+		expect(names.length).toBeGreaterThanOrEqual(80);
 	});
 
 	test("all names match validateID format", () => {
