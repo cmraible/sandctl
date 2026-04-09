@@ -63,6 +63,8 @@ interface NewOptions {
 	timeout?: string;
 	template?: string;
 	noConsole?: boolean;
+	timings?: boolean;
+	noCache?: boolean;
 }
 
 interface NewCommandSpinner {
@@ -144,6 +146,7 @@ interface Dependencies {
 		deps: Pick<Dependencies, "createSSHClient">,
 	) => Promise<void>;
 	now: () => Date;
+	nowMs: () => number;
 	warn: (message: string) => void;
 	log: (message: string) => void;
 }
@@ -164,6 +167,7 @@ const defaultDependencies: Dependencies = {
 	runSSHSetup: defaultRunSSHSetup,
 	setupClaudeConfig: setupClaudeConfigViaSSH,
 	now: () => new Date(),
+	nowMs: () => Date.now(),
 	warn: (message: string) => {
 		console.warn(message);
 	},
@@ -218,6 +222,69 @@ function waitReadyTimeoutMs(options: NewOptions): number {
 		return DEFAULT_WAIT_READY_TIMEOUT_MS;
 	}
 	return Duration.parse(options.timeout).milliseconds;
+}
+
+function formatElapsed(ms: number): string {
+	if (ms < 1000) {
+		return `${Math.round(ms)}ms`;
+	}
+
+	const seconds = ms / 1000;
+	if (seconds < 10) {
+		return `${seconds.toFixed(1)}s`;
+	}
+	if (seconds < 60) {
+		return `${Math.round(seconds)}s`;
+	}
+
+	const minutes = Math.floor(seconds / 60);
+	const remainingSeconds = Math.round(seconds % 60);
+	return `${minutes}m${remainingSeconds}s`;
+}
+
+function formatTimingSummary(summary: TimingSummary): string[] {
+	const lines = [
+		"Timing summary:",
+		`Snapshot: ${summary.snapshotHit ? "hit" : "miss"}${
+			summary.snapshotLookupMs !== undefined
+				? ` (${formatElapsed(summary.snapshotLookupMs)} lookup)`
+				: ""
+		}`,
+		`VM create: ${formatElapsed(summary.vmCreateMs)}`,
+		`Wait ready: ${formatElapsed(summary.waitReadyMs)}`,
+	];
+
+	if (summary.cloudInitMs !== undefined) {
+		lines.push(`Cloud-init: ${formatElapsed(summary.cloudInitMs)}`);
+	}
+	if (summary.sshKeySyncMs !== undefined) {
+		lines.push(`SSH key sync: ${formatElapsed(summary.sshKeySyncMs)}`);
+	}
+	if (summary.gitSetupMs !== undefined) {
+		lines.push(`Git setup: ${formatElapsed(summary.gitSetupMs)}`);
+	}
+	if (summary.claudeSetupMs !== undefined) {
+		lines.push(`Claude setup: ${formatElapsed(summary.claudeSetupMs)}`);
+	}
+
+	lines.push(`Total to ready: ${formatElapsed(summary.totalMs)}`);
+	if (summary.backgroundSnapshotDeferred) {
+		lines.push("Background snapshot: deferred");
+	}
+
+	return lines;
+}
+
+async function measure<T>(
+	nowMs: () => number,
+	fn: () => Promise<T>,
+): Promise<{ result: T; elapsedMs: number }> {
+	const startedAt = nowMs();
+	const result = await fn();
+	return {
+		result,
+		elapsedMs: Math.max(0, nowMs() - startedAt),
+	};
 }
 
 function sleep(ms: number): Promise<void> {
@@ -392,9 +459,23 @@ async function defaultRunSSHSetup(
 
 export interface NewResult {
 	session: Session;
+	timingSummary: TimingSummary;
 	/** Optional background work (e.g. snapshot creation) that can be awaited after
 	 *  the user is already working in the console. Resolves silently on failure. */
 	backgroundTasks?: Promise<void>;
+}
+
+interface TimingSummary {
+	snapshotLookupMs?: number;
+	snapshotHit: boolean;
+	vmCreateMs: number;
+	waitReadyMs: number;
+	cloudInitMs?: number;
+	sshKeySyncMs?: number;
+	gitSetupMs?: number;
+	claudeSetupMs?: number;
+	totalMs: number;
+	backgroundSnapshotDeferred: boolean;
 }
 
 export async function runNew(
@@ -408,6 +489,15 @@ export async function runNew(
 	};
 
 	const config = await dependencies.loadConfig(configPath);
+	const provisioningStartedAt = dependencies.nowMs();
+	let snapshotLookupMs: number | undefined;
+	let vmCreateMs = 0;
+	let waitReadyMs = 0;
+	let cloudInitMs: number | undefined;
+	let sshKeySyncMs: number | undefined;
+	let gitSetupMs: number | undefined;
+	let claudeSetupMs: number | undefined;
+	let backgroundSnapshotDeferred = false;
 
 	// Resolve --size to a server type
 	let resolvedServerType: string | undefined;
@@ -501,12 +591,22 @@ export async function runNew(
 		publicKey,
 	);
 
-	// Check for cached base snapshot (Hetzner only, skip if --image is set)
+	// Check for cached base snapshot (Hetzner only, skip if --image or --no-cache is set)
 	const isHetzner = provider instanceof HetznerProvider;
 	let snapshot: HetznerImage | null = null;
-	if (isHetzner && !options.image) {
+	if (options.noCache) {
+		dependencies.log("Snapshot cache disabled (--no-cache).");
+	} else if (isHetzner && !options.image) {
 		try {
-			snapshot = await dependencies.findSnapshot(provider.client, userData);
+			dependencies.log("Looking for matching snapshot...");
+			const snapshotLookup = await measure(dependencies.nowMs, async () => {
+				return await dependencies.findSnapshot(provider.client, userData);
+			});
+			snapshot = snapshotLookup.result;
+			snapshotLookupMs = snapshotLookup.elapsedMs;
+			dependencies.log(
+				`Snapshot lookup: ${snapshot ? "hit" : "miss"} (${formatElapsed(snapshotLookup.elapsedMs)})`,
+			);
 		} catch (error) {
 			dependencies.warn(
 				`[warn] Snapshot lookup failed, falling back to cloud-init: ${messageFromError(error)}`,
@@ -518,6 +618,7 @@ export async function runNew(
 
 	try {
 		dependencies.log("Creating VM...");
+		const createStartedAt = dependencies.nowMs();
 		if (snapshot) {
 			createdVM = await provider.create({
 				name: sessionID,
@@ -537,6 +638,8 @@ export async function runNew(
 				userData,
 			});
 		}
+		vmCreateMs = Math.max(0, dependencies.nowMs() - createStartedAt);
+		dependencies.log(`VM created in ${formatElapsed(vmCreateMs)}.`);
 
 		await dependencies.store.add({
 			id: sessionID,
@@ -550,7 +653,10 @@ export async function runNew(
 		});
 
 		dependencies.log("Waiting for VM to be ready...");
+		const waitReadyStartedAt = dependencies.nowMs();
 		await provider.waitReady(createdVM.id, waitReadyTimeoutMs(options));
+		waitReadyMs = Math.max(0, dependencies.nowMs() - waitReadyStartedAt);
+		dependencies.log(`VM became reachable in ${formatElapsed(waitReadyMs)}.`);
 
 		const readyVM = await provider.get(createdVM.id);
 
@@ -563,32 +669,44 @@ export async function runNew(
 			if (snapshot) {
 				// Booting from snapshot — copy SSH keys to agent user
 				dependencies.log("Setting up SSH keys...");
+				const sshSetupStartedAt = dependencies.nowMs();
 				await dependencies.runSSHSetup(
 					config,
 					readyVM.ipAddress,
 					generatePostSnapshotSSHSetup(),
 					dependencies.createSSHClient,
 				);
+				sshKeySyncMs = Math.max(0, dependencies.nowMs() - sshSetupStartedAt);
+				dependencies.log(
+					`SSH key sync completed in ${formatElapsed(sshKeySyncMs)}.`,
+				);
 			} else {
 				// Fresh boot — wait for cloud-init
 				dependencies.log("Waiting for cloud-init to complete...");
+				const cloudInitStartedAt = dependencies.nowMs();
 				await dependencies.waitForCloudInit(
 					config,
 					readyVM.ipAddress,
 					dependencies.createSSHClient,
 					DEFAULT_CLOUD_INIT_TIMEOUT_MS,
 				);
+				cloudInitMs = Math.max(0, dependencies.nowMs() - cloudInitStartedAt);
+				dependencies.log(
+					`Cloud-init completed in ${formatElapsed(cloudInitMs)}.`,
+				);
 
 				// Defer snapshot creation to background (Hetzner only)
-				if (isHetzner && !options.image) {
+				if (isHetzner && !options.image && !options.noCache) {
+					backgroundSnapshotDeferred = true;
 					backgroundTasks = (async () => {
 						try {
-							await dependencies.createSnapshot(
-								provider.client,
-								vmId,
-								userData,
-							);
+							dependencies.log("Creating reusable snapshot in background...");
+							const snapshotStartedAt = dependencies.nowMs();
+							await dependencies.createSnapshot(provider.client, vmId, userData);
 							await dependencies.cleanupSnapshots(provider.client, userData);
+							dependencies.log(
+								`Background snapshot completed in ${formatElapsed(dependencies.nowMs() - snapshotStartedAt)}.`,
+							);
 						} catch (error) {
 							dependencies.warn(
 								`[warn] Snapshot creation failed: ${messageFromError(error)}`,
@@ -600,10 +718,15 @@ export async function runNew(
 
 			try {
 				dependencies.log("Setting up git config...");
+				const gitSetupStartedAt = dependencies.nowMs();
 				await dependencies.setupGitConfig(
 					config,
 					readyVM.ipAddress,
 					dependencies,
+				);
+				gitSetupMs = Math.max(0, dependencies.nowMs() - gitSetupStartedAt);
+				dependencies.log(
+					`Git config setup completed in ${formatElapsed(gitSetupMs)}.`,
 				);
 			} catch (error) {
 				dependencies.warn(
@@ -613,10 +736,18 @@ export async function runNew(
 
 			try {
 				dependencies.log("Setting up Claude Code config...");
+				const claudeSetupStartedAt = dependencies.nowMs();
 				await dependencies.setupClaudeConfig(
 					config,
 					readyVM.ipAddress,
 					dependencies,
+				);
+				claudeSetupMs = Math.max(
+					0,
+					dependencies.nowMs() - claudeSetupStartedAt,
+				);
+				dependencies.log(
+					`Claude Code setup completed in ${formatElapsed(claudeSetupMs)}.`,
 				);
 			} catch (error) {
 				dependencies.warn(
@@ -642,8 +773,24 @@ export async function runNew(
 			server_type: readyVM.serverType,
 			created_at: createdAt,
 		};
+		const timingSummary: TimingSummary = {
+			snapshotLookupMs,
+			snapshotHit: snapshot !== null,
+			vmCreateMs,
+			waitReadyMs,
+			cloudInitMs,
+			sshKeySyncMs,
+			gitSetupMs,
+			claudeSetupMs,
+			totalMs: Math.max(0, dependencies.nowMs() - provisioningStartedAt),
+			backgroundSnapshotDeferred,
+		};
 
-		return { session, backgroundTasks };
+		dependencies.log(
+			`Provisioning completed in ${formatElapsed(timingSummary.totalMs)} (${snapshot ? "snapshot hit" : "snapshot miss"}).`,
+		);
+
+		return { session, timingSummary, backgroundTasks };
 	} catch (error) {
 		if (createdVM) {
 			try {
@@ -697,7 +844,10 @@ export async function runNewCommand(
 	const { session, backgroundTasks } = result;
 
 	const shouldConsole =
-		!options.noConsole && dependencies.isInteractive() && session.ip_address;
+		!options.noConsole &&
+		!options.timings &&
+		dependencies.isInteractive() &&
+		session.ip_address;
 
 	if (shouldConsole) {
 		dependencies.log("Connecting to console...");
@@ -719,13 +869,19 @@ export async function runNewCommand(
 				`Session was created successfully. Use 'sandctl console ${session.id}' to connect manually.`,
 			);
 		}
-	} else if (!options.noConsole) {
+	} else if (!options.noConsole && !options.timings) {
 		dependencies.log(`Use 'sandctl console ${session.id}' to connect.`);
 		dependencies.log(`Use 'sandctl destroy ${session.id}' when done.`);
 	}
 
+	if (options.timings) {
+		for (const line of formatTimingSummary(result.timingSummary)) {
+			dependencies.log(line);
+		}
+	}
+
 	// Wait for background tasks (e.g. snapshot creation) after the console exits
-	if (backgroundTasks) {
+	if (backgroundTasks && !options.timings) {
 		await backgroundTasks;
 	}
 
@@ -748,6 +904,14 @@ export function registerNewCommand(): Command {
 		.option(
 			"--no-console",
 			"Skip automatic console connection after provisioning",
+		)
+		.option(
+			"--timings",
+			"Skip console attach and print a provisioning timing summary",
+		)
+		.option(
+			"--no-cache",
+			"Bypass snapshot cache and provision from scratch",
 		)
 		.action(async (options: NewOptions, command) => {
 			const globals = command.optsWithGlobals() as {
