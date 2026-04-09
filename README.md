@@ -8,6 +8,15 @@ sandctl provisions isolated VM environments on Hetzner Cloud where AI coding age
 
 - Bun 1.x
 
+## Quick Start
+
+```bash
+bun install
+bun run build
+./sandctl --help
+./sandctl version
+```
+
 ## Build
 
 ```bash
@@ -18,23 +27,20 @@ bun run build
 ## Install
 
 ```bash
-make install
+bun install
+bun run build
 ```
+
+Copy `./sandctl` somewhere on your `PATH`.
 
 ## Cross-compile
 
 ```bash
-make build-all
-```
-
-## Quick Start
-
-```bash
 bun install
-bun run build
-./sandctl --help
-./sandctl version
+bun run build-all
 ```
+
+If `~/.local/bin` is not already on your `PATH`, add it before using the installed binary.
 
 ## Verification
 
