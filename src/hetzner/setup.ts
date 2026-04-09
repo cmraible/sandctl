@@ -14,9 +14,12 @@ export const DEFAULT_IMAGE = "ubuntu-24.04";
 
 export function generateCloudInit(): string {
 	return `#cloud-config
+packages:
+  - zsh
+
 users:
   - name: agent
-    shell: /bin/bash
+    shell: /usr/bin/zsh
     groups:
       - sudo
       - docker
@@ -24,6 +27,8 @@ users:
     ssh_authorized_keys: []
 
 runcmd:
+  - touch /home/agent/.zshrc
+  - chown agent:agent /home/agent/.zshrc
   - |
     mkdir -p /home/agent/.ssh
     if [ -f /root/.ssh/authorized_keys ]; then
@@ -41,6 +46,7 @@ runcmd:
     apt-get update
     apt-get install -y gh
   - su - agent -c 'curl -fsSL https://claude.ai/install.sh | bash'
+  - echo 'export PATH="$HOME/.local/bin:$PATH"' >> /home/agent/.zshrc
 `;
 }
 
