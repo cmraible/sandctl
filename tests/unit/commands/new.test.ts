@@ -41,7 +41,9 @@ function makeNowMs(values: number[]): () => number {
 	};
 }
 
-function makeTimingSummary(overrides: Partial<NewResult["timingSummary"]> = {}) {
+function makeTimingSummary(
+	overrides: Partial<NewResult["timingSummary"]> = {},
+) {
 	return {
 		snapshotHit: false,
 		vmCreateMs: 100,
@@ -355,45 +357,41 @@ describe("commands/new", () => {
 	test("command wrapper prints timing summary and skips console when --timings is set", async () => {
 		const events: string[] = [];
 
-		await runNewCommand(
-			{ timings: true },
-			undefined,
-			{
-				runNew: async () => ({
-					session: {
-						id: "violet",
-						status: "running",
-						provider: "hetzner",
-						provider_id: "vm-123",
-						ip_address: "203.0.113.10",
-						created_at: "2026-02-22T00:00:00Z",
-					},
-					timingSummary: makeTimingSummary({
-						snapshotHit: true,
-						snapshotLookupMs: 50,
-						sshKeySyncMs: 75,
-						gitSetupMs: 125,
-						claudeSetupMs: 150,
-						totalMs: 450,
-						backgroundSnapshotDeferred: true,
-					}),
-				}),
-				createSpinner: () => ({
-					succeed: (message: string) => {
-						events.push(`succeed:${message}`);
-					},
-					fail: () => {},
-					update: () => {},
-				}),
-				log: (message: string) => {
-					events.push(`log:${message}`);
+		await runNewCommand({ timings: true }, undefined, {
+			runNew: async () => ({
+				session: {
+					id: "violet",
+					status: "running",
+					provider: "hetzner",
+					provider_id: "vm-123",
+					ip_address: "203.0.113.10",
+					created_at: "2026-02-22T00:00:00Z",
 				},
-				isInteractive: () => true,
-				openRemoteConsole: async () => {
-					events.push("console-opened");
+				timingSummary: makeTimingSummary({
+					snapshotHit: true,
+					snapshotLookupMs: 50,
+					sshKeySyncMs: 75,
+					gitSetupMs: 125,
+					claudeSetupMs: 150,
+					totalMs: 450,
+					backgroundSnapshotDeferred: true,
+				}),
+			}),
+			createSpinner: () => ({
+				succeed: (message: string) => {
+					events.push(`succeed:${message}`);
 				},
+				fail: () => {},
+				update: () => {},
+			}),
+			log: (message: string) => {
+				events.push(`log:${message}`);
 			},
-		);
+			isInteractive: () => true,
+			openRemoteConsole: async () => {
+				events.push("console-opened");
+			},
+		});
 
 		expect(events).toEqual([
 			"succeed:Created VM 'violet'.",
@@ -412,38 +410,34 @@ describe("commands/new", () => {
 	test("command wrapper does not await background snapshot when --timings is set", async () => {
 		const order: string[] = [];
 
-		await runNewCommand(
-			{ timings: true },
-			undefined,
-			{
-				runNew: async () => ({
-					session: {
-						id: "violet",
-						status: "running",
-						provider: "hetzner",
-						provider_id: "vm-123",
-						ip_address: "203.0.113.10",
-						created_at: "2026-02-22T00:00:00Z",
-					},
-					timingSummary: makeTimingSummary({
-						backgroundSnapshotDeferred: true,
-					}),
-					backgroundTasks: new Promise<void>((resolve) => {
-						setTimeout(() => {
-							order.push("background-done");
-							resolve();
-						}, 0);
-					}),
+		await runNewCommand({ timings: true }, undefined, {
+			runNew: async () => ({
+				session: {
+					id: "violet",
+					status: "running",
+					provider: "hetzner",
+					provider_id: "vm-123",
+					ip_address: "203.0.113.10",
+					created_at: "2026-02-22T00:00:00Z",
+				},
+				timingSummary: makeTimingSummary({
+					backgroundSnapshotDeferred: true,
 				}),
-				createSpinner: () => ({
-					succeed: () => {},
-					fail: () => {},
-					update: () => {},
+				backgroundTasks: new Promise<void>((resolve) => {
+					setTimeout(() => {
+						order.push("background-done");
+						resolve();
+					}, 0);
 				}),
-				log: () => {},
-				warn: () => {},
-			},
-		);
+			}),
+			createSpinner: () => ({
+				succeed: () => {},
+				fail: () => {},
+				update: () => {},
+			}),
+			log: () => {},
+			warn: () => {},
+		});
 
 		expect(order).toEqual([]);
 	});
@@ -535,7 +529,9 @@ describe("commands/new", () => {
 				log: (message: string) => {
 					logs.push(message);
 				},
-				nowMs: makeNowMs([0, 5, 10, 25, 30, 60, 70, 190, 200, 215, 220, 240, 250]),
+				nowMs: makeNowMs([
+					0, 5, 10, 25, 30, 60, 70, 190, 200, 215, 220, 240, 250,
+				]),
 			},
 		);
 
@@ -565,9 +561,7 @@ describe("commands/new", () => {
 				message.startsWith("Claude Code setup completed in "),
 			),
 		).toBe(true);
-		expect(logs).toContain(
-			"Provisioning completed in 250ms (snapshot miss).",
-		);
+		expect(logs).toContain("Provisioning completed in 250ms (snapshot miss).");
 		expect(logs).toContain("Creating reusable snapshot in background...");
 	});
 
@@ -677,9 +671,7 @@ describe("commands/new", () => {
 		).toBe(true);
 		expect(logs).toContain("Setting up SSH keys...");
 		expect(
-			logs.some((message) =>
-				message.startsWith("SSH key sync completed in "),
-			),
+			logs.some((message) => message.startsWith("SSH key sync completed in ")),
 		).toBe(true);
 		expect(logs).toContain("Setting up git config...");
 		expect(
@@ -693,9 +685,7 @@ describe("commands/new", () => {
 				message.startsWith("Claude Code setup completed in "),
 			),
 		).toBe(true);
-		expect(logs).toContain(
-			"Provisioning completed in 130ms (snapshot hit).",
-		);
+		expect(logs).toContain("Provisioning completed in 130ms (snapshot hit).");
 	});
 
 	test("--no-cache bypasses snapshot lookup and deferred snapshot creation", async () => {

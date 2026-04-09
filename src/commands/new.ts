@@ -63,6 +63,7 @@ interface NewOptions {
 	timeout?: string;
 	template?: string;
 	noConsole?: boolean;
+	bare?: boolean;
 	timings?: boolean;
 	noCache?: boolean;
 }
@@ -518,6 +519,11 @@ export async function runNew(
 		);
 	}
 
+	// --bare and -T are mutually exclusive
+	if (options.bare && options.template) {
+		throw new Error("--bare and -T cannot be used together.");
+	}
+
 	// Load named template init content (if -T flag provided)
 	let namedTemplateContent: string | undefined;
 	if (options.template) {
@@ -538,12 +544,15 @@ export async function runNew(
 
 	// Load user base template init content (optional, no error if missing)
 	let userBaseContent: string | undefined;
-	try {
-		const baseTemplate = await dependencies.templateStore.getInitScript("base");
-		userBaseContent = baseTemplate.script;
-	} catch (error) {
-		if (!(error instanceof TemplateNotFoundError)) {
-			throw error;
+	if (!options.bare) {
+		try {
+			const baseTemplate =
+				await dependencies.templateStore.getInitScript("base");
+			userBaseContent = baseTemplate.script;
+		} catch (error) {
+			if (!(error instanceof TemplateNotFoundError)) {
+				throw error;
+			}
 		}
 	}
 
@@ -702,7 +711,11 @@ export async function runNew(
 						try {
 							dependencies.log("Creating reusable snapshot in background...");
 							const snapshotStartedAt = dependencies.nowMs();
-							await dependencies.createSnapshot(provider.client, vmId, userData);
+							await dependencies.createSnapshot(
+								provider.client,
+								vmId,
+								userData,
+							);
 							await dependencies.cleanupSnapshots(provider.client, userData);
 							dependencies.log(
 								`Background snapshot completed in ${formatElapsed(dependencies.nowMs() - snapshotStartedAt)}.`,
@@ -909,10 +922,8 @@ export function registerNewCommand(): Command {
 			"--timings",
 			"Skip console attach and print a provisioning timing summary",
 		)
-		.option(
-			"--no-cache",
-			"Bypass snapshot cache and provision from scratch",
-		)
+		.option("--bare", "Skip user base template and use only the global base")
+		.option("--no-cache", "Bypass snapshot cache and provision from scratch")
 		.action(async (options: NewOptions, command) => {
 			const globals = command.optsWithGlobals() as {
 				config?: string;
