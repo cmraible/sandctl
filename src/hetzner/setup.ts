@@ -16,6 +16,7 @@ export function generateCloudInit(): string {
 	return `#cloud-config
 packages:
   - zsh
+  - npm
 
 users:
   - name: agent
@@ -46,6 +47,7 @@ runcmd:
     apt-get update
     apt-get install -y gh
   - su - agent -c 'curl -fsSL https://claude.ai/install.sh | bash'
+  - npm install -g @openai/codex
   - echo 'export PATH="$HOME/.local/bin:$PATH"' >> /home/agent/.zshrc
 `;
 }
