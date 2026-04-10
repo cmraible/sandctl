@@ -106,6 +106,36 @@ describe("commands/list", () => {
 		expect((await store.get("alice")).status).toBe("failed");
 	});
 
+	test("provider sync imports remote vms missing from the local store", async () => {
+		await runList({ format: "table", all: true, sync: true }, store, {
+			loadConfig: async () => baseProviderConfig,
+			resolveProvider: () =>
+				makeProvider([
+					{
+						id: "123",
+						name: "alice",
+						status: "running",
+						ipAddress: "1.2.3.4",
+						region: "ash",
+						serverType: "cpx31",
+						createdAt: "2026-02-20T00:00:00Z",
+					},
+				]),
+		});
+
+		expect(await store.get("alice")).toMatchObject({
+			id: "alice",
+			status: "running",
+			provider: "hetzner",
+			provider_id: "123",
+			ip_address: "1.2.3.4",
+			region: "ash",
+			server_type: "cpx31",
+			created_at: "2026-02-20T00:00:00Z",
+		});
+		expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("alice"));
+	});
+
 	test("unknown providers are handled without failing", async () => {
 		await store.add({ ...runningSession, provider: "unknown" });
 		await runList({ format: "table", all: true, sync: true }, store, {
@@ -219,6 +249,43 @@ describe("commands/list", () => {
 		});
 
 		expect(listCalls).toBe(1);
+	});
+
+	test("provider sync skips importing remote vm when its session id conflicts", async () => {
+		await store.add(runningSession);
+
+		await runList({ format: "table", all: true, sync: true }, store, {
+			loadConfig: async () => baseProviderConfig,
+			resolveProvider: () =>
+				makeProvider([
+					{
+						id: "123",
+						name: "alice",
+						status: "running",
+						ipAddress: "1.2.3.4",
+						region: "ash",
+						serverType: "cpx31",
+						createdAt: "2026-02-20T00:00:00Z",
+					},
+					{
+						id: "456",
+						name: "Alice",
+						status: "running",
+						ipAddress: "5.6.7.8",
+						region: "ash",
+						serverType: "cpx31",
+						createdAt: "2026-02-20T00:00:00Z",
+					},
+				]),
+		});
+
+		await expect(store.get("alice")).resolves.toMatchObject({
+			provider_id: "123",
+		});
+		expect(await store.list()).toHaveLength(1);
+		expect(warnSpy).toHaveBeenCalledWith(
+			expect.stringContaining("session id 'alice' already exists"),
+		);
 	});
 
 	test("formatTimeout handles nil, expired, hours, and minutes", () => {
