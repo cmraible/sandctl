@@ -12,9 +12,15 @@ export type {
 	Provider,
 	RenamableProvider,
 	ResizableProvider,
+	SnapshotCapableProvider,
+	SnapshotReference,
 	SSHKeyManager,
 } from "@/provider/interface";
-export { supportsRename, supportsResize } from "@/provider/interface";
+export {
+	supportsRename,
+	supportsResize,
+	supportsSnapshots,
+} from "@/provider/interface";
 export {
 	available,
 	clearRegistry,

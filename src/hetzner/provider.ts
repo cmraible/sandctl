@@ -13,12 +13,19 @@ import {
 	DEFAULT_REGION,
 	DEFAULT_SERVER_TYPE,
 } from "@/hetzner/setup";
+import {
+	cleanupOldSnapshots,
+	createBaseSnapshot,
+	findBaseSnapshot,
+} from "@/hetzner/snapshots";
 import { ensureSSHKey } from "@/hetzner/ssh-keys";
+import { generatePostSnapshotSSHSetup } from "@/provider/cloud-init";
 import { ErrNotFound, ErrProvisionFailed, ErrTimeout } from "@/provider/errors";
 import type {
 	Provider,
 	RenamableProvider,
 	ResizableProvider,
+	SnapshotCapableProvider,
 	SSHKeyManager,
 } from "@/provider/interface";
 import type { CreateOpts, VM, VMStatus } from "@/provider/types";
@@ -55,7 +62,12 @@ export interface HetznerClientLike {
 }
 
 export class HetznerProvider
-	implements Provider, SSHKeyManager, ResizableProvider, RenamableProvider
+	implements
+		Provider,
+		SSHKeyManager,
+		ResizableProvider,
+		RenamableProvider,
+		SnapshotCapableProvider
 {
 	readonly client: HetznerClientLike;
 
@@ -134,6 +146,30 @@ export class HetznerProvider
 
 	async rename(id: string, name: string): Promise<void> {
 		await this.client.updateServer(id, { name });
+	}
+
+	async findSnapshot(userData: string): Promise<{ id: string } | null> {
+		const image = await findBaseSnapshot(this.client, userData);
+		if (!image) {
+			return null;
+		}
+		return { id: String(image.id) };
+	}
+
+	async createSnapshot(
+		serverId: string,
+		userData: string,
+	): Promise<{ id: string }> {
+		const image = await createBaseSnapshot(this.client, serverId, userData);
+		return { id: String(image.id) };
+	}
+
+	async cleanupSnapshots(userData: string): Promise<void> {
+		await cleanupOldSnapshots(this.client, userData);
+	}
+
+	postSnapshotSSHSetupCommand(): string {
+		return generatePostSnapshotSSHSetup();
 	}
 
 	async list(): Promise<VM[]> {
