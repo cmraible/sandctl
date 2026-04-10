@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { cleanupTempHome, makeTempHome, runBinary } from "./helpers";
@@ -24,6 +24,33 @@ describe("sandctl config path contract", () => {
 			});
 			expect(listResult.code).toBe(0);
 			expect(listResult.stdout.trim()).toBe("[]");
+		} finally {
+			cleanupTempHome(home);
+		}
+	});
+
+	test("binary writes a DigitalOcean config to the default path", () => {
+		const home = makeTempHome();
+		try {
+			const initResult = runBinary(
+				[
+					"init",
+					"--provider",
+					"digitalocean",
+					"--digitalocean-token",
+					"test-token",
+					"--ssh-agent",
+				],
+				{ env: { HOME: home } },
+			);
+
+			expect(initResult.code).toBe(0);
+
+			const configPath = path.join(home, ".sandctl", "config");
+			expect(existsSync(configPath)).toBeTrue();
+			expect(readFileSync(configPath, "utf8")).toContain(
+				"default_provider: digitalocean",
+			);
 		} finally {
 			cleanupTempHome(home);
 		}

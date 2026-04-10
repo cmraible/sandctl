@@ -1,5 +1,6 @@
 import { access } from "node:fs/promises";
 import process from "node:process";
+
 import { confirm, input, password, select } from "@inquirer/prompts";
 import { Command } from "commander";
 
@@ -9,8 +10,12 @@ import { save } from "@/config/writer";
 import { isValidEmail } from "@/utils/email";
 import { expandTilde } from "@/utils/paths";
 
+type SupportedProvider = "digitalocean" | "hetzner";
+
 interface InitOptions {
+	provider?: string;
 	hetznerToken?: string;
+	digitaloceanToken?: string;
 	sshPublicKey?: string;
 	sshAgent?: boolean;
 	sshKeyFingerprint?: string;
@@ -25,25 +30,67 @@ interface InitOptions {
 	claudeOauthToken?: string;
 }
 
-const DEFAULT_REGION = "ash";
-const DEFAULT_SERVER_TYPE = "cpx31";
-
-const REGION_CHOICES = [
-	{ name: "Ashburn, Virginia, US (ash)", value: "ash" },
-	{ name: "Helsinki, Finland (hel1)", value: "hel1" },
-	{ name: "Falkenstein, Germany (fsn1)", value: "fsn1" },
-	{ name: "Nuremberg, Germany (nbg1)", value: "nbg1" },
-	{ name: "Hillsboro, Oregon, US (hil)", value: "hil" },
-	{ name: "Singapore (sin)", value: "sin" },
-] as const;
-
-const SERVER_TYPE_CHOICES = [
-	{ name: "CPX11 — 2 vCPU, 2 GB RAM, ~€0.01/hr (cpx11)", value: "cpx11" },
-	{ name: "CPX21 — 3 vCPU, 4 GB RAM, ~€0.01/hr (cpx21)", value: "cpx21" },
-	{ name: "CPX31 — 4 vCPU, 8 GB RAM, ~€0.02/hr (cpx31)", value: "cpx31" },
-	{ name: "CPX41 — 8 vCPU, 16 GB RAM, ~€0.04/hr (cpx41)", value: "cpx41" },
-	{ name: "CPX51 — 16 vCPU, 32 GB RAM, ~€0.07/hr (cpx51)", value: "cpx51" },
-] as const;
+const PROVIDER_METADATA = {
+	digitalocean: {
+		defaultRegion: "nyc1",
+		defaultServerType: "s-4vcpu-8gb",
+		defaultImage: "ubuntu-24-04-x64",
+		tokenField: "digitaloceanToken" as const,
+		tokenFlag: "--digitalocean-token",
+		tokenLabel: "DigitalOcean API token",
+		regionChoices: [
+			{ name: "New York 1 (nyc1)", value: "nyc1" },
+			{ name: "New York 3 (nyc3)", value: "nyc3" },
+			{ name: "Toronto 1 (tor1)", value: "tor1" },
+			{ name: "San Francisco 3 (sfo3)", value: "sfo3" },
+			{ name: "London 1 (lon1)", value: "lon1" },
+			{ name: "Amsterdam 3 (ams3)", value: "ams3" },
+			{ name: "Frankfurt 1 (fra1)", value: "fra1" },
+			{ name: "Singapore 1 (sgp1)", value: "sgp1" },
+		],
+		serverTypeChoices: [
+			{
+				name: "Basic 2 vCPU, 4 GB RAM (s-2vcpu-4gb)",
+				value: "s-2vcpu-4gb",
+			},
+			{
+				name: "Basic 4 vCPU, 8 GB RAM (s-4vcpu-8gb)",
+				value: "s-4vcpu-8gb",
+			},
+			{
+				name: "Basic 8 vCPU, 16 GB RAM (s-8vcpu-16gb)",
+				value: "s-8vcpu-16gb",
+			},
+			{
+				name: "Basic 16 vCPU, 32 GB RAM (s-16vcpu-32gb)",
+				value: "s-16vcpu-32gb",
+			},
+		],
+	},
+	hetzner: {
+		defaultRegion: "ash",
+		defaultServerType: "cpx31",
+		defaultImage: "ubuntu-24.04",
+		tokenField: "hetznerToken" as const,
+		tokenFlag: "--hetzner-token",
+		tokenLabel: "Hetzner Cloud API token",
+		regionChoices: [
+			{ name: "Ashburn, Virginia, US (ash)", value: "ash" },
+			{ name: "Helsinki, Finland (hel1)", value: "hel1" },
+			{ name: "Falkenstein, Germany (fsn1)", value: "fsn1" },
+			{ name: "Nuremberg, Germany (nbg1)", value: "nbg1" },
+			{ name: "Hillsboro, Oregon, US (hil)", value: "hil" },
+			{ name: "Singapore (sin)", value: "sin" },
+		],
+		serverTypeChoices: [
+			{ name: "CPX11 — 2 vCPU, 2 GB RAM, ~€0.01/hr (cpx11)", value: "cpx11" },
+			{ name: "CPX21 — 3 vCPU, 4 GB RAM, ~€0.01/hr (cpx21)", value: "cpx21" },
+			{ name: "CPX31 — 4 vCPU, 8 GB RAM, ~€0.02/hr (cpx31)", value: "cpx31" },
+			{ name: "CPX41 — 8 vCPU, 16 GB RAM, ~€0.04/hr (cpx41)", value: "cpx41" },
+			{ name: "CPX51 — 16 vCPU, 32 GB RAM, ~€0.07/hr (cpx51)", value: "cpx51" },
+		],
+	},
+} as const;
 
 const VIM_SELECT_THEME = {
 	keybindings: ["vim" as const],
@@ -59,6 +106,37 @@ async function pathExists(targetPath: string): Promise<boolean> {
 	} catch {
 		return false;
 	}
+}
+
+function resolveProvider(
+	provider?: string,
+	options?: InitOptions,
+): SupportedProvider {
+	if (options?.hetznerToken && options.digitaloceanToken) {
+		throw new Error(
+			"--hetzner-token and --digitalocean-token cannot be used together",
+		);
+	}
+
+	if (provider) {
+		if (provider === "hetzner" || provider === "digitalocean") {
+			return provider;
+		}
+		throw new Error(`unsupported provider '${provider}'`);
+	}
+
+	if (options?.digitaloceanToken) {
+		return "digitalocean";
+	}
+
+	return "hetzner";
+}
+
+function providerToken(
+	provider: SupportedProvider,
+	options: InitOptions,
+): string | undefined {
+	return options[PROVIDER_METADATA[provider].tokenField];
 }
 
 export interface InitResult {
@@ -106,29 +184,14 @@ export async function runInit(
 		);
 	}
 
+	const selectedProvider = resolveProvider(options.provider, options);
+	const selectedProviderMeta = PROVIDER_METADATA[selectedProvider];
+	const selectedToken = providerToken(selectedProvider, options);
+
 	const hasNonInteractiveFlags =
-		Boolean(options.hetznerToken) ||
+		Boolean(selectedToken) ||
 		Boolean(options.sshAgent) ||
 		Boolean(options.sshPublicKey);
-
-	if (hasNonInteractiveFlags) {
-		if (!options.hetznerToken) {
-			throw new Error("--hetzner-token is required in non-interactive mode");
-		}
-		if (!options.sshAgent && !options.sshPublicKey) {
-			throw new Error(
-				"--ssh-public-key or --ssh-agent is required in non-interactive mode",
-			);
-		}
-		await save(resolvedConfigPath, buildConfig(options));
-		return { config_path: resolvedConfigPath, saved: true };
-	}
-
-	if (!process.stdin.isTTY || !process.stdout.isTTY) {
-		throw new Error(
-			"init requires a terminal for interactive mode, or use --hetzner-token with --ssh-agent or --ssh-public-key flags",
-		);
-	}
 
 	let existing: Config | undefined;
 	try {
@@ -139,11 +202,50 @@ export async function runInit(
 		}
 	}
 
-	const hetznerToken =
+	if (hasNonInteractiveFlags) {
+		if (!selectedToken) {
+			throw new Error(
+				`${selectedProviderMeta.tokenFlag} is required in non-interactive mode`,
+			);
+		}
+		if (!options.sshAgent && !options.sshPublicKey) {
+			throw new Error(
+				"--ssh-public-key or --ssh-agent is required in non-interactive mode",
+			);
+		}
+		await save(
+			resolvedConfigPath,
+			buildConfig(selectedProvider, options, existing),
+		);
+		return { config_path: resolvedConfigPath, saved: true };
+	}
+
+	if (!process.stdin.isTTY || !process.stdout.isTTY) {
+		throw new Error(
+			`init requires a terminal for interactive mode, or use ${selectedProviderMeta.tokenFlag} with --ssh-agent or --ssh-public-key flags`,
+		);
+	}
+
+	const provider = await select<SupportedProvider>({
+		message: "Default provider",
+		default:
+			existing?.default_provider === "digitalocean"
+				? "digitalocean"
+				: "hetzner",
+		theme: VIM_SELECT_THEME,
+		choices: [
+			{ name: "Hetzner", value: "hetzner" },
+			{ name: "DigitalOcean", value: "digitalocean" },
+		],
+	});
+	const providerMeta = PROVIDER_METADATA[provider];
+
+	const token =
 		(await password({
-			message: `Hetzner Cloud API token${existing?.providers?.hetzner?.token ? " (leave blank to keep existing)" : ""}`,
+			message: `${providerMeta.tokenLabel}${existing?.providers?.[provider]?.token ? " (leave blank to keep existing)" : ""}`,
 			mask: true,
-		})) || existing?.providers?.hetzner?.token;
+		})) || existing?.providers?.[provider]?.token;
+
 	const sshMode = await select({
 		message: "SSH key mode",
 		default: existing?.ssh_key_source === "agent" ? "agent" : "file",
@@ -172,16 +274,19 @@ export async function runInit(
 
 	const region = await select({
 		message: "Default region",
-		default: existing?.providers?.hetzner?.region ?? DEFAULT_REGION,
+		default:
+			existing?.providers?.[provider]?.region ?? providerMeta.defaultRegion,
 		theme: VIM_SELECT_THEME,
-		choices: REGION_CHOICES,
+		choices: providerMeta.regionChoices,
 	});
 
 	const serverType = await select({
 		message: "Default server type",
-		default: existing?.providers?.hetzner?.server_type ?? DEFAULT_SERVER_TYPE,
+		default:
+			existing?.providers?.[provider]?.server_type ??
+			providerMeta.defaultServerType,
 		theme: VIM_SELECT_THEME,
-		choices: SERVER_TYPE_CHOICES,
+		choices: providerMeta.serverTypeChoices,
 	});
 
 	const gitConfigDetected = await pathExists(expandTilde("~/.gitconfig"));
@@ -276,66 +381,96 @@ export async function runInit(
 			mask: true,
 		})) || existing?.claude_oauth_token;
 
+	const interactiveOptions: InitOptions = {
+		provider,
+		sshPublicKey,
+		sshAgent: sshMode === "agent",
+		sshKeyFingerprint,
+		region,
+		serverType,
+		gitConfigPath,
+		gitUserName,
+		gitUserEmail,
+		githubToken,
+		claudeConfigPath,
+		claudeOauthToken,
+	};
+	interactiveOptions[providerMeta.tokenField] = token;
+
 	await save(
 		resolvedConfigPath,
-		buildConfig({
-			hetznerToken,
-			sshPublicKey,
-			sshAgent: sshMode === "agent",
-			sshKeyFingerprint,
-			region,
-			serverType,
-			gitConfigPath,
-			gitUserName,
-			gitUserEmail,
-			githubToken,
-			claudeConfigPath,
-			claudeOauthToken,
-		}),
+		buildConfig(provider, interactiveOptions, existing),
 	);
 	return { config_path: resolvedConfigPath, saved: true };
 }
 
-function buildConfig(options: InitOptions): Config {
+function buildConfig(
+	provider: SupportedProvider,
+	options: InitOptions,
+	existing?: Config,
+): Config {
+	const metadata = PROVIDER_METADATA[provider];
+	const token =
+		providerToken(provider, options) ?? existing?.providers?.[provider]?.token;
+
 	return {
-		default_provider: "hetzner",
-		ssh_key_source: options.sshAgent ? "agent" : undefined,
-		ssh_public_key: options.sshAgent ? undefined : options.sshPublicKey,
+		...existing,
+		default_provider: provider,
+		ssh_key_source: options.sshAgent
+			? "agent"
+			: options.sshPublicKey
+				? undefined
+				: existing?.ssh_key_source,
+		ssh_public_key: options.sshAgent
+			? undefined
+			: (options.sshPublicKey ?? existing?.ssh_public_key),
 		ssh_key_fingerprint: options.sshAgent
 			? options.sshKeyFingerprint
 			: undefined,
 		providers: {
-			hetzner: {
-				token: options.hetznerToken ?? "",
-				region: options.region ?? DEFAULT_REGION,
-				server_type: options.serverType ?? DEFAULT_SERVER_TYPE,
-				image: "ubuntu-24.04",
+			...(existing?.providers ?? {}),
+			[provider]: {
+				...(existing?.providers?.[provider] ?? {}),
+				token: token ?? "",
+				region:
+					options.region ??
+					existing?.providers?.[provider]?.region ??
+					metadata.defaultRegion,
+				server_type:
+					options.serverType ??
+					existing?.providers?.[provider]?.server_type ??
+					metadata.defaultServerType,
+				image: existing?.providers?.[provider]?.image ?? metadata.defaultImage,
 			},
 		},
-		opencode_zen_key: options.opencodeZenKey,
-		git_config_path: options.gitConfigPath,
-		git_user_name: options.gitUserName,
-		git_user_email: options.gitUserEmail,
-		github_token: options.githubToken,
-		claude_config_path: options.claudeConfigPath,
-		claude_oauth_token: options.claudeOauthToken,
+		opencode_zen_key: options.opencodeZenKey ?? existing?.opencode_zen_key,
+		git_config_path: options.gitConfigPath ?? existing?.git_config_path,
+		git_user_name: options.gitUserName ?? existing?.git_user_name,
+		git_user_email: options.gitUserEmail ?? existing?.git_user_email,
+		github_token: options.githubToken ?? existing?.github_token,
+		claude_config_path:
+			options.claudeConfigPath ?? existing?.claude_config_path,
+		claude_oauth_token:
+			options.claudeOauthToken ?? existing?.claude_oauth_token,
 	};
 }
 
 export function registerInitCommand(): Command {
 	return new Command("init")
 		.description("Initialize sandctl configuration")
+		.option(
+			"--provider <provider>",
+			"Default provider (hetzner or digitalocean)",
+		)
 		.option("--hetzner-token <token>", "Hetzner Cloud API token")
+		.option("--digitalocean-token <token>", "DigitalOcean API token")
 		.option("--ssh-public-key <path>", "Path to SSH public key file")
 		.option("--ssh-agent", "Use SSH agent for key management")
 		.option("--ssh-key-fingerprint <fingerprint>", "SSH key fingerprint")
-		.option(
-			"--region <region>",
-			"Default region (ash (Ashburn, VA), hel1 (Helsinki), fsn1 (Falkenstein), nbg1 (Nuremberg), hil (Hillsboro, OR), sin (Singapore))",
-		)
+		.option("--region <region>", "Default region for the selected provider")
 		.option(
 			"--server-type <serverType>",
-			"Default server type (cpx11 (2 vCPU, 2 GB RAM), cpx21 (3 vCPU, 4 GB RAM), cpx31 (4 vCPU, 8 GB RAM), cpx41 (8 vCPU, 16 GB RAM), cpx51 (16 vCPU, 32 GB RAM))",
+			"Default server type for the selected provider",
 		)
 		.option("--opencode-zen-key <key>", "Opencode Zen key")
 		.option("--git-config-path <path>", "Path to gitconfig file")
@@ -353,12 +488,14 @@ export function registerInitCommand(): Command {
 			};
 			if (globals.json) {
 				const hasNonInteractiveFlags =
-					Boolean(options.hetznerToken) ||
+					Boolean(
+						providerToken(resolveProvider(options.provider, options), options),
+					) ||
 					Boolean(options.sshAgent) ||
 					Boolean(options.sshPublicKey);
 				if (!hasNonInteractiveFlags) {
 					throw new Error(
-						"--json requires non-interactive flags (--hetzner-token with --ssh-agent or --ssh-public-key)",
+						"--json requires non-interactive flags (provider token with --ssh-agent or --ssh-public-key)",
 					);
 				}
 			}

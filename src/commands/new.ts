@@ -473,13 +473,15 @@ export async function runNew(
 	let gitSetupMs: number | undefined;
 	let claudeSetupMs: number | undefined;
 	let backgroundSnapshotDeferred = false;
+	const providerName =
+		options.provider ?? config.default_provider ?? DEFAULT_PROVIDER;
 
 	let resolvedServerType: string | undefined;
 	if (options.size) {
-		const vmSize = resolveSize(options.size);
+		const vmSize = resolveSize(options.size, providerName);
 		if (!vmSize) {
 			throw new Error(
-				`unknown size '${options.size}'. Available sizes:\n${sizesHelpText()}`,
+				`unknown size '${options.size}'. Available sizes:\n${sizesHelpText(providerName)}`,
 			);
 		}
 		resolvedServerType = vmSize.serverType;
@@ -531,8 +533,6 @@ export async function runNew(
 	if (namedTemplateContent) additionalLayers.push(namedTemplateContent);
 	const userData = assembleUserData(globalBase, additionalLayers);
 
-	const providerName =
-		options.provider ?? config.default_provider ?? DEFAULT_PROVIDER;
 	const providerConfig = getProviderConfig(config, providerName);
 	if (!providerConfig) {
 		throw new Error(`provider '${providerName}' is not configured`);

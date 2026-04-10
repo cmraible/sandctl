@@ -11,57 +11,114 @@ export interface VMSize {
 	description: string;
 }
 
-const sizes: VMSize[] = [
-	{
-		name: "small",
-		serverType: "cpx21",
-		cores: 3,
-		memoryGB: 4,
-		description: "3 vCPU / 4 GB RAM",
-	},
-	{
-		name: "medium",
-		serverType: "cpx31",
-		cores: 4,
-		memoryGB: 8,
-		description: "4 vCPU / 8 GB RAM",
-	},
-	{
-		name: "large",
-		serverType: "cpx41",
-		cores: 8,
-		memoryGB: 16,
-		description: "8 vCPU / 16 GB RAM",
-	},
-	{
-		name: "xlarge",
-		serverType: "cpx51",
-		cores: 16,
-		memoryGB: 32,
-		description: "16 vCPU / 32 GB RAM",
-	},
-];
+const sizeMaps = {
+	digitalocean: new Map<string, VMSize>([
+		[
+			"small",
+			{
+				name: "small",
+				serverType: "s-2vcpu-4gb",
+				cores: 2,
+				memoryGB: 4,
+				description: "2 vCPU / 4 GB RAM",
+			},
+		],
+		[
+			"medium",
+			{
+				name: "medium",
+				serverType: "s-4vcpu-8gb",
+				cores: 4,
+				memoryGB: 8,
+				description: "4 vCPU / 8 GB RAM",
+			},
+		],
+		[
+			"large",
+			{
+				name: "large",
+				serverType: "s-8vcpu-16gb",
+				cores: 8,
+				memoryGB: 16,
+				description: "8 vCPU / 16 GB RAM",
+			},
+		],
+		[
+			"xlarge",
+			{
+				name: "xlarge",
+				serverType: "s-16vcpu-32gb",
+				cores: 16,
+				memoryGB: 32,
+				description: "16 vCPU / 32 GB RAM",
+			},
+		],
+	]),
+	hetzner: new Map<string, VMSize>([
+		[
+			"small",
+			{
+				name: "small",
+				serverType: "cpx21",
+				cores: 3,
+				memoryGB: 4,
+				description: "3 vCPU / 4 GB RAM",
+			},
+		],
+		[
+			"medium",
+			{
+				name: "medium",
+				serverType: "cpx31",
+				cores: 4,
+				memoryGB: 8,
+				description: "4 vCPU / 8 GB RAM",
+			},
+		],
+		[
+			"large",
+			{
+				name: "large",
+				serverType: "cpx41",
+				cores: 8,
+				memoryGB: 16,
+				description: "8 vCPU / 16 GB RAM",
+			},
+		],
+		[
+			"xlarge",
+			{
+				name: "xlarge",
+				serverType: "cpx51",
+				cores: 16,
+				memoryGB: 32,
+				description: "16 vCPU / 32 GB RAM",
+			},
+		],
+	]),
+} as const;
 
-const sizeMap = new Map<string, VMSize>(sizes.map((s) => [s.name, s]));
+const DEFAULT_PROVIDER = "hetzner";
 
-/**
- * Resolve a size name to its corresponding server type.
- * Returns undefined if the size name is not recognized.
- */
-export function resolveSize(name: string): VMSize | undefined {
-	return sizeMap.get(name.toLowerCase());
+export function resolveSize(
+	name: string,
+	providerName = DEFAULT_PROVIDER,
+): VMSize | undefined {
+	const sizes =
+		sizeMaps[providerName as keyof typeof sizeMaps] ?? sizeMaps.hetzner;
+	return sizes.get(name.toLowerCase());
 }
 
-/**
- * Return all available size names.
- */
-export function availableSizes(): readonly VMSize[] {
-	return sizes;
+export function availableSizes(
+	providerName = DEFAULT_PROVIDER,
+): readonly VMSize[] {
+	const sizes =
+		sizeMaps[providerName as keyof typeof sizeMaps] ?? sizeMaps.hetzner;
+	return [...sizes.values()];
 }
 
-/**
- * Format a help string listing all available sizes.
- */
-export function sizesHelpText(): string {
-	return sizes.map((s) => `  ${s.name}\t${s.description}`).join("\n");
+export function sizesHelpText(providerName = DEFAULT_PROVIDER): string {
+	return availableSizes(providerName)
+		.map((size) => `  ${size.name}\t${size.description}`)
+		.join("\n");
 }
