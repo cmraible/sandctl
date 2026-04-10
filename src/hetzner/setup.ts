@@ -12,6 +12,13 @@ export const DEFAULT_REGION = "ash";
 export const DEFAULT_SERVER_TYPE = "cpx31";
 export const DEFAULT_IMAGE = "ubuntu-24.04";
 
+const AGENT_ZSHRC_CONTENT = `export PATH="$HOME/.local/bin:$PATH"
+eval "$(starship init zsh)"`;
+const AGENT_ZSHRC_BASE64 = Buffer.from(
+	`${AGENT_ZSHRC_CONTENT}\n`,
+	"utf8",
+).toString("base64");
+
 export function generateCloudInit(): string {
 	return `#cloud-config
 packages:
@@ -26,10 +33,7 @@ users:
       - docker
     sudo: "ALL=(ALL) NOPASSWD:ALL"
     ssh_authorized_keys: []
-
 runcmd:
-  - touch /home/agent/.zshrc
-  - chown agent:agent /home/agent/.zshrc
   - |
     mkdir -p /home/agent/.ssh
     if [ -f /root/.ssh/authorized_keys ]; then
@@ -50,9 +54,9 @@ runcmd:
   - npm install -g @openai/codex
   - curl -fsSL https://starship.rs/install.sh | sh -s -- -y
   - |
-    echo 'export PATH="$HOME/.local/bin:$PATH"' >> /home/agent/.zshrc
-    echo 'eval "$(starship init zsh)"' >> /home/agent/.zshrc
+    echo '${AGENT_ZSHRC_BASE64}' | base64 -d > /home/agent/.zshrc
     chown agent:agent /home/agent/.zshrc
+    chmod 644 /home/agent/.zshrc
 `;
 }
 

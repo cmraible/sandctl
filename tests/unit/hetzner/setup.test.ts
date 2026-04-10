@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { parse } from "yaml";
 
 import {
 	assembleUserData,
@@ -38,11 +39,23 @@ describe("hetzner/setup", () => {
 			expect(output).toContain("githubcli-archive-keyring.gpg");
 		});
 
-		test("writes interactive shell config to agent zshrc instead of system zshrc", () => {
+		test("overwrites interactive shell config in agent zshrc", () => {
 			const output = generateCloudInit();
-			expect(output).toContain(">> /home/agent/.zshrc");
+			expect(output).toContain("base64 -d > /home/agent/.zshrc");
+			expect(output).not.toContain(">> /home/agent/.zshrc");
 			expect(output).not.toContain(">> /etc/zsh/zshrc");
 			expect(output).toContain("chown agent:agent /home/agent/.zshrc");
+			expect(output).toContain("chmod 644 /home/agent/.zshrc");
+		});
+
+		test("renders valid cloud-config yaml", () => {
+			const parsed = parse(generateCloudInit()) as {
+				users?: Array<{ name?: string }>;
+				runcmd?: string[];
+			};
+
+			expect(parsed.users?.some((user) => user.name === "agent")).toBe(true);
+			expect(Array.isArray(parsed.runcmd)).toBe(true);
 		});
 	});
 
