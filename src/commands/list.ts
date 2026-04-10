@@ -10,6 +10,7 @@ import {
 import type { VMStatus } from "@/provider";
 import { get as getProviderFromRegistry } from "@/provider/registry";
 import type { VM } from "@/provider/types";
+import { normalizeName } from "@/session/id";
 import { SessionStore } from "@/session/store";
 import { type Session, type Status, timeoutRemaining } from "@/session/types";
 
@@ -94,23 +95,25 @@ async function syncProviderSessions(
 	deps: Dependencies,
 	configPath?: string,
 ): Promise<void> {
-	const providerNames = [
-		...new Set(
-			sessions
-				.filter((session) => session.provider_id)
-				.map((session) => session.provider),
-		),
-	];
-
-	if (providerNames.length === 0) {
-		return;
-	}
-
 	let config: Config;
 	try {
 		config = await deps.loadConfig(configPath);
 	} catch (error) {
 		deps.warn(`Failed to load config for provider sync: ${String(error)}`);
+		return;
+	}
+
+	const configuredProviderNames = Object.keys(config.providers ?? {});
+	const providerNames = [
+		...new Set([
+			...configuredProviderNames,
+			...sessions
+				.filter((session) => session.provider_id)
+				.map((session) => session.provider),
+		]),
+	];
+
+	if (providerNames.length === 0) {
 		return;
 	}
 
@@ -139,6 +142,9 @@ async function syncProviderSessions(
 		}
 
 		const vmByID = new Map(providerVMs.map((vm) => [vm.id, vm]));
+		const providerSessionsByVMID = new Map(
+			providerSessions.map((session) => [session.provider_id, session]),
+		);
 
 		for (const session of providerSessions) {
 			const vm = vmByID.get(session.provider_id);
@@ -158,8 +164,40 @@ async function syncProviderSessions(
 				await store.update(session.id, {
 					status: session.status,
 					ip_address: session.ip_address,
+					region: vm.region,
+					server_type: vm.serverType,
 				});
 			}
+		}
+
+		for (const vm of providerVMs) {
+			if (providerSessionsByVMID.has(vm.id)) {
+				continue;
+			}
+
+			const importedID = normalizeName(vm.name);
+			const conflictingSession = sessions.find(
+				(session) => normalizeName(session.id) === importedID,
+			);
+			if (conflictingSession) {
+				deps.warn(
+					`[warn] Failed to import provider VM '${vm.name}' from '${providerName}': session id '${importedID}' already exists`,
+				);
+				continue;
+			}
+
+			const importedSession: Session = {
+				id: importedID,
+				status: mapVMStatusToSession(vm.status),
+				provider: providerName,
+				provider_id: vm.id,
+				ip_address: vm.ipAddress ?? "",
+				region: vm.region,
+				server_type: vm.serverType,
+				created_at: vm.createdAt,
+			};
+			await store.upsert(importedSession);
+			sessions.push(importedSession);
 		}
 	}
 }
