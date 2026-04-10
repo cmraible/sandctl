@@ -37,6 +37,13 @@ describe("hetzner/setup", () => {
 			expect(output).toContain("apt-get install -y gh");
 			expect(output).toContain("githubcli-archive-keyring.gpg");
 		});
+
+		test("writes interactive shell config to agent zshrc instead of system zshrc", () => {
+			const output = generateCloudInit();
+			expect(output).toContain(">> /home/agent/.zshrc");
+			expect(output).not.toContain(">> /etc/zsh/zshrc");
+			expect(output).toContain("chown agent:agent /home/agent/.zshrc");
+		});
 	});
 
 	describe("generatePostSnapshotSSHSetup", () => {

@@ -500,7 +500,6 @@ export async function runNew(
 	let claudeSetupMs: number | undefined;
 	let backgroundSnapshotDeferred = false;
 
-	// Resolve --size to a server type
 	let resolvedServerType: string | undefined;
 	if (options.size) {
 		const vmSize = resolveSize(options.size);
@@ -512,19 +511,16 @@ export async function runNew(
 		resolvedServerType = vmSize.serverType;
 	}
 
-	// -T base is not allowed — the base template is applied automatically
 	if (options.template && normalizeTemplateName(options.template) === "base") {
 		throw new Error(
 			"the 'base' template is applied automatically. Use `sandctl template edit base` to modify it.",
 		);
 	}
 
-	// --bare and -T are mutually exclusive
 	if (options.bare && options.template) {
 		throw new Error("--bare and -T cannot be used together.");
 	}
 
-	// Load named template init content (if -T flag provided)
 	let namedTemplateContent: string | undefined;
 	if (options.template) {
 		try {
@@ -542,7 +538,6 @@ export async function runNew(
 		}
 	}
 
-	// Load user base template init content (optional, no error if missing)
 	let userBaseContent: string | undefined;
 	if (!options.bare) {
 		try {
@@ -556,7 +551,6 @@ export async function runNew(
 		}
 	}
 
-	// Assemble user_data from layers
 	const globalBase = generateCloudInit();
 	const additionalLayers: string[] = [];
 	if (userBaseContent) additionalLayers.push(userBaseContent);
@@ -600,7 +594,6 @@ export async function runNew(
 		publicKey,
 	);
 
-	// Check for cached base snapshot (Hetzner only, skip if --image or --no-cache is set)
 	const isHetzner = provider instanceof HetznerProvider;
 	let snapshot: HetznerImage | null = null;
 	if (options.noCache) {
@@ -669,14 +662,11 @@ export async function runNew(
 
 		const readyVM = await provider.get(createdVM.id);
 
-		// Build background snapshot task (deferred until after console opens)
 		let backgroundTasks: Promise<void> | undefined;
-		// Capture createdVM.id for the background closure before it could change
 		const vmId = createdVM.id;
 
 		if (readyVM.ipAddress) {
 			if (snapshot) {
-				// Booting from snapshot — copy SSH keys to agent user
 				dependencies.log("Setting up SSH keys...");
 				const sshSetupStartedAt = dependencies.nowMs();
 				await dependencies.runSSHSetup(
@@ -690,7 +680,6 @@ export async function runNew(
 					`SSH key sync completed in ${formatElapsed(sshKeySyncMs)}.`,
 				);
 			} else {
-				// Fresh boot — wait for cloud-init
 				dependencies.log("Waiting for cloud-init to complete...");
 				const cloudInitStartedAt = dependencies.nowMs();
 				await dependencies.waitForCloudInit(
@@ -704,7 +693,6 @@ export async function runNew(
 					`Cloud-init completed in ${formatElapsed(cloudInitMs)}.`,
 				);
 
-				// Defer snapshot creation to background (Hetzner only)
 				if (isHetzner && !options.image && !options.noCache) {
 					backgroundSnapshotDeferred = true;
 					backgroundTasks = (async () => {
