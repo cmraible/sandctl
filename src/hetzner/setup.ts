@@ -48,7 +48,9 @@ runcmd:
     apt-get install -y gh
   - su - agent -c 'curl -fsSL https://claude.ai/install.sh | bash'
   - npm install -g @openai/codex
+  - curl -fsSL https://starship.rs/install.sh | sh -s -- -y
   - echo 'export PATH="$HOME/.local/bin:$PATH"' >> /home/agent/.zshrc
+  - echo 'eval "$(starship init zsh)"' >> /home/agent/.zshrc
 `;
 }
 
