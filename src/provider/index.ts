@@ -8,7 +8,13 @@ export {
 	ErrVMNotFound,
 	ErrVMNotFound as VMNotFoundError,
 } from "@/provider/errors";
-export type { Provider, SSHKeyManager } from "@/provider/interface";
+export type {
+	Provider,
+	RenamableProvider,
+	ResizableProvider,
+	SSHKeyManager,
+} from "@/provider/interface";
+export { supportsRename, supportsResize } from "@/provider/interface";
 export {
 	available,
 	clearRegistry,

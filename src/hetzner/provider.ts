@@ -15,7 +15,12 @@ import {
 } from "@/hetzner/setup";
 import { ensureSSHKey } from "@/hetzner/ssh-keys";
 import { ErrNotFound, ErrProvisionFailed, ErrTimeout } from "@/provider/errors";
-import type { Provider, SSHKeyManager } from "@/provider/interface";
+import type {
+	Provider,
+	RenamableProvider,
+	ResizableProvider,
+	SSHKeyManager,
+} from "@/provider/interface";
 import type { CreateOpts, VM, VMStatus } from "@/provider/types";
 
 const PROVIDER_NAME = "hetzner";
@@ -49,7 +54,9 @@ export interface HetznerClientLike {
 	deleteImage(id: string): Promise<void>;
 }
 
-export class HetznerProvider implements Provider, SSHKeyManager {
+export class HetznerProvider
+	implements Provider, SSHKeyManager, ResizableProvider, RenamableProvider
+{
 	readonly client: HetznerClientLike;
 
 	constructor(
@@ -123,6 +130,10 @@ export class HetznerProvider implements Provider, SSHKeyManager {
 
 	async reboot(id: string): Promise<void> {
 		await this.client.rebootServer(id);
+	}
+
+	async rename(id: string, name: string): Promise<void> {
+		await this.client.updateServer(id, { name });
 	}
 
 	async list(): Promise<VM[]> {

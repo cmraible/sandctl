@@ -148,11 +148,8 @@ describe("commands/rename", () => {
 				}),
 				resolveProvider: () =>
 					({
-						client: {
-							updateServer: async (_id: string, _updates: { name: string }) => {
-								providerRenamed = true;
-								return {};
-							},
+						rename: async (_id: string, _name: string) => {
+							providerRenamed = true;
 						},
 					}) as ReturnType<typeof import("@/provider/registry").get>,
 			},
@@ -177,6 +174,45 @@ describe("commands/rename", () => {
 				resolveProvider: () => {
 					throw new Error("no provider");
 				},
+			},
+		);
+
+		expect(result).toEqual({ old_id: "alice", new_id: "bob" });
+		expect(store.sessions()[0].id).toBe("bob");
+	});
+
+	test("proceeds with local rename when provider does not support rename", async () => {
+		const store = makeStore();
+
+		const result = await runRename(
+			"alice",
+			"bob",
+			{ silent: true },
+			{
+				store,
+				loadConfig: async () => ({
+					default_provider: "hetzner",
+					providers: {
+						hetzner: { token: "test" },
+					},
+				}),
+				resolveProvider: () =>
+					({
+						name: () => "hetzner",
+						create: async () => {
+							throw new Error("not implemented");
+						},
+						get: async () => {
+							throw new Error("not implemented");
+						},
+						delete: async () => {
+							throw new Error("not implemented");
+						},
+						reboot: async () => {},
+						list: async () => [],
+						waitReady: async () => {},
+						ensureSSHKey: async () => "",
+					}) as ReturnType<typeof import("@/provider/registry").get>,
 			},
 		);
 
