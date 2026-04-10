@@ -424,7 +424,7 @@ async function setupClaudeConfigViaSSH(
 			).toString("base64");
 			await sshExec(
 				c,
-				`echo '${encoded}' | base64 -d > /etc/profile.d/claude-oauth.sh && chmod 644 /etc/profile.d/claude-oauth.sh`,
+				`echo '${encoded}' | base64 -d > /home/agent/.zshenv && chown agent:agent /home/agent/.zshenv && chmod 600 /home/agent/.zshenv`,
 			);
 
 			// Claude Code requires hasCompletedOnboarding to skip the interactive
