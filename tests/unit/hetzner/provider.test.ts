@@ -238,6 +238,42 @@ describe("hetzner/provider", () => {
 		expect(createCalls).toBe(1);
 	});
 
+	test("rename delegates to the Hetzner update server endpoint", async () => {
+		const updates: Array<{ id: string; name: string }> = [];
+		const client: HetznerClientLike = {
+			createServer: async () => {
+				throw new Error("not used");
+			},
+			getServer: async () => {
+				throw new Error("not used");
+			},
+			updateServer: async (id, { name }) => {
+				updates.push({ id, name });
+				return {
+					id: 1,
+					name,
+					status: "running",
+					created: "2026-02-20T00:00:00Z",
+				};
+			},
+			deleteServer: async () => {},
+			listServers: async () => [],
+			createSSHKey: async () => ({ id: 1, name: "k", fingerprint: "fp" }),
+			listSSHKeys: async () => [],
+			listDatacenters: async () => [],
+		};
+
+		const provider = new HetznerProvider(
+			{ token: "token" },
+			client,
+			async () => {},
+		);
+
+		await provider.rename("123", "renamed-vm");
+
+		expect(updates).toEqual([{ id: "123", name: "renamed-vm" }]);
+	});
+
 	test("ensureSSHKey handles create race by re-listing keys", async () => {
 		const fingerprint = calculateFingerprint(TEST_PUBLIC_KEY);
 		let listCalls = 0;

@@ -13,3 +13,28 @@ export interface Provider {
 export interface SSHKeyManager {
 	ensureSSHKey(name: string, publicKey: string): Promise<string>;
 }
+
+export interface ResizableProvider {
+	resize(
+		id: string,
+		serverType: string,
+		upgradeDisk?: boolean,
+		onProgress?: (message: string) => void,
+	): Promise<void>;
+}
+
+export interface RenamableProvider {
+	rename(id: string, name: string): Promise<void>;
+}
+
+export function supportsResize(
+	provider: Provider,
+): provider is Provider & ResizableProvider {
+	return "resize" in provider && typeof provider.resize === "function";
+}
+
+export function supportsRename(
+	provider: Provider,
+): provider is Provider & RenamableProvider {
+	return "rename" in provider && typeof provider.rename === "function";
+}

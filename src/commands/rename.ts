@@ -6,6 +6,7 @@ import {
 	load,
 	type ProviderConfig,
 } from "@/config/config";
+import { supportsRename } from "@/provider/interface";
 import { get as getProviderFromRegistry } from "@/provider/registry";
 import { normalizeName, validateID } from "@/session/id";
 import { SessionStore } from "@/session/store";
@@ -36,12 +37,6 @@ interface SessionStoreLike {
 		ip_address: string;
 	}>;
 	rename: (oldId: string, newId: string) => Promise<void>;
-}
-
-interface ProviderLike {
-	client: {
-		updateServer: (id: string, updates: { name: string }) => Promise<unknown>;
-	};
 }
 
 interface Dependencies {
@@ -116,10 +111,10 @@ export async function runRename(
 				const provider = dependencies.resolveProvider(
 					session.provider,
 					providerConfig,
-				) as ProviderLike;
-				await provider.client.updateServer(session.provider_id, {
-					name: normalizedNew,
-				});
+				);
+				if (supportsRename(provider)) {
+					await provider.rename(session.provider_id, normalizedNew);
+				}
 			}
 		} catch {
 			// Provider rename is best-effort — local rename still proceeds

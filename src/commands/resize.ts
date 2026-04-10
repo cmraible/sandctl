@@ -12,7 +12,7 @@ import {
 	load,
 	type ProviderConfig,
 } from "@/config/config";
-import type { HetznerProvider } from "@/hetzner/provider";
+import { supportsResize } from "@/provider/interface";
 import { get as getProviderFromRegistry } from "@/provider/registry";
 import { SessionStore } from "@/session/store";
 
@@ -99,7 +99,7 @@ export async function runResize(
 		providerConfig,
 	);
 
-	if (!("resize" in provider) || typeof provider.resize !== "function") {
+	if (!supportsResize(provider)) {
 		throw new Error(`Provider '${session.provider}' does not support resize.`);
 	}
 
@@ -126,7 +126,7 @@ export async function runResize(
 		: dependencies.createSpinner(`Powering off session '${session.id}'...`);
 
 	try {
-		await (provider as HetznerProvider).resize(
+		await provider.resize(
 			session.provider_id,
 			serverType,
 			options.upgradeDisk,
