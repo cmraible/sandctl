@@ -33,6 +33,12 @@ describe("hetzner/setup", () => {
 			expect(output).toContain("docker");
 		});
 
+		test("installs and enables Docker", () => {
+			const output = generateCloudInit();
+			expect(output).toContain("- docker.io");
+			expect(output).toContain("systemctl enable --now docker");
+		});
+
 		test("installs gh CLI from official GitHub repository", () => {
 			const output = generateCloudInit();
 			expect(output).toContain("apt-get install -y gh");

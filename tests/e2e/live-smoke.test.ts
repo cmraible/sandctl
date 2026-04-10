@@ -5,7 +5,14 @@ import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { runBinary, shouldRunLiveSmoke } from "./helpers";
+import {
+	LIVE_SMOKE_PROVIDERS,
+	type LiveSmokeProvider,
+	liveSmokeProviderConfig,
+	liveSmokeProviderToken,
+	runBinary,
+	shouldRunLiveSmoke,
+} from "./helpers";
 
 interface SessionRecord {
 	id: string;
@@ -15,12 +22,14 @@ interface SessionRecord {
 const NEW_TIMEOUT_MS = 8 * 60 * 1000;
 const LIST_TIMEOUT_MS = 60 * 1000;
 const EXEC_TIMEOUT_MS = 2 * 60 * 1000;
+const TOOL_VERIFY_TIMEOUT_MS = 4 * 60 * 1000;
 const RESIZE_TIMEOUT_MS = 5 * 60 * 1000;
 const DESTROY_TIMEOUT_MS = 5 * 60 * 1000;
 const LIVE_SMOKE_TEST_TIMEOUT_MS =
 	NEW_TIMEOUT_MS +
 	LIST_TIMEOUT_MS +
 	EXEC_TIMEOUT_MS +
+	TOOL_VERIFY_TIMEOUT_MS +
 	DESTROY_TIMEOUT_MS +
 	DESTROY_TIMEOUT_MS +
 	60_000;
@@ -52,18 +61,20 @@ function generateSSHKeyPair(dir: string): string {
 
 function writeConfig(
 	configPath: string,
+	provider: LiveSmokeProvider,
 	token: string,
 	sshPublicKey: string,
 ): void {
+	const providerConfig = liveSmokeProviderConfig(provider);
 	const config = [
-		`default_provider: ${quoteYamlScalar("hetzner")}`,
+		`default_provider: ${quoteYamlScalar(provider)}`,
 		`ssh_public_key: ${quoteYamlScalar(sshPublicKey)}`,
 		"providers:",
-		"  hetzner:",
+		`  ${provider}:`,
 		`    token: ${quoteYamlScalar(token)}`,
-		`    region: ${quoteYamlScalar("ash")}`,
-		`    server_type: ${quoteYamlScalar("cpx11")}`,
-		`    image: ${quoteYamlScalar("ubuntu-24.04")}`,
+		`    region: ${quoteYamlScalar(providerConfig.defaultRegion)}`,
+		`    server_type: ${quoteYamlScalar(providerConfig.defaultServerType)}`,
+		`    image: ${quoteYamlScalar(providerConfig.defaultImage)}`,
 	].join("\n");
 	writeFileSync(configPath, `${config}\n`, { mode: 0o600 });
 }
@@ -81,9 +92,64 @@ function assertCliSuccess(
 	);
 }
 
+function verifyInstalledTools(
+	configPath: string,
+	sessionID: string,
+	env: {
+		HOME: string;
+	},
+): void {
+	const toolSmokeMarker = `sandctl-tool-smoke-${randomUUID()}`;
+	const command = [
+		"sh -lc 'set -eu",
+		'export PATH="$HOME/.local/bin:$PATH"',
+		"zsh --version",
+		"gh --version",
+		"codex --version",
+		"claude --version",
+		"docker --version",
+		"docker run --rm hello-world > /tmp/sandctl-docker-smoke.log 2>&1",
+		'grep -q "Hello from Docker!" /tmp/sandctl-docker-smoke.log',
+		`echo ${toolSmokeMarker}`,
+		"'",
+	].join("; ");
+
+	const result = runBinary(
+		["--config", configPath, "exec", sessionID, "-c", command],
+		{ env, timeoutMs: TOOL_VERIFY_TIMEOUT_MS },
+	);
+	assertCliSuccess("tool verification exec", result);
+	expect(result.stdout).toContain(toolSmokeMarker);
+	expect(result.stdout).toContain("zsh");
+	expect(result.stdout).toContain("gh version");
+	expect(result.stdout).toContain("codex");
+	expect(result.stdout).toContain("Docker version");
+}
+
 describe("sandctl live smoke gating", () => {
 	test("live smoke stays disabled by default", () => {
 		expect(shouldRunLiveSmoke({})).toBeFalse();
+	});
+
+	test("provider gating is provider-specific", () => {
+		expect(
+			shouldRunLiveSmoke(
+				{
+					SANDCTL_LIVE_SMOKE: "1",
+					DIGITALOCEAN_API_TOKEN: "test-token",
+				},
+				"digitalocean",
+			),
+		).toBeTrue();
+		expect(
+			shouldRunLiveSmoke(
+				{
+					SANDCTL_LIVE_SMOKE: "1",
+					DIGITALOCEAN_API_TOKEN: "test-token",
+				},
+				"hetzner",
+			),
+		).toBeFalse();
 	});
 
 	describe("assertCliSuccess", () => {
@@ -148,194 +214,206 @@ describe("sandctl live smoke gating", () => {
 		});
 	});
 
-	const liveSmokeTest = shouldRunLiveSmoke(process.env) ? test : test.skip;
+	for (const provider of LIVE_SMOKE_PROVIDERS) {
+		const providerConfig = liveSmokeProviderConfig(provider);
+		const liveSmokeTest = shouldRunLiveSmoke(process.env, provider)
+			? test
+			: test.skip;
 
-	liveSmokeTest(
-		"runs new -> list -> exec -c -> destroy against Hetzner",
-		() => {
-			const token = process.env.HETZNER_API_TOKEN;
-			if (!token) {
-				throw new Error(
-					"HETZNER_API_TOKEN is required when live smoke is enabled",
-				);
-			}
-
-			const homeDir = mkdtempSync(path.join(tmpdir(), "sandctl-live-smoke-"));
-			const configPath = path.join(homeDir, "config");
-			const sshPublicKey =
-				process.env.SSH_PUBLIC_KEY && existsSync(process.env.SSH_PUBLIC_KEY)
-					? process.env.SSH_PUBLIC_KEY
-					: generateSSHKeyPair(homeDir);
-
-			writeConfig(configPath, token, sshPublicKey);
-
-			const env = {
-				HOME: homeDir,
-			};
-
-			const createdSessionIDs: string[] = [];
-			try {
-				const newResult = runBinary(["--config", configPath, "new"], {
-					env,
-					timeoutMs: NEW_TIMEOUT_MS,
-				});
-				assertCliSuccess("new", newResult);
-
-				const listResult = runBinary(
-					["--config", configPath, "list", "--format", "json"],
-					{ env, timeoutMs: LIST_TIMEOUT_MS },
-				);
-				assertCliSuccess("list", listResult);
-
-				const sessions = JSON.parse(listResult.stdout) as SessionRecord[];
-				expect(sessions.length).toBeGreaterThan(0);
-
-				const target = sessions[0];
-				expect(target.id.length).toBeGreaterThan(0);
-				createdSessionIDs.push(target.id);
-
-				const smokeMarker = `sandctl-live-smoke-${randomUUID()}`;
-				const execResult = runBinary(
-					[
-						"--config",
-						configPath,
-						"exec",
-						target.id,
-						"-c",
-						`echo ${smokeMarker}`,
-					],
-					{ env, timeoutMs: EXEC_TIMEOUT_MS },
-				);
-				assertCliSuccess("exec -c", execResult);
-				expect(execResult.stdout).toContain(smokeMarker);
-
-				const destroyResult = runBinary(
-					["--config", configPath, "destroy", target.id, "--force"],
-					{ env, timeoutMs: DESTROY_TIMEOUT_MS },
-				);
-				assertCliSuccess("destroy", destroyResult);
-
-				const postDestroyList = runBinary(
-					["--config", configPath, "list", "--all", "--format", "json"],
-					{ env, timeoutMs: LIST_TIMEOUT_MS },
-				);
-				assertCliSuccess("post-destroy list", postDestroyList);
-				const postDestroySessions = JSON.parse(
-					postDestroyList.stdout,
-				) as SessionRecord[];
-				expect(
-					postDestroySessions.some((session) => session.id === target.id),
-				).toBe(false);
-				createdSessionIDs.splice(createdSessionIDs.indexOf(target.id), 1);
-			} finally {
-				for (const sessionID of createdSessionIDs) {
-					runBinary(["--config", configPath, "destroy", sessionID, "--force"], {
-						env,
-						timeoutMs: DESTROY_TIMEOUT_MS,
-					});
+		liveSmokeTest(
+			`runs new -> list -> exec -c -> destroy against ${providerConfig.label}`,
+			() => {
+				const token = liveSmokeProviderToken(process.env, provider);
+				if (!token) {
+					throw new Error(
+						`${providerConfig.tokenEnvKey} is required when ${providerConfig.label} live smoke is enabled`,
+					);
 				}
-			}
-		},
-		LIVE_SMOKE_TEST_TIMEOUT_MS,
-	);
 
-	liveSmokeTest(
-		"runs new -> resize -> list (verify type) -> destroy against Hetzner",
-		() => {
-			const token = process.env.HETZNER_API_TOKEN;
-			if (!token) {
-				throw new Error(
-					"HETZNER_API_TOKEN is required when live smoke is enabled",
+				const homeDir = mkdtempSync(
+					path.join(tmpdir(), `sandctl-live-smoke-${provider}-`),
 				);
-			}
+				const configPath = path.join(homeDir, "config");
+				const sshPublicKey =
+					process.env.SSH_PUBLIC_KEY && existsSync(process.env.SSH_PUBLIC_KEY)
+						? process.env.SSH_PUBLIC_KEY
+						: generateSSHKeyPair(homeDir);
 
-			const homeDir = mkdtempSync(path.join(tmpdir(), "sandctl-resize-smoke-"));
-			const configPath = path.join(homeDir, "config");
-			const sshPublicKey =
-				process.env.SSH_PUBLIC_KEY && existsSync(process.env.SSH_PUBLIC_KEY)
-					? process.env.SSH_PUBLIC_KEY
-					: generateSSHKeyPair(homeDir);
+				writeConfig(configPath, provider, token, sshPublicKey);
 
-			writeConfig(configPath, token, sshPublicKey);
-
-			const env = {
-				HOME: homeDir,
-			};
-
-			const createdSessionIDs: string[] = [];
-			try {
-				// Step 1: Create new session (defaults to cpx11)
-				const newResult = runBinary(["--config", configPath, "new"], {
-					env,
-					timeoutMs: NEW_TIMEOUT_MS,
-				});
-				assertCliSuccess("new", newResult);
-
-				// Step 2: List to get the session ID
-				const listResult = runBinary(
-					["--config", configPath, "list", "--format", "json"],
-					{ env, timeoutMs: LIST_TIMEOUT_MS },
-				);
-				assertCliSuccess("list", listResult);
-
-				const sessions = JSON.parse(listResult.stdout) as SessionRecord[];
-				expect(sessions.length).toBeGreaterThan(0);
-
-				const target = sessions[0];
-				expect(target.id.length).toBeGreaterThan(0);
-				createdSessionIDs.push(target.id);
-
-				// Step 3: Resize from cpx11 to cpx21
-				const resizeResult = runBinary(
-					[
-						"--config",
-						configPath,
-						"--json",
-						"resize",
-						target.id,
-						"cpx21",
-						"--force",
-					],
-					{ env, timeoutMs: RESIZE_TIMEOUT_MS },
-				);
-				assertCliSuccess("resize", resizeResult);
-				const resizeOutput = JSON.parse(resizeResult.stdout) as {
-					resized: boolean;
-					serverType: string;
+				const env = {
+					HOME: homeDir,
 				};
-				expect(resizeOutput.resized).toBe(true);
-				expect(resizeOutput.serverType).toBe("cpx21");
 
-				// Step 4: List again and verify the server type changed
-				const postResizeList = runBinary(
-					["--config", configPath, "list", "--format", "json"],
-					{ env, timeoutMs: LIST_TIMEOUT_MS },
-				);
-				assertCliSuccess("post-resize list", postResizeList);
-
-				const postResizeSessions = JSON.parse(
-					postResizeList.stdout,
-				) as SessionRecord[];
-				const resized = postResizeSessions.find((s) => s.id === target.id);
-				expect(resized).toBeDefined();
-				expect(resized?.server_type).toBe("cpx21");
-
-				// Step 5: Destroy
-				const destroyResult = runBinary(
-					["--config", configPath, "destroy", target.id, "--force"],
-					{ env, timeoutMs: DESTROY_TIMEOUT_MS },
-				);
-				assertCliSuccess("destroy", destroyResult);
-				createdSessionIDs.splice(createdSessionIDs.indexOf(target.id), 1);
-			} finally {
-				for (const sessionID of createdSessionIDs) {
-					runBinary(["--config", configPath, "destroy", sessionID, "--force"], {
+				const createdSessionIDs: string[] = [];
+				try {
+					const newResult = runBinary(["--config", configPath, "new"], {
 						env,
-						timeoutMs: DESTROY_TIMEOUT_MS,
+						timeoutMs: NEW_TIMEOUT_MS,
 					});
+					assertCliSuccess("new", newResult);
+
+					const listResult = runBinary(
+						["--config", configPath, "list", "--format", "json"],
+						{ env, timeoutMs: LIST_TIMEOUT_MS },
+					);
+					assertCliSuccess("list", listResult);
+
+					const sessions = JSON.parse(listResult.stdout) as SessionRecord[];
+					expect(sessions.length).toBeGreaterThan(0);
+
+					const target = sessions[0];
+					expect(target.id.length).toBeGreaterThan(0);
+					createdSessionIDs.push(target.id);
+
+					const smokeMarker = `sandctl-live-smoke-${randomUUID()}`;
+					const execResult = runBinary(
+						[
+							"--config",
+							configPath,
+							"exec",
+							target.id,
+							"-c",
+							`echo ${smokeMarker}`,
+						],
+						{ env, timeoutMs: EXEC_TIMEOUT_MS },
+					);
+					assertCliSuccess("exec -c", execResult);
+					expect(execResult.stdout).toContain(smokeMarker);
+
+					verifyInstalledTools(configPath, target.id, env);
+
+					const destroyResult = runBinary(
+						["--config", configPath, "destroy", target.id, "--force"],
+						{ env, timeoutMs: DESTROY_TIMEOUT_MS },
+					);
+					assertCliSuccess("destroy", destroyResult);
+
+					const postDestroyList = runBinary(
+						["--config", configPath, "list", "--all", "--format", "json"],
+						{ env, timeoutMs: LIST_TIMEOUT_MS },
+					);
+					assertCliSuccess("post-destroy list", postDestroyList);
+					const postDestroySessions = JSON.parse(
+						postDestroyList.stdout,
+					) as SessionRecord[];
+					expect(
+						postDestroySessions.some((session) => session.id === target.id),
+					).toBe(false);
+					createdSessionIDs.splice(createdSessionIDs.indexOf(target.id), 1);
+				} finally {
+					for (const sessionID of createdSessionIDs) {
+						runBinary(
+							["--config", configPath, "destroy", sessionID, "--force"],
+							{
+								env,
+								timeoutMs: DESTROY_TIMEOUT_MS,
+							},
+						);
+					}
 				}
-			}
-		},
-		RESIZE_SMOKE_TEST_TIMEOUT_MS,
-	);
+			},
+			LIVE_SMOKE_TEST_TIMEOUT_MS,
+		);
+
+		liveSmokeTest(
+			`runs new -> resize -> list (verify type) -> destroy against ${providerConfig.label}`,
+			() => {
+				const token = liveSmokeProviderToken(process.env, provider);
+				if (!token) {
+					throw new Error(
+						`${providerConfig.tokenEnvKey} is required when ${providerConfig.label} live smoke is enabled`,
+					);
+				}
+
+				const homeDir = mkdtempSync(
+					path.join(tmpdir(), `sandctl-resize-smoke-${provider}-`),
+				);
+				const configPath = path.join(homeDir, "config");
+				const sshPublicKey =
+					process.env.SSH_PUBLIC_KEY && existsSync(process.env.SSH_PUBLIC_KEY)
+						? process.env.SSH_PUBLIC_KEY
+						: generateSSHKeyPair(homeDir);
+
+				writeConfig(configPath, provider, token, sshPublicKey);
+
+				const env = {
+					HOME: homeDir,
+				};
+
+				const createdSessionIDs: string[] = [];
+				try {
+					const newResult = runBinary(["--config", configPath, "new"], {
+						env,
+						timeoutMs: NEW_TIMEOUT_MS,
+					});
+					assertCliSuccess("new", newResult);
+
+					const listResult = runBinary(
+						["--config", configPath, "list", "--format", "json"],
+						{ env, timeoutMs: LIST_TIMEOUT_MS },
+					);
+					assertCliSuccess("list", listResult);
+
+					const sessions = JSON.parse(listResult.stdout) as SessionRecord[];
+					expect(sessions.length).toBeGreaterThan(0);
+
+					const target = sessions[0];
+					expect(target.id.length).toBeGreaterThan(0);
+					createdSessionIDs.push(target.id);
+
+					const resizeResult = runBinary(
+						[
+							"--config",
+							configPath,
+							"--json",
+							"resize",
+							target.id,
+							providerConfig.resizeServerType,
+							"--force",
+						],
+						{ env, timeoutMs: RESIZE_TIMEOUT_MS },
+					);
+					assertCliSuccess("resize", resizeResult);
+					const resizeOutput = JSON.parse(resizeResult.stdout) as {
+						resized: boolean;
+						serverType: string;
+					};
+					expect(resizeOutput.resized).toBe(true);
+					expect(resizeOutput.serverType).toBe(providerConfig.resizeServerType);
+
+					const postResizeList = runBinary(
+						["--config", configPath, "list", "--format", "json"],
+						{ env, timeoutMs: LIST_TIMEOUT_MS },
+					);
+					assertCliSuccess("post-resize list", postResizeList);
+
+					const postResizeSessions = JSON.parse(
+						postResizeList.stdout,
+					) as SessionRecord[];
+					const resized = postResizeSessions.find((s) => s.id === target.id);
+					expect(resized).toBeDefined();
+					expect(resized?.server_type).toBe(providerConfig.resizeServerType);
+
+					const destroyResult = runBinary(
+						["--config", configPath, "destroy", target.id, "--force"],
+						{ env, timeoutMs: DESTROY_TIMEOUT_MS },
+					);
+					assertCliSuccess("destroy", destroyResult);
+					createdSessionIDs.splice(createdSessionIDs.indexOf(target.id), 1);
+				} finally {
+					for (const sessionID of createdSessionIDs) {
+						runBinary(
+							["--config", configPath, "destroy", sessionID, "--force"],
+							{
+								env,
+								timeoutMs: DESTROY_TIMEOUT_MS,
+							},
+						);
+					}
+				}
+			},
+			RESIZE_SMOKE_TEST_TIMEOUT_MS,
+		);
+	}
 });
