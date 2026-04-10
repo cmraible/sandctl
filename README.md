@@ -69,7 +69,7 @@ bun run build
 ```
 
 Notes:
-- `test:e2e` runs `build` first, then all files under `tests/e2e/`. Live infrastructure checks in `live-smoke.test.ts` are skipped by default unless `SANDCTL_LIVE_SMOKE=1` is set.
+- `test:e2e` runs `build` first, then all files under `tests/e2e/`. Live infrastructure checks in `live-smoke.test.ts` are skipped by default unless `SANDCTL_LIVE_SMOKE=1` is set with at least one provider token.
 
 ### Contract tests
 
@@ -89,19 +89,19 @@ Contract tests run in CI as the `contract-tests` job (deterministic, no secrets 
 
 ### Opt-in live smoke checks
 
-To run the real cloud smoke flow (`new -> list -> exec -> destroy`), provide credentials and opt in:
+To run the real cloud smoke flow (`new -> list -> exec -> destroy`), provide credentials and opt in. The suite runs once per configured provider token:
 
 ```bash
 SANDCTL_LIVE_SMOKE=1 HETZNER_API_TOKEN=<token> bun test tests/e2e/live-smoke.test.ts
+SANDCTL_LIVE_SMOKE=1 DIGITALOCEAN_API_TOKEN=<token> bun test tests/e2e/live-smoke.test.ts
+SANDCTL_LIVE_SMOKE=1 HETZNER_API_TOKEN=<token> DIGITALOCEAN_API_TOKEN=<token> bun test tests/e2e/live-smoke.test.ts
 ```
-
-The current live smoke flow is still Hetzner-backed.
 
 ### Required PR checks policy
 
 - TypeScript CI is required on pull requests.
 - Live smoke (`tests/e2e/live-smoke.test.ts`) is a required PR check before merge, configured in the target branch protection/ruleset.
-- `HETZNER_API_TOKEN` must be configured as a repository secret; when missing, the `e2e` job fails rather than skipping.
+- Configure `HETZNER_API_TOKEN` and `DIGITALOCEAN_API_TOKEN` as repository secrets to exercise both providers in CI. The `e2e` job skips only when neither provider token is available.
 - Fork PRs are unsupported for this required check because repository secrets are unavailable, so the `e2e` job fails by design.
 
 ## SSH Runtime Parity Notes

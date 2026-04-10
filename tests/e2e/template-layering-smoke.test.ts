@@ -152,7 +152,9 @@ function destroySession(
 }
 
 describe("template layering live smoke", () => {
-	const liveTest = shouldRunLiveSmoke(process.env) ? test : test.skip;
+	const liveTest = shouldRunLiveSmoke(process.env, "hetzner")
+		? test
+		: test.skip;
 
 	liveTest(
 		"minimal base creates agent user without extras",

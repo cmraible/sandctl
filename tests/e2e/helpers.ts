@@ -28,6 +28,17 @@ export interface TempHomeConfigOptions {
 	sessionsContent?: string;
 }
 
+export type LiveSmokeProvider = "digitalocean" | "hetzner";
+
+interface LiveSmokeProviderConfig {
+	label: string;
+	tokenEnvKey: string;
+	defaultRegion: string;
+	defaultServerType: string;
+	defaultImage: string;
+	resizeServerType: string;
+}
+
 const ALLOWED_BASE_ENV_KEYS = [
 	"PATH",
 	"HOME",
@@ -46,6 +57,28 @@ const ALLOWED_BASE_ENV_KEYS = [
 
 const PROJECT_ROOT = path.resolve(import.meta.dir, "..", "..");
 const COMPILED_BINARY_PATH = path.join(PROJECT_ROOT, "sandctl");
+const LIVE_SMOKE_PROVIDER_CONFIG = {
+	digitalocean: {
+		label: "DigitalOcean",
+		tokenEnvKey: "DIGITALOCEAN_API_TOKEN",
+		defaultRegion: "nyc1",
+		defaultServerType: "s-4vcpu-8gb",
+		defaultImage: "ubuntu-24-04-x64",
+		resizeServerType: "s-8vcpu-16gb",
+	},
+	hetzner: {
+		label: "Hetzner",
+		tokenEnvKey: "HETZNER_API_TOKEN",
+		defaultRegion: "ash",
+		defaultServerType: "cpx11",
+		defaultImage: "ubuntu-24.04",
+		resizeServerType: "cpx21",
+	},
+} as const satisfies Record<LiveSmokeProvider, LiveSmokeProviderConfig>;
+
+export const LIVE_SMOKE_PROVIDERS = Object.keys(
+	LIVE_SMOKE_PROVIDER_CONFIG,
+) as LiveSmokeProvider[];
 
 function buildSpawnEnv(overrides?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 	const env: NodeJS.ProcessEnv = {};
@@ -121,8 +154,34 @@ export function makeTempHomeWithConfig(
 	return homeDir;
 }
 
-export function shouldRunLiveSmoke(env: NodeJS.ProcessEnv): boolean {
-	return env.SANDCTL_LIVE_SMOKE === "1" && Boolean(env.HETZNER_API_TOKEN);
+export function liveSmokeProviderConfig(
+	provider: LiveSmokeProvider,
+): LiveSmokeProviderConfig {
+	return LIVE_SMOKE_PROVIDER_CONFIG[provider];
+}
+
+export function liveSmokeProviderToken(
+	env: NodeJS.ProcessEnv,
+	provider: LiveSmokeProvider,
+): string | undefined {
+	return env[LIVE_SMOKE_PROVIDER_CONFIG[provider].tokenEnvKey];
+}
+
+export function shouldRunLiveSmoke(
+	env: NodeJS.ProcessEnv,
+	provider?: LiveSmokeProvider,
+): boolean {
+	if (env.SANDCTL_LIVE_SMOKE !== "1") {
+		return false;
+	}
+
+	if (provider) {
+		return Boolean(liveSmokeProviderToken(env, provider));
+	}
+
+	return LIVE_SMOKE_PROVIDERS.some((candidate) =>
+		Boolean(liveSmokeProviderToken(env, candidate)),
+	);
 }
 
 export function ensureCompiledBinary(): string {
