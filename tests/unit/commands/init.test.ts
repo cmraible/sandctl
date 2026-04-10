@@ -98,6 +98,79 @@ describe("init command (non-interactive)", () => {
 		}
 	});
 
+	test("writes DigitalOcean config when selected", async () => {
+		const tmpDir = mkdtempSync(path.join(os.tmpdir(), "sandctl-ts-init-"));
+		try {
+			const configPath = path.join(tmpDir, "config.yaml");
+
+			await runInit(
+				{
+					provider: "digitalocean",
+					digitaloceanToken: "do-token",
+					sshAgent: true,
+					region: "sfo3",
+					serverType: "s-8vcpu-16gb",
+				},
+				configPath,
+			);
+
+			const config = parse(readFileSync(configPath, "utf8")) as Record<
+				string,
+				unknown
+			>;
+			expect(config.default_provider).toBe("digitalocean");
+			expect(
+				(config.providers as Record<string, { token: string }>).digitalocean
+					.token,
+			).toBe("do-token");
+		} finally {
+			rmSync(tmpDir, { recursive: true, force: true });
+		}
+	});
+
+	test("preserves existing provider config when adding another provider", async () => {
+		const tmpDir = mkdtempSync(path.join(os.tmpdir(), "sandctl-ts-init-"));
+		try {
+			const configPath = path.join(tmpDir, "config.yaml");
+			writeFileSync(
+				configPath,
+				`default_provider: hetzner
+ssh_key_source: agent
+providers:
+  hetzner:
+    token: existing-hetzner
+    region: ash
+    server_type: cpx31
+    image: ubuntu-24.04
+`,
+				{ mode: 0o600 },
+			);
+
+			await runInit(
+				{
+					provider: "digitalocean",
+					digitaloceanToken: "do-token",
+					sshAgent: true,
+				},
+				configPath,
+			);
+
+			const config = parse(readFileSync(configPath, "utf8")) as Record<
+				string,
+				unknown
+			>;
+			expect(
+				(config.providers as Record<string, unknown>).hetzner,
+			).toBeTruthy();
+			expect(
+				(config.providers as Record<string, { token: string }>).digitalocean
+					.token,
+			).toBe("do-token");
+		} finally {
+			rmSync(tmpDir, { recursive: true, force: true });
+		}
+	});
+
 	test("expands tilde path for ssh public key", async () => {
 		const tmpDir = mkdtempSync(path.join(os.tmpdir(), "sandctl-ts-init-"));
 		const home = os.homedir();

@@ -2,7 +2,7 @@
 
 A CLI tool for managing sandboxed AI web development agents.
 
-sandctl provisions isolated VM environments on Hetzner Cloud where AI coding agents can work on development tasks safely.
+sandctl provisions isolated VM environments on pluggable cloud providers. Hetzner Cloud and DigitalOcean are currently supported.
 
 ## Prerequisites
 
@@ -15,6 +15,20 @@ bun install
 bun run build
 ./sandctl --help
 ./sandctl version
+```
+
+Initialize a provider config:
+
+```bash
+./sandctl init --provider hetzner --hetzner-token <token> --ssh-agent
+./sandctl init --provider digitalocean --digitalocean-token <token> --ssh-agent
+```
+
+Create a VM with the configured default provider, or override it per command:
+
+```bash
+./sandctl new
+./sandctl new --provider digitalocean --size large
 ```
 
 ## Build
@@ -80,6 +94,8 @@ To run the real cloud smoke flow (`new -> list -> exec -> destroy`), provide cre
 ```bash
 SANDCTL_LIVE_SMOKE=1 HETZNER_API_TOKEN=<token> bun test tests/e2e/live-smoke.test.ts
 ```
+
+The current live smoke flow is still Hetzner-backed.
 
 ### Required PR checks policy
 

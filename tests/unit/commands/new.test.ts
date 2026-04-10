@@ -275,6 +275,55 @@ describe("commands/new", () => {
 		expect(createdOpts.serverType).toBe("cpx41");
 	});
 
+	test("--size resolves using provider-specific aliases", async () => {
+		let createdOpts: Record<string, unknown> = {};
+		const provider = makeProvider({
+			name: () => "digitalocean",
+			create: async (opts) => {
+				createdOpts = opts;
+				return {
+					id: "vm-123",
+					name: "violet",
+					status: "running",
+					ipAddress: "203.0.113.10",
+					region: "nyc1",
+					serverType: "s-8vcpu-16gb",
+					createdAt: "2026-02-22T00:00:00Z",
+				};
+			},
+		});
+
+		await runNew(
+			{ size: "large", provider: "digitalocean" },
+			{
+				loadConfig: async () => ({
+					...baseProviderConfig,
+					default_provider: "digitalocean",
+					providers: {
+						digitalocean: {
+							token: "token",
+							region: "nyc1",
+							server_type: "s-4vcpu-8gb",
+							image: "ubuntu-24-04-x64",
+						},
+					},
+				}),
+				resolveProvider: () => provider,
+				generateSessionID: () => "violet",
+				getPublicKey: async () => "ssh-ed25519 AAAA test@local",
+				waitForCloudInit: async () => {},
+				setupGitConfig: async () => {},
+				store: {
+					list: async () => [],
+					add: async () => {},
+					update: async () => {},
+				},
+			},
+		);
+
+		expect(createdOpts.serverType).toBe("s-8vcpu-16gb");
+	});
+
 	test("--size rejects unknown size names", async () => {
 		const provider = makeProvider();
 
