@@ -27,6 +27,20 @@ export interface RenamableProvider {
 	rename(id: string, name: string): Promise<void>;
 }
 
+export interface SnapshotReference {
+	id: string;
+}
+
+export interface SnapshotCapableProvider {
+	findSnapshot(userData: string): Promise<SnapshotReference | null>;
+	createSnapshot(
+		serverId: string,
+		userData: string,
+	): Promise<SnapshotReference>;
+	cleanupSnapshots(userData: string): Promise<void>;
+	postSnapshotSSHSetupCommand(): string;
+}
+
 export function supportsResize(
 	provider: Provider,
 ): provider is Provider & ResizableProvider {
@@ -37,4 +51,19 @@ export function supportsRename(
 	provider: Provider,
 ): provider is Provider & RenamableProvider {
 	return "rename" in provider && typeof provider.rename === "function";
+}
+
+export function supportsSnapshots(
+	provider: Provider,
+): provider is Provider & SnapshotCapableProvider {
+	return (
+		"findSnapshot" in provider &&
+		typeof provider.findSnapshot === "function" &&
+		"createSnapshot" in provider &&
+		typeof provider.createSnapshot === "function" &&
+		"cleanupSnapshots" in provider &&
+		typeof provider.cleanupSnapshots === "function" &&
+		"postSnapshotSSHSetupCommand" in provider &&
+		typeof provider.postSnapshotSSHSetupCommand === "function"
+	);
 }

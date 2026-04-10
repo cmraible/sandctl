@@ -507,6 +507,9 @@ describe("commands/new", () => {
 			async () => {},
 			async () => true,
 		);
+		provider.createSnapshot = async () => {
+			return await new Promise<never>(() => {});
+		};
 
 		await runNew(
 			{},
@@ -522,9 +525,6 @@ describe("commands/new", () => {
 					list: async () => [],
 					add: async () => {},
 					update: async () => {},
-				},
-				createSnapshot: async () => {
-					return await new Promise<never>(() => {});
 				},
 				log: (message: string) => {
 					logs.push(message);
@@ -630,6 +630,7 @@ describe("commands/new", () => {
 			async () => {},
 			async () => true,
 		);
+		provider.findSnapshot = async () => ({ id: "123" });
 
 		await runNew(
 			{},
@@ -642,11 +643,6 @@ describe("commands/new", () => {
 				setupGitConfig: async () => {},
 				setupClaudeConfig: async () => {},
 				runSSHSetup: async () => {},
-				findSnapshot: async () =>
-					({
-						id: 123,
-						description: "sandctl-base",
-					}) as never,
 				store: {
 					list: async () => [],
 					add: async () => {},
@@ -756,6 +752,17 @@ describe("commands/new", () => {
 			async () => {},
 			async () => true,
 		);
+		provider.findSnapshot = async () => {
+			findSnapshotCalled = true;
+			return null;
+		};
+		provider.createSnapshot = async () => {
+			createSnapshotCalled = true;
+			return { id: "999" };
+		};
+		provider.cleanupSnapshots = async () => {
+			cleanupSnapshotsCalled = true;
+		};
 
 		const result = await runNew(
 			{ noCache: true },
@@ -771,17 +778,6 @@ describe("commands/new", () => {
 					list: async () => [],
 					add: async () => {},
 					update: async () => {},
-				},
-				findSnapshot: async () => {
-					findSnapshotCalled = true;
-					return null;
-				},
-				createSnapshot: async () => {
-					createSnapshotCalled = true;
-					return { id: 999, description: "sandctl-base" } as never;
-				},
-				cleanupSnapshots: async () => {
-					cleanupSnapshotsCalled = true;
 				},
 				log: (message: string) => {
 					logs.push(message);
@@ -862,6 +858,13 @@ describe("commands/new", () => {
 			async () => {},
 			async () => true,
 		);
+		provider.createSnapshot = async () => {
+			snapshotEvents.push("snapshot-created");
+			return { id: "999" };
+		};
+		provider.cleanupSnapshots = async () => {
+			snapshotEvents.push("cleanup-done");
+		};
 
 		const result = await runNew(
 			{},
@@ -876,13 +879,6 @@ describe("commands/new", () => {
 					list: async () => [],
 					add: async () => {},
 					update: async () => {},
-				},
-				createSnapshot: async () => {
-					snapshotEvents.push("snapshot-created");
-					return { id: 999, description: "sandctl-base" } as never;
-				},
-				cleanupSnapshots: async () => {
-					snapshotEvents.push("cleanup-done");
 				},
 			},
 		);
@@ -959,6 +955,7 @@ describe("commands/new", () => {
 			async () => {},
 			async () => true,
 		);
+		provider.findSnapshot = async () => ({ id: "123" });
 
 		const result = await runNew(
 			{},
@@ -970,11 +967,6 @@ describe("commands/new", () => {
 				waitForCloudInit: async () => {},
 				setupGitConfig: async () => {},
 				runSSHSetup: async () => {},
-				findSnapshot: async () =>
-					({
-						id: 123,
-						description: "sandctl-base",
-					}) as never,
 				store: {
 					list: async () => [],
 					add: async () => {},
@@ -1043,6 +1035,9 @@ describe("commands/new", () => {
 			async () => {},
 			async () => true,
 		);
+		provider.createSnapshot = async () => {
+			throw new Error("snapshot API error");
+		};
 
 		const result = await runNew(
 			{},
@@ -1057,9 +1052,6 @@ describe("commands/new", () => {
 					list: async () => [],
 					add: async () => {},
 					update: async () => {},
-				},
-				createSnapshot: async () => {
-					throw new Error("snapshot API error");
 				},
 				warn: (msg: string) => {
 					warnings.push(msg);

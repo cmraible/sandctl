@@ -19,19 +19,9 @@ import {
 	load,
 	type ProviderConfig,
 } from "@/config/config";
-import type { HetznerImage } from "@/hetzner/client";
-import { HetznerProvider } from "@/hetzner/provider";
-import {
-	assembleUserData,
-	generateCloudInit,
-	generatePostSnapshotSSHSetup,
-} from "@/hetzner/setup";
-import {
-	cleanupOldSnapshots,
-	createBaseSnapshot,
-	findBaseSnapshot,
-	type SnapshotClientLike,
-} from "@/hetzner/snapshots";
+import { assembleUserData, generateCloudInit } from "@/provider/cloud-init";
+import type { SnapshotReference } from "@/provider/interface";
+import { supportsSnapshots } from "@/provider/interface";
 import { get as getProviderFromRegistry } from "@/provider/registry";
 import { resolveSize, sizesHelpText } from "@/provider/sizes";
 import { generateID, normalizeName, validateID } from "@/session/id";
@@ -122,19 +112,6 @@ interface Dependencies {
 		host: string,
 		deps: Pick<Dependencies, "createSSHClient">,
 	) => Promise<void>;
-	findSnapshot: (
-		client: SnapshotClientLike,
-		userData: string,
-	) => Promise<HetznerImage | null>;
-	createSnapshot: (
-		client: SnapshotClientLike,
-		serverId: string,
-		userData: string,
-	) => Promise<HetznerImage>;
-	cleanupSnapshots: (
-		client: SnapshotClientLike,
-		userData: string,
-	) => Promise<void>;
 	runSSHSetup: (
 		config: Config,
 		host: string,
@@ -162,9 +139,6 @@ const defaultDependencies: Dependencies = {
 	createSSHClient: (options) => new SSHClient(options),
 	waitForCloudInit: defaultWaitForCloudInit,
 	setupGitConfig: setupGitConfigViaSSH,
-	findSnapshot: findBaseSnapshot,
-	createSnapshot: createBaseSnapshot,
-	cleanupSnapshots: cleanupOldSnapshots,
 	runSSHSetup: defaultRunSSHSetup,
 	setupClaudeConfig: setupClaudeConfigViaSSH,
 	now: () => new Date(),
@@ -565,6 +539,8 @@ export async function runNew(
 	}
 
 	const provider = dependencies.resolveProvider(providerName, providerConfig);
+	const snapshotProvider =
+		!options.image && supportsSnapshots(provider) ? provider : null;
 	const existingNames = (await dependencies.store.list()).map(
 		(session) => session.id,
 	);
@@ -594,15 +570,14 @@ export async function runNew(
 		publicKey,
 	);
 
-	const isHetzner = provider instanceof HetznerProvider;
-	let snapshot: HetznerImage | null = null;
+	let snapshot: SnapshotReference | null = null;
 	if (options.noCache) {
 		dependencies.log("Snapshot cache disabled (--no-cache).");
-	} else if (isHetzner && !options.image) {
+	} else if (snapshotProvider) {
 		try {
 			dependencies.log("Looking for matching snapshot...");
 			const snapshotLookup = await measure(dependencies.nowMs, async () => {
-				return await dependencies.findSnapshot(provider.client, userData);
+				return await snapshotProvider.findSnapshot(userData);
 			});
 			snapshot = snapshotLookup.result;
 			snapshotLookupMs = snapshotLookup.elapsedMs;
@@ -672,7 +647,7 @@ export async function runNew(
 				await dependencies.runSSHSetup(
 					config,
 					readyVM.ipAddress,
-					generatePostSnapshotSSHSetup(),
+					snapshotProvider.postSnapshotSSHSetupCommand(),
 					dependencies.createSSHClient,
 				);
 				sshKeySyncMs = Math.max(0, dependencies.nowMs() - sshSetupStartedAt);
@@ -693,18 +668,14 @@ export async function runNew(
 					`Cloud-init completed in ${formatElapsed(cloudInitMs)}.`,
 				);
 
-				if (isHetzner && !options.image && !options.noCache) {
+				if (snapshotProvider && !options.noCache) {
 					backgroundSnapshotDeferred = true;
 					backgroundTasks = (async () => {
 						try {
 							dependencies.log("Creating reusable snapshot in background...");
 							const snapshotStartedAt = dependencies.nowMs();
-							await dependencies.createSnapshot(
-								provider.client,
-								vmId,
-								userData,
-							);
-							await dependencies.cleanupSnapshots(provider.client, userData);
+							await snapshotProvider.createSnapshot(vmId, userData);
+							await snapshotProvider.cleanupSnapshots(userData);
 							dependencies.log(
 								`Background snapshot completed in ${formatElapsed(dependencies.nowMs() - snapshotStartedAt)}.`,
 							);
