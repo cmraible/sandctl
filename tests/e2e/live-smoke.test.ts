@@ -19,7 +19,7 @@ interface SessionRecord {
 	server_type?: string;
 }
 
-const NEW_TIMEOUT_MS = 8 * 60 * 1000;
+const NEW_TIMEOUT_MS = 12 * 60 * 1000;
 const LIST_TIMEOUT_MS = 60 * 1000;
 const EXEC_TIMEOUT_MS = 2 * 60 * 1000;
 const TOOL_VERIFY_TIMEOUT_MS = 4 * 60 * 1000;
