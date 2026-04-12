@@ -23,7 +23,11 @@ const NEW_TIMEOUT_MS = 8 * 60 * 1000;
 const LIST_TIMEOUT_MS = 60 * 1000;
 const EXEC_TIMEOUT_MS = 2 * 60 * 1000;
 const TOOL_VERIFY_TIMEOUT_MS = 4 * 60 * 1000;
-const RESIZE_TIMEOUT_MS = 5 * 60 * 1000;
+const MAX_RESIZE_TIMEOUT_MS = Math.max(
+	...LIVE_SMOKE_PROVIDERS.map(
+		(provider) => liveSmokeProviderConfig(provider).resizeTimeoutMs,
+	),
+);
 const DESTROY_TIMEOUT_MS = 5 * 60 * 1000;
 const LIVE_SMOKE_TEST_TIMEOUT_MS =
 	NEW_TIMEOUT_MS +
@@ -36,7 +40,7 @@ const LIVE_SMOKE_TEST_TIMEOUT_MS =
 const RESIZE_SMOKE_TEST_TIMEOUT_MS =
 	NEW_TIMEOUT_MS +
 	LIST_TIMEOUT_MS +
-	RESIZE_TIMEOUT_MS +
+	MAX_RESIZE_TIMEOUT_MS +
 	LIST_TIMEOUT_MS +
 	DESTROY_TIMEOUT_MS +
 	DESTROY_TIMEOUT_MS +
@@ -372,7 +376,7 @@ describe("sandctl live smoke gating", () => {
 							providerConfig.resizeServerType,
 							"--force",
 						],
-						{ env, timeoutMs: RESIZE_TIMEOUT_MS },
+						{ env, timeoutMs: providerConfig.resizeTimeoutMs },
 					);
 					assertCliSuccess("resize", resizeResult);
 					const resizeOutput = JSON.parse(resizeResult.stdout) as {

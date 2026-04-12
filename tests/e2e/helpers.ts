@@ -37,6 +37,7 @@ interface LiveSmokeProviderConfig {
 	defaultServerType: string;
 	defaultImage: string;
 	resizeServerType: string;
+	resizeTimeoutMs: number;
 }
 
 const ALLOWED_BASE_ENV_KEYS = [
@@ -65,6 +66,7 @@ const LIVE_SMOKE_PROVIDER_CONFIG = {
 		defaultServerType: "s-4vcpu-8gb",
 		defaultImage: "ubuntu-24-04-x64",
 		resizeServerType: "s-8vcpu-16gb",
+		resizeTimeoutMs: 10 * 60 * 1000,
 	},
 	hetzner: {
 		label: "Hetzner",
@@ -73,6 +75,7 @@ const LIVE_SMOKE_PROVIDER_CONFIG = {
 		defaultServerType: "cpx11",
 		defaultImage: "ubuntu-24.04",
 		resizeServerType: "cpx21",
+		resizeTimeoutMs: 5 * 60 * 1000,
 	},
 } as const satisfies Record<LiveSmokeProvider, LiveSmokeProviderConfig>;
 
