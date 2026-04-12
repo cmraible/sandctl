@@ -312,9 +312,11 @@ async function defaultWaitForCloudInit(
 
 	// Phase 2: cloud-init is done. Verify the agent-user tools installed by
 	// runcmd are actually runnable. Run each check exactly once and capture
-	// exit code + stderr so a failure tells us *which* tool is broken.
+	// exit code + stderr so a failure tells us *which* tool is broken. If
+	// anything fails, also grab the tail of cloud-init-output.log so we can
+	// see *why* the install script didn't produce a working binary.
 	const client = createClient(sshOptions);
-	const failures = await withSSHClient(client, async (c) => {
+	const { failures, logTail } = await withSSHClient(client, async (c) => {
 		const collected: string[] = [];
 		for (const check of AGENT_TOOL_CHECKS) {
 			const command = `su - agent -c 'export PATH="$HOME/.local/bin:$PATH"; ${check.command}'`;
@@ -325,12 +327,25 @@ async function defaultWaitForCloudInit(
 				);
 			}
 		}
-		return collected;
+		if (collected.length === 0) {
+			return { failures: collected, logTail: "" };
+		}
+		const tailResult = await sshExec(
+			c,
+			"tail -n 200 /var/log/cloud-init-output.log",
+		);
+		return {
+			failures: collected,
+			logTail:
+				tailResult.exitCode === 0
+					? tailResult.stdout
+					: `<unable to read cloud-init-output.log: exit ${tailResult.exitCode} ${tailResult.stderr.trim()}>`,
+		};
 	});
 
 	if (failures.length > 0) {
 		throw new Error(
-			`cloud-init finished but agent tool verification failed:\n${failures.join("\n")}`,
+			`cloud-init finished but agent tool verification failed:\n${failures.join("\n")}\n\nLast 200 lines of /var/log/cloud-init-output.log:\n${logTail}`,
 		);
 	}
 }

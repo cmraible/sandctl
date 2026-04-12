@@ -71,6 +71,8 @@ runcmd:
       fi
       sleep 5
     done
+    su - agent -c 'export PATH="$HOME/.local/bin:$PATH"; claude --version'
+  - |
     attempts=0
     until npm install -g @openai/codex; do
       attempts=$((attempts + 1))
@@ -79,6 +81,8 @@ runcmd:
       fi
       sleep 5
     done
+    su - agent -c 'export PATH="$HOME/.local/bin:$PATH"; codex --version'
+  - |
     attempts=0
     until curl -fsSL https://starship.rs/install.sh | sh -s -- -y; do
       attempts=$((attempts + 1))
@@ -87,8 +91,6 @@ runcmd:
       fi
       sleep 5
     done
-    su - agent -c 'export PATH="$HOME/.local/bin:$PATH"; claude --version'
-    su - agent -c 'export PATH="$HOME/.local/bin:$PATH"; codex --version'
   - |
     echo '${AGENT_ZSHRC_BASE64}' | base64 -d > /home/agent/.zshrc
     chown agent:agent /home/agent/.zshrc
