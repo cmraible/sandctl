@@ -100,8 +100,8 @@ SANDCTL_LIVE_SMOKE=1 HETZNER_API_TOKEN=<token> DIGITALOCEAN_API_TOKEN=<token> bu
 ### Required PR checks policy
 
 - TypeScript CI is required on pull requests.
-- Live smoke (`tests/e2e/live-smoke.test.ts`) is a required PR check before merge, configured in the target branch protection/ruleset.
-- Configure `HETZNER_API_TOKEN` and `DIGITALOCEAN_API_TOKEN` as repository secrets to exercise both providers in CI. The `e2e` job skips only when neither provider token is available.
+- Live smoke (`tests/e2e/live-smoke.test.ts`) runs as a provider matrix in CI, producing separate `e2e (hetzner)` and `e2e (digitalocean)` checks.
+- Configure `HETZNER_API_TOKEN` and `DIGITALOCEAN_API_TOKEN` as repository secrets to exercise both providers in CI. Each matrix leg fails when its provider token is unavailable.
 - Fork PRs are unsupported for this required check because repository secrets are unavailable, so the `e2e` job fails by design.
 
 ## SSH Runtime Parity Notes
