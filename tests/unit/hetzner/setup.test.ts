@@ -30,7 +30,9 @@ describe("hetzner/setup", () => {
 
 		test("retries and verifies agent CLI installs", () => {
 			const output = generateCloudInit();
-			expect(output).toContain("until su - agent -c 'curl -fsSL https://claude.ai/install.sh | bash'; do");
+			expect(output).toContain(
+				"until su - agent -c 'curl -fsSL https://claude.ai/install.sh | bash'; do",
+			);
 			expect(output).toContain(
 				"npm install -g @openai/codex @openai/codex-linux-x64",
 			);
