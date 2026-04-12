@@ -74,7 +74,20 @@ runcmd:
     su - agent -c 'export PATH="$HOME/.local/bin:$PATH"; claude --version'
   - |
     attempts=0
-    until npm install -g @openai/codex; do
+    arch="$(dpkg --print-architecture)"
+    case "$arch" in
+      amd64)
+        codex_platform_package="@openai/codex-linux-x64"
+        ;;
+      arm64)
+        codex_platform_package="@openai/codex-linux-arm64"
+        ;;
+      *)
+        echo "Unsupported architecture for Codex install: $arch" >&2
+        exit 1
+        ;;
+    esac
+    until npm install -g @openai/codex "$codex_platform_package"; do
       attempts=$((attempts + 1))
       if [ "$attempts" -ge 3 ]; then
         exit 1
