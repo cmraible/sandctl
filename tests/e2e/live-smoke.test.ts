@@ -34,12 +34,6 @@ const LIVE_SMOKE_TEST_TIMEOUT_MS =
 	LIST_TIMEOUT_MS +
 	EXEC_TIMEOUT_MS +
 	TOOL_VERIFY_TIMEOUT_MS +
-	DESTROY_TIMEOUT_MS +
-	DESTROY_TIMEOUT_MS +
-	60_000;
-const RESIZE_SMOKE_TEST_TIMEOUT_MS =
-	NEW_TIMEOUT_MS +
-	LIST_TIMEOUT_MS +
 	MAX_RESIZE_TIMEOUT_MS +
 	LIST_TIMEOUT_MS +
 	DESTROY_TIMEOUT_MS +
@@ -225,7 +219,7 @@ describe("sandctl live smoke gating", () => {
 			: test.skip;
 
 		liveSmokeTest(
-			`runs new -> list -> exec -c -> destroy against ${providerConfig.label}`,
+			`runs new -> list -> exec -c -> resize -> list -> destroy against ${providerConfig.label}`,
 			() => {
 				const token = liveSmokeProviderToken(process.env, provider);
 				if (!token) {
@@ -287,85 +281,6 @@ describe("sandctl live smoke gating", () => {
 
 					verifyInstalledTools(configPath, target.id, env);
 
-					const destroyResult = runBinary(
-						["--config", configPath, "destroy", target.id, "--force"],
-						{ env, timeoutMs: DESTROY_TIMEOUT_MS },
-					);
-					assertCliSuccess("destroy", destroyResult);
-
-					const postDestroyList = runBinary(
-						["--config", configPath, "list", "--all", "--format", "json"],
-						{ env, timeoutMs: LIST_TIMEOUT_MS },
-					);
-					assertCliSuccess("post-destroy list", postDestroyList);
-					const postDestroySessions = JSON.parse(
-						postDestroyList.stdout,
-					) as SessionRecord[];
-					expect(
-						postDestroySessions.some((session) => session.id === target.id),
-					).toBe(false);
-					createdSessionIDs.splice(createdSessionIDs.indexOf(target.id), 1);
-				} finally {
-					for (const sessionID of createdSessionIDs) {
-						runBinary(
-							["--config", configPath, "destroy", sessionID, "--force"],
-							{
-								env,
-								timeoutMs: DESTROY_TIMEOUT_MS,
-							},
-						);
-					}
-				}
-			},
-			LIVE_SMOKE_TEST_TIMEOUT_MS,
-		);
-
-		liveSmokeTest(
-			`runs new -> resize -> list (verify type) -> destroy against ${providerConfig.label}`,
-			() => {
-				const token = liveSmokeProviderToken(process.env, provider);
-				if (!token) {
-					throw new Error(
-						`${providerConfig.tokenEnvKey} is required when ${providerConfig.label} live smoke is enabled`,
-					);
-				}
-
-				const homeDir = mkdtempSync(
-					path.join(tmpdir(), `sandctl-resize-smoke-${provider}-`),
-				);
-				const configPath = path.join(homeDir, "config");
-				const sshPublicKey =
-					process.env.SSH_PUBLIC_KEY && existsSync(process.env.SSH_PUBLIC_KEY)
-						? process.env.SSH_PUBLIC_KEY
-						: generateSSHKeyPair(homeDir);
-
-				writeConfig(configPath, provider, token, sshPublicKey);
-
-				const env = {
-					HOME: homeDir,
-				};
-
-				const createdSessionIDs: string[] = [];
-				try {
-					const newResult = runBinary(["--config", configPath, "new"], {
-						env,
-						timeoutMs: NEW_TIMEOUT_MS,
-					});
-					assertCliSuccess("new", newResult);
-
-					const listResult = runBinary(
-						["--config", configPath, "list", "--format", "json"],
-						{ env, timeoutMs: LIST_TIMEOUT_MS },
-					);
-					assertCliSuccess("list", listResult);
-
-					const sessions = JSON.parse(listResult.stdout) as SessionRecord[];
-					expect(sessions.length).toBeGreaterThan(0);
-
-					const target = sessions[0];
-					expect(target.id.length).toBeGreaterThan(0);
-					createdSessionIDs.push(target.id);
-
 					const resizeResult = runBinary(
 						[
 							"--config",
@@ -417,7 +332,7 @@ describe("sandctl live smoke gating", () => {
 					}
 				}
 			},
-			RESIZE_SMOKE_TEST_TIMEOUT_MS,
+			LIVE_SMOKE_TEST_TIMEOUT_MS,
 		);
 	}
 });
