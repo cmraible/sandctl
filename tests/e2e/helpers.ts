@@ -71,10 +71,10 @@ const LIVE_SMOKE_PROVIDER_CONFIG = {
 	hetzner: {
 		label: "Hetzner",
 		tokenEnvKey: "HETZNER_API_TOKEN",
-		defaultRegion: "nbg1",
-		defaultServerType: "cpx12",
+		defaultRegion: "fsn1",
+		defaultServerType: "cpx22",
 		defaultImage: "ubuntu-24.04",
-		resizeServerType: "cpx22",
+		resizeServerType: "cpx32",
 		resizeTimeoutMs: 5 * 60 * 1000,
 	},
 } as const satisfies Record<LiveSmokeProvider, LiveSmokeProviderConfig>;
