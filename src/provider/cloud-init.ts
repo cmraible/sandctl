@@ -45,12 +45,50 @@ runcmd:
     curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
     chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-    apt-get update
-    apt-get install -y gh
+    attempts=0
+    until apt-get update; do
+      attempts=$((attempts + 1))
+      if [ "$attempts" -ge 3 ]; then
+        exit 1
+      fi
+      sleep 5
+    done
+    attempts=0
+    until apt-get install -y gh; do
+      attempts=$((attempts + 1))
+      if [ "$attempts" -ge 3 ]; then
+        exit 1
+      fi
+      sleep 5
+    done
   - systemctl enable --now docker
-  - su - agent -c 'curl -fsSL https://claude.ai/install.sh | bash'
-  - npm install -g @openai/codex
-  - curl -fsSL https://starship.rs/install.sh | sh -s -- -y
+  - |
+    attempts=0
+    until su - agent -c 'curl -fsSL https://claude.ai/install.sh | bash'; do
+      attempts=$((attempts + 1))
+      if [ "$attempts" -ge 3 ]; then
+        exit 1
+      fi
+      sleep 5
+    done
+    attempts=0
+    until npm install -g @openai/codex @openai/codex-linux-x64; do
+      attempts=$((attempts + 1))
+      if [ "$attempts" -ge 3 ]; then
+        exit 1
+      fi
+      sleep 5
+    done
+    attempts=0
+    until curl -fsSL https://starship.rs/install.sh | sh -s -- -y; do
+      attempts=$((attempts + 1))
+      if [ "$attempts" -ge 3 ]; then
+        exit 1
+      fi
+      sleep 5
+    done
+    su - agent -c 'export PATH="$HOME/.local/bin:$PATH"; claude --version'
+    su - agent -c 'export PATH="$HOME/.local/bin:$PATH"; codex --version'
   - |
     echo '${AGENT_ZSHRC_BASE64}' | base64 -d > /home/agent/.zshrc
     chown agent:agent /home/agent/.zshrc

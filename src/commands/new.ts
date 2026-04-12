@@ -280,7 +280,15 @@ async function defaultWaitForCloudInit(
 			const client = createClient(sshOptions);
 			const done = await withSSHClient(client, async (c) => {
 				const channel = await c.exec(
-					"test -f /var/lib/cloud/instance/boot-finished && echo done",
+					[
+						"test -f /var/lib/cloud/instance/boot-finished",
+						"su - agent -c 'export PATH=\"$HOME/.local/bin:$PATH\"; zsh --version >/dev/null'",
+						"su - agent -c 'export PATH=\"$HOME/.local/bin:$PATH\"; gh --version >/dev/null'",
+						"su - agent -c 'export PATH=\"$HOME/.local/bin:$PATH\"; codex --version >/dev/null'",
+						"su - agent -c 'export PATH=\"$HOME/.local/bin:$PATH\"; claude --version >/dev/null'",
+						"su - agent -c 'export PATH=\"$HOME/.local/bin:$PATH\"; docker --version >/dev/null'",
+						"echo done",
+					].join(" && "),
 				);
 				return await new Promise<boolean>((resolve) => {
 					let output = "";
