@@ -28,6 +28,20 @@ describe("hetzner/setup", () => {
 			expect(output).toContain("claude.ai/install.sh");
 		});
 
+		test("retries and verifies agent CLI installs", () => {
+			const output = generateCloudInit();
+			expect(output).toContain("until su - agent -c 'curl -fsSL https://claude.ai/install.sh | bash'; do");
+			expect(output).toContain(
+				"npm install -g @openai/codex @openai/codex-linux-x64",
+			);
+			expect(output).toContain(
+				"su - agent -c 'export PATH=\"$HOME/.local/bin:$PATH\"; claude --version'",
+			);
+			expect(output).toContain(
+				"su - agent -c 'export PATH=\"$HOME/.local/bin:$PATH\"; codex --version'",
+			);
+		});
+
 		test("adds agent user to docker group", () => {
 			const output = generateCloudInit();
 			expect(output).toContain("docker");
