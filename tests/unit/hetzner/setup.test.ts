@@ -33,9 +33,7 @@ describe("hetzner/setup", () => {
 			expect(output).toContain(
 				"until su - agent -c 'curl -fsSL https://claude.ai/install.sh | bash'; do",
 			);
-			expect(output).toContain(
-				"npm install -g @openai/codex @openai/codex-linux-x64",
-			);
+			expect(output).toContain("npm install -g @openai/codex");
 			expect(output).toContain(
 				"su - agent -c 'export PATH=\"$HOME/.local/bin:$PATH\"; claude --version'",
 			);

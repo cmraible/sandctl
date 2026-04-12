@@ -266,6 +266,14 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const AGENT_TOOL_CHECKS: readonly { name: string; command: string }[] = [
+	{ name: "zsh", command: "zsh --version" },
+	{ name: "gh", command: "gh --version" },
+	{ name: "codex", command: "codex --version" },
+	{ name: "claude", command: "claude --version" },
+	{ name: "docker", command: "docker --version" },
+];
+
 async function defaultWaitForCloudInit(
 	config: Config,
 	host: string,
@@ -275,43 +283,56 @@ async function defaultWaitForCloudInit(
 	const sshOptions = { ...buildSSHOptions(config, host), username: "root" };
 	const deadline = Date.now() + timeoutMs;
 
+	// Phase 1: poll for cloud-init's boot-finished marker. This is the
+	// authoritative signal that cloud-init has run to completion (including
+	// runcmd). SSH may not even be accepting connections on the first few
+	// iterations; swallow those errors and keep polling.
+	let bootFinished = false;
 	while (Date.now() < deadline) {
 		try {
 			const client = createClient(sshOptions);
-			const done = await withSSHClient(client, async (c) => {
-				const channel = await c.exec(
-					[
-						"test -f /var/lib/cloud/instance/boot-finished",
-						"su - agent -c 'export PATH=\"$HOME/.local/bin:$PATH\"; zsh --version >/dev/null'",
-						"su - agent -c 'export PATH=\"$HOME/.local/bin:$PATH\"; gh --version >/dev/null'",
-						"su - agent -c 'export PATH=\"$HOME/.local/bin:$PATH\"; codex --version >/dev/null'",
-						"su - agent -c 'export PATH=\"$HOME/.local/bin:$PATH\"; claude --version >/dev/null'",
-						"su - agent -c 'export PATH=\"$HOME/.local/bin:$PATH\"; docker --version >/dev/null'",
-						"echo done",
-					].join(" && "),
-				);
-				return await new Promise<boolean>((resolve) => {
-					let output = "";
-					channel.on("data", (data: Buffer | string) => {
-						output += data.toString();
-					});
-					channel.on("close", () => {
-						resolve(output.trim() === "done");
-					});
-				});
-			});
-			if (done) {
-				return;
+			const result = await withSSHClient(client, (c) =>
+				sshExec(c, "test -f /var/lib/cloud/instance/boot-finished"),
+			);
+			if (result.exitCode === 0) {
+				bootFinished = true;
+				break;
 			}
 		} catch {
-			// SSH not ready yet or command failed; keep polling
+			// SSH not ready yet; keep polling
 		}
 		await sleep(CLOUD_INIT_POLL_INTERVAL_MS);
 	}
 
-	throw new Error(
-		`cloud-init did not complete within ${Math.round(timeoutMs / 1000)}s`,
-	);
+	if (!bootFinished) {
+		throw new Error(
+			`cloud-init did not complete within ${Math.round(timeoutMs / 1000)}s (boot-finished marker never appeared)`,
+		);
+	}
+
+	// Phase 2: cloud-init is done. Verify the agent-user tools installed by
+	// runcmd are actually runnable. Run each check exactly once and capture
+	// exit code + stderr so a failure tells us *which* tool is broken.
+	const client = createClient(sshOptions);
+	const failures = await withSSHClient(client, async (c) => {
+		const collected: string[] = [];
+		for (const check of AGENT_TOOL_CHECKS) {
+			const command = `su - agent -c 'export PATH="$HOME/.local/bin:$PATH"; ${check.command}'`;
+			const result = await sshExec(c, command);
+			if (result.exitCode !== 0) {
+				collected.push(
+					`  ${check.name} (exit ${result.exitCode})\n    stdout: ${result.stdout.trim() || "<empty>"}\n    stderr: ${result.stderr.trim() || "<empty>"}`,
+				);
+			}
+		}
+		return collected;
+	});
+
+	if (failures.length > 0) {
+		throw new Error(
+			`cloud-init finished but agent tool verification failed:\n${failures.join("\n")}`,
+		);
+	}
 }
 
 export function sshKeyName(publicKey: string): string {

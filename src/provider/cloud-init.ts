@@ -72,7 +72,7 @@ runcmd:
       sleep 5
     done
     attempts=0
-    until npm install -g @openai/codex @openai/codex-linux-x64; do
+    until npm install -g @openai/codex; do
       attempts=$((attempts + 1))
       if [ "$attempts" -ge 3 ]; then
         exit 1
