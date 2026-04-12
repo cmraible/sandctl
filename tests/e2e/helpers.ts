@@ -71,7 +71,7 @@ const LIVE_SMOKE_PROVIDER_CONFIG = {
 	hetzner: {
 		label: "Hetzner",
 		tokenEnvKey: "HETZNER_API_TOKEN",
-		defaultRegion: "fsn1",
+		defaultRegion: "nbg1",
 		defaultServerType: "cpx12",
 		defaultImage: "ubuntu-24.04",
 		resizeServerType: "cpx22",
