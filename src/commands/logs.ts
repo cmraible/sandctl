@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { Command } from "commander";
 import {
 	assertRunnable,
@@ -21,6 +22,8 @@ const LOG_FILE = "/var/log/cloud-init-output.log";
 interface LogsOptions {
 	follow?: boolean;
 	lines?: string;
+	noPager?: boolean;
+	pager?: boolean;
 }
 
 interface Dependencies {
@@ -38,10 +41,13 @@ interface Dependencies {
 	) => Promise<ExecResult>;
 	stdout: {
 		write(chunk: string | Uint8Array): boolean;
+		isTTY?: boolean;
 	};
 	stderr: {
 		write(chunk: string | Uint8Array): boolean;
+		isTTY?: boolean;
 	};
+	pageOutput: (content: string) => Promise<void>;
 }
 
 const defaultDependencies: Dependencies = {
@@ -56,6 +62,7 @@ const defaultDependencies: Dependencies = {
 		}),
 	stdout: process.stdout,
 	stderr: process.stderr,
+	pageOutput: defaultPageOutput,
 };
 
 function buildCommand(options: LogsOptions): string {
@@ -67,6 +74,68 @@ function buildCommand(options: LogsOptions): string {
 		return `tail -n ${options.lines} ${LOG_FILE}`;
 	}
 	return `cat ${LOG_FILE}`;
+}
+
+function parseCommand(command: string): { command: string; args: string[] } | null {
+	const trimmed = command.trim();
+	if (!trimmed) {
+		return null;
+	}
+
+	const parts = trimmed.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g);
+	if (!parts || parts.length === 0) {
+		return null;
+	}
+
+	const [rawCommand, ...rawArgs] = parts;
+	const unquote = (value: string) => {
+		if (
+			(value.startsWith('"') && value.endsWith('"')) ||
+			(value.startsWith("'") && value.endsWith("'"))
+		) {
+			return value.slice(1, -1);
+		}
+		return value;
+	};
+
+	return {
+		command: unquote(rawCommand),
+		args: rawArgs.map(unquote),
+	};
+}
+
+function pagerCommand(): { command: string; args: string[] } {
+	const fromEnv = process.env.PAGER?.trim();
+	if (fromEnv) {
+		const parsed = parseCommand(fromEnv);
+		if (parsed) {
+			return parsed;
+		}
+	}
+
+	return { command: "less", args: ["-R"] };
+}
+
+async function defaultPageOutput(content: string): Promise<void> {
+	const pager = pagerCommand();
+
+	await new Promise<void>((resolve) => {
+		const child = spawn(pager.command, pager.args, {
+			stdio: ["pipe", "inherit", "inherit"],
+		});
+
+		child.on("error", () => {
+			process.stdout.write(content);
+			resolve();
+		});
+
+		child.on("close", () => {
+			resolve();
+		});
+
+		child.stdin.write(content);
+		child.stdin.end();
+	});
 }
 
 export async function runLogs(
@@ -85,7 +154,10 @@ export async function runLogs(
 
 	const config = await dependencies.loadConfig(configPath);
 	const client = dependencies.createSSHClient(
-		buildSSHOptions(config, session.ip_address),
+		{
+			...buildSSHOptions(config, session.ip_address),
+			username: "root",
+		},
 	);
 
 	const command = buildCommand(options);
@@ -100,7 +172,12 @@ export async function runLogs(
 
 		const result = await dependencies.runCommand(c, command);
 		if (result.stdout) {
-			dependencies.stdout.write(result.stdout);
+			const pagerDisabled = options.noPager || options.pager === false;
+			if (dependencies.stdout.isTTY && !pagerDisabled) {
+				await dependencies.pageOutput(result.stdout);
+			} else {
+				dependencies.stdout.write(result.stdout);
+			}
 		}
 		if (result.stderr) {
 			dependencies.stderr.write(result.stderr);
@@ -115,6 +192,7 @@ export function registerLogsCommand(): Command {
 		.argument("<name>")
 		.option("-f, --follow", "Follow log output in real-time")
 		.option("-n, --lines <lines>", "Number of lines to show")
+		.option("--no-pager", "Write logs directly to stdout without paging")
 		.action(async (name: string, options: LogsOptions, command: Command) => {
 			const globals = command.optsWithGlobals() as {
 				config?: string;

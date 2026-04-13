@@ -1,11 +1,20 @@
 import { describe, expect, test } from "bun:test";
+import { EventEmitter } from "node:events";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { type NewResult, runNew, runNewCommand } from "@/commands/new";
+import {
+	type NewResult,
+	defaultWaitForCloudInit,
+	runNew,
+	runNewCommand,
+} from "@/commands/new";
 import { HetznerProvider } from "@/hetzner/provider";
 import type { Provider, SSHKeyManager } from "@/provider/interface";
 import type { VM } from "@/provider/types";
 import type { Session } from "@/session/types";
-import { baseProviderConfig } from "../../support/fixtures";
+import { agentModeConfig, baseProviderConfig } from "../../support/fixtures";
 
 type ProviderLike = Provider & SSHKeyManager;
 
@@ -54,7 +63,70 @@ function makeTimingSummary(
 	};
 }
 
+function makeExecChannel(stdout = "", stderr = "", exitCode = 0) {
+	const channel = new EventEmitter() as EventEmitter & {
+		stderr: EventEmitter;
+		write(chunk: string | Uint8Array): boolean;
+		end(): void;
+	};
+	channel.stderr = new EventEmitter();
+	channel.write = () => true;
+	channel.end = () => {};
+
+	setTimeout(() => {
+		if (stdout) channel.emit("data", stdout);
+		if (stderr) channel.stderr.emit("data", stderr);
+		channel.emit("close", exitCode);
+	}, 0);
+
+	return channel;
+}
+
 describe("commands/new", () => {
+	test("defaultWaitForCloudInit fails when cloud-init reports degraded status", async () => {
+		const commands: string[] = [];
+		let bootChecks = 0;
+
+		await expect(
+			defaultWaitForCloudInit(
+				agentModeConfig,
+				"203.0.113.10",
+				() => ({
+					connect: async () => {},
+					close: async () => {},
+					exec: async (command: string) => {
+						commands.push(command);
+						if (command === "test -f /var/lib/cloud/instance/boot-finished") {
+							bootChecks += 1;
+							return makeExecChannel("", "", bootChecks === 1 ? 0 : 1);
+						}
+						if (command === "cloud-init status --wait --long") {
+							return makeExecChannel(
+								"status: degraded done\nextended_status: degraded done\n",
+								"",
+								2,
+							);
+						}
+						if (command === "tail -n 200 /var/log/cloud-init-output.log") {
+							return makeExecChannel("template failed here\n", "", 0);
+						}
+						throw new Error(`unexpected command: ${command}`);
+					},
+					shell: async () => {
+						throw new Error("not used");
+					},
+					sftp: async () => {
+						throw new Error("not used");
+					},
+				}),
+				1000,
+			),
+		).rejects.toThrow("cloud-init reported a degraded state");
+
+		expect(commands).toContain("cloud-init status --wait --long");
+		expect(commands).toContain("tail -n 200 /var/log/cloud-init-output.log");
+	});
+
 	test("deletes VM and persists failed session when waitReady fails", async () => {
 		const deleted: string[] = [];
 		const added: Session[] = [];
@@ -181,6 +253,46 @@ describe("commands/new", () => {
 
 		expect(result.session.id).toBe("my-project");
 		expect(added[0].id).toBe("my-project");
+	});
+
+	test("copies git config without forcing GitHub https remotes to ssh", async () => {
+		const provider = makeProvider();
+		const root = await mkdtemp(join(tmpdir(), "sandctl-new-test-"));
+		const gitConfigPath = join(root, "gitconfig");
+		await writeFile(
+			gitConfigPath,
+			`[user]\n\tname = Chris\n\temail = chris@example.com\n`,
+		);
+
+		let writtenGitConfig = "";
+
+		await runNew(
+			{},
+			{
+				loadConfig: async () => ({
+					...baseProviderConfig,
+					ssh_key_source: "agent",
+					git_config_path: gitConfigPath,
+				}),
+				resolveProvider: () => provider,
+				generateSessionID: () => "violet",
+				getPublicKey: async () => "ssh-ed25519 AAAA test@local",
+				waitForCloudInit: async () => {},
+				setupGitConfig: async (config) => {
+					writtenGitConfig = await Bun.file(config.git_config_path!).text();
+				},
+				setupClaudeConfig: async () => {},
+				store: {
+					list: async () => [],
+					add: async () => {},
+					update: async () => {},
+				},
+			},
+		);
+
+		expect(writtenGitConfig).toContain("[user]");
+		expect(writtenGitConfig).not.toContain('url "ssh://git@github.com/"');
+		expect(writtenGitConfig).not.toContain("insteadOf = https://github.com/");
 	});
 
 	test("rejects invalid custom name", async () => {
@@ -842,6 +954,46 @@ describe("commands/new", () => {
 		expect(logs).not.toContain("Looking for matching snapshot...");
 	});
 
+	test("cache:false from commander also bypasses snapshot lookup", async () => {
+		let findSnapshotCalled = false;
+		const provider = makeProvider({
+			create: async () => ({
+				id: "vm-123",
+				name: "violet",
+				status: "running",
+				ipAddress: "203.0.113.10",
+				region: "ash",
+				serverType: "cpx31",
+				createdAt: "2026-02-22T00:00:00Z",
+			}),
+		});
+		(provider as ProviderLike & { findSnapshot?: () => Promise<{ id: string } | null> })
+			.findSnapshot = async () => {
+				findSnapshotCalled = true;
+				return { id: "123" };
+			};
+
+		await runNew(
+			{ cache: false },
+			{
+				loadConfig: async () => baseProviderConfig,
+				resolveProvider: () => provider,
+				generateSessionID: () => "violet",
+				getPublicKey: async () => "ssh-ed25519 AAAA test@local",
+				waitForCloudInit: async () => {},
+				setupGitConfig: async () => {},
+				setupClaudeConfig: async () => {},
+				store: {
+					list: async () => [],
+					add: async () => {},
+					update: async () => {},
+				},
+			},
+		);
+
+		expect(findSnapshotCalled).toBe(false);
+	});
+
 	test("runNew returns backgroundTasks for deferred snapshot creation on fresh boot", async () => {
 		const snapshotEvents: string[] = [];
 		const mockClient = {
@@ -1144,5 +1296,35 @@ describe("commands/new", () => {
 
 		// runNewCommand should have awaited backgroundTasks before returning
 		expect(order).toEqual(["background-done"]);
+	});
+
+	test("command wrapper forwards cache:false as noCache", async () => {
+		let receivedNoCache: boolean | undefined;
+
+		await runNewCommand({ cache: false }, undefined, {
+			runNew: async (options) => {
+				receivedNoCache = options.noCache;
+				return {
+					session: {
+						id: "violet",
+						status: "running",
+						provider: "hetzner",
+						provider_id: "vm-123",
+						ip_address: "203.0.113.10",
+						created_at: "2026-02-22T00:00:00Z",
+					},
+					timingSummary: makeTimingSummary(),
+				};
+			},
+			createSpinner: () => ({
+				succeed: () => {},
+				fail: () => {},
+				update: () => {},
+			}),
+			log: () => {},
+			warn: () => {},
+		});
+
+		expect(receivedNoCache).toBe(true);
 	});
 });

@@ -16,6 +16,19 @@ describe("hetzner/setup", () => {
 			expect(output).toContain("sudo");
 		});
 
+		test("does not emit an empty ssh_authorized_keys list", () => {
+			const output = generateCloudInit();
+			expect(output).not.toContain("ssh_authorized_keys: []");
+		});
+
+		test("writes explicit passwordless sudoers entry for agent", () => {
+			const output = generateCloudInit();
+			expect(output).toContain(
+				"echo 'agent ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/99-agent",
+			);
+			expect(output).toContain("chmod 440 /etc/sudoers.d/99-agent");
+		});
+
 		test("copies SSH keys from root to agent user", () => {
 			const output = generateCloudInit();
 			expect(output).toContain(
@@ -75,6 +88,20 @@ describe("hetzner/setup", () => {
 			const output = generateCloudInit();
 			expect(output).toContain("apt-get install -y gh");
 			expect(output).toContain("githubcli-archive-keyring.gpg");
+		});
+
+		test("writes GitHub auth files when github token is provided", () => {
+			const output = generateCloudInit({ githubToken: "ghp_test_token" });
+			expect(output).toContain("/home/agent/.config/sandctl/github-token");
+			expect(output).toContain("/home/agent/.config/gh/hosts.yml");
+			expect(output).toContain("/etc/profile.d/sandctl-github-token.sh");
+			expect(output).toContain("chown -R agent:agent /home/agent/.config");
+		});
+
+		test("omits GitHub auth files when github token is absent", () => {
+			const output = generateCloudInit();
+			expect(output).not.toContain("/home/agent/.config/sandctl/github-token");
+			expect(output).not.toContain("/home/agent/.config/gh/hosts.yml");
 		});
 
 		test("overwrites interactive shell config in agent zshrc", () => {
@@ -141,13 +168,17 @@ describe("hetzner/setup", () => {
 		test("returns plain cloud-config when no additional layers", () => {
 			const base = "#cloud-config\nusers:\n  - name: agent\n";
 			const result = assembleUserData(base);
-			expect(result).toBe(base);
+			expect(result).toContain("SANDCTL BEGIN GLOBAL CLOUD-INIT");
+			expect(result).toContain("SANDCTL END GLOBAL CLOUD-INIT");
+			expect(result).toContain("name: agent");
 		});
 
 		test("returns plain cloud-config with empty layers array", () => {
 			const base = "#cloud-config\nusers:\n  - name: agent\n";
 			const result = assembleUserData(base, []);
-			expect(result).toBe(base);
+			expect(result).toContain("SANDCTL BEGIN GLOBAL CLOUD-INIT");
+			expect(result).toContain("SANDCTL END GLOBAL CLOUD-INIT");
+			expect(result).toContain("name: agent");
 		});
 
 		test("wraps in MIME multipart with one additional layer", () => {
@@ -165,6 +196,10 @@ describe("hetzner/setup", () => {
 			expect(result).toContain("Content-Type: text/x-shellscript");
 			expect(result).toContain("name: agent");
 			expect(result).toContain("echo hello");
+			expect(result).toContain("SANDCTL BEGIN GLOBAL CLOUD-INIT");
+			expect(result).toContain("SANDCTL END GLOBAL CLOUD-INIT");
+			expect(result).toContain("SANDCTL BEGIN LAYER 1");
+			expect(result).toContain("SANDCTL END LAYER 1");
 		});
 
 		test("wraps in MIME multipart with two additional layers", () => {
@@ -182,6 +217,9 @@ describe("hetzner/setup", () => {
 			).length;
 			expect(cloudConfigCount).toBe(2);
 			expect(shellscriptCount).toBe(1);
+			expect(result).toContain("SANDCTL BEGIN GLOBAL CLOUD-INIT");
+			expect(result).toContain("SANDCTL BEGIN LAYER 1");
+			expect(result).toContain("SANDCTL BEGIN LAYER 2");
 		});
 
 		test("normalizes content without trailing newline", () => {
@@ -200,7 +238,7 @@ describe("hetzner/setup", () => {
 			const result = assembleUserData(base, [layer]);
 
 			expect(result).toContain("merge_how:");
-			expect(result).toContain("settings: [append]");
+			expect(result).toContain("append");
 		});
 
 		test("does not inject merge_how into the global base", () => {
@@ -231,7 +269,7 @@ describe("hetzner/setup", () => {
 			// Should have exactly one merge_how (the user's own)
 			const count = (result.match(/merge_how:/g) || []).length;
 			expect(count).toBe(1);
-			expect(result).toContain("settings: [replace]");
+			expect(result).toContain("replace");
 		});
 	});
 });

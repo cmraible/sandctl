@@ -4,6 +4,56 @@ import { runLogs } from "@/commands/logs";
 import { agentModeConfig, makeRunningSession } from "../../support/fixtures";
 
 describe("commands/logs", () => {
+	test("connects as root to read cloud-init logs", async () => {
+		let username = "";
+
+		await runLogs(
+			"alice",
+			{},
+			{
+				store: {
+					get: async () => makeRunningSession(),
+				},
+				loadConfig: async () => agentModeConfig,
+				createSSHClient: (options) => {
+					username = options.username;
+					return {
+						connect: async () => {},
+						close: async () => {},
+						exec: async () => {
+							throw new Error("not used");
+						},
+						shell: async () => {
+							throw new Error("not used");
+						},
+					};
+				},
+				runCommand: async () => ({
+					stdout: "",
+					stderr: "",
+					exitCode: 0,
+				}),
+				runStreamingCommand: async () => ({
+					stdout: "",
+					stderr: "",
+					exitCode: 0,
+				}),
+				stdout: {
+					write() {
+						return true;
+					},
+				},
+				stderr: {
+					write() {
+						return true;
+					},
+				},
+			},
+		);
+
+		expect(username).toBe("root");
+	});
+
 	test("runs cat on cloud-init log by default", async () => {
 		const commands: string[] = [];
 		let output = "";
@@ -57,6 +107,114 @@ describe("commands/logs", () => {
 		expect(output).toBe("cloud-init log output\n");
 	});
 
+	test("pages non-follow output in interactive terminals", async () => {
+		let paged = "";
+		let wroteToStdout = false;
+
+		await runLogs(
+			"alice",
+			{},
+			{
+				store: {
+					get: async () => makeRunningSession(),
+				},
+				loadConfig: async () => agentModeConfig,
+				createSSHClient: () => ({
+					connect: async () => {},
+					close: async () => {},
+					exec: async () => {
+						throw new Error("not used");
+					},
+					shell: async () => {
+						throw new Error("not used");
+					},
+				}),
+				runCommand: async () => ({
+					stdout: "cloud-init log output\n",
+					stderr: "",
+					exitCode: 0,
+				}),
+				runStreamingCommand: async () => ({
+					stdout: "",
+					stderr: "",
+					exitCode: 0,
+				}),
+				pageOutput: async (content: string) => {
+					paged += content;
+				},
+				stdout: {
+					write() {
+						wroteToStdout = true;
+						return true;
+					},
+					isTTY: true,
+				},
+				stderr: {
+					write() {
+						return true;
+					},
+				},
+			},
+		);
+
+		expect(paged).toBe("cloud-init log output\n");
+		expect(wroteToStdout).toBe(false);
+	});
+
+	test("writes directly to stdout when --no-pager is set", async () => {
+		let paged = false;
+		let output = "";
+
+		await runLogs(
+			"alice",
+			{ noPager: true },
+			{
+				store: {
+					get: async () => makeRunningSession(),
+				},
+				loadConfig: async () => agentModeConfig,
+				createSSHClient: () => ({
+					connect: async () => {},
+					close: async () => {},
+					exec: async () => {
+						throw new Error("not used");
+					},
+					shell: async () => {
+						throw new Error("not used");
+					},
+				}),
+				runCommand: async () => ({
+					stdout: "cloud-init log output\n",
+					stderr: "",
+					exitCode: 0,
+				}),
+				runStreamingCommand: async () => ({
+					stdout: "",
+					stderr: "",
+					exitCode: 0,
+				}),
+				pageOutput: async () => {
+					paged = true;
+				},
+				stdout: {
+					write(chunk: string | Uint8Array) {
+						output += chunk.toString();
+						return true;
+					},
+					isTTY: true,
+				},
+				stderr: {
+					write() {
+						return true;
+					},
+				},
+			},
+		);
+
+		expect(paged).toBe(false);
+		expect(output).toBe("cloud-init log output\n");
+	});
+
 	test("uses tail -n when --lines is specified", async () => {
 		const commands: string[] = [];
 
@@ -105,6 +263,7 @@ describe("commands/logs", () => {
 
 	test("uses tail -f when --follow is specified", async () => {
 		const streamCommands: string[] = [];
+		let paged = false;
 
 		await runLogs(
 			"alice",
@@ -133,10 +292,14 @@ describe("commands/logs", () => {
 					streamCommands.push(command);
 					return { stdout: "", stderr: "", exitCode: 0 };
 				},
+				pageOutput: async () => {
+					paged = true;
+				},
 				stdout: {
 					write() {
 						return true;
 					},
+					isTTY: true,
 				},
 				stderr: {
 					write() {
@@ -149,6 +312,7 @@ describe("commands/logs", () => {
 		expect(streamCommands).toEqual([
 			"tail -n 10 -f /var/log/cloud-init-output.log",
 		]);
+		expect(paged).toBe(false);
 	});
 
 	test("combines --follow and --lines", async () => {

@@ -105,6 +105,9 @@ describe("commands/new --template layering", () => {
 		expect(userData).toContain("text/cloud-config");
 		expect(userData).toContain("nginx");
 		expect(userData).toContain("name: agent");
+		expect(userData).toContain("SANDCTL BEGIN GLOBAL CLOUD-INIT");
+		expect(userData).toContain("SANDCTL BEGIN TEMPLATE");
+		expect(userData).toContain("SANDCTL END TEMPLATE");
 	});
 
 	test("assembles user_data with user base template and named template", async () => {
@@ -154,6 +157,9 @@ describe("commands/new --template layering", () => {
 		expect(userData).toContain("git");
 		expect(userData).toContain("nginx");
 		expect(userData).toContain("text/x-shellscript");
+		expect(userData).toContain("SANDCTL BEGIN GLOBAL CLOUD-INIT");
+		expect(userData).toContain("SANDCTL BEGIN USER CLOUD-INIT");
+		expect(userData).toContain("SANDCTL BEGIN TEMPLATE");
 	});
 
 	test("sends plain cloud-config when no templates exist", async () => {
@@ -198,6 +204,53 @@ describe("commands/new --template layering", () => {
 		expect(userData).not.toContain("multipart/mixed");
 		expect(userData).toContain("#cloud-config");
 		expect(userData).toContain("name: agent");
+		expect(userData).toContain("SANDCTL BEGIN GLOBAL CLOUD-INIT");
+		expect(userData).toContain("SANDCTL END GLOBAL CLOUD-INIT");
+	});
+
+	test("injects github token into global cloud-init when configured", async () => {
+		const createCalls: CreateOpts[] = [];
+		const provider = makeProvider({
+			create: async (opts) => {
+				createCalls.push(opts);
+				return {
+					id: "vm-123",
+					name: "violet",
+					status: "running",
+					ipAddress: "203.0.113.10",
+					region: "ash",
+					serverType: "cpx31",
+					createdAt: "2026-02-22T00:00:00Z",
+				};
+			},
+		});
+
+		await runNew(
+			{},
+			{
+				loadConfig: async () => ({
+					...baseProviderConfig,
+					github_token: "ghp_test_token",
+				}),
+				resolveProvider: () => provider,
+				generateSessionID: () => "violet",
+				getPublicKey: async () => "ssh-ed25519 AAAA test@local",
+				waitForCloudInit: async () => {},
+				setupGitConfig: async () => {},
+				store: {
+					list: async () => [],
+					add: async () => {},
+					update: async () => {},
+				},
+				templateStore: makeTemplateStore({}),
+			},
+		);
+
+		expect(createCalls).toHaveLength(1);
+		const userData = createCalls[0].userData;
+		expect(userData).toBeDefined();
+		expect(userData).toContain("/home/agent/.config/sandctl/github-token");
+		expect(userData).toContain("/home/agent/.config/gh/hosts.yml");
 	});
 
 	test("applies user base template even without -T flag", async () => {
@@ -242,6 +295,8 @@ describe("commands/new --template layering", () => {
 		// User base template present — should be MIME multipart
 		expect(userData).toContain("multipart/mixed");
 		expect(userData).toContain("vim");
+		expect(userData).toContain("SANDCTL BEGIN USER CLOUD-INIT");
+		expect(userData).toContain("SANDCTL END USER CLOUD-INIT");
 	});
 
 	test("rejects -T base with descriptive error", async () => {

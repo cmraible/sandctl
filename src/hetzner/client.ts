@@ -48,6 +48,7 @@ export interface HetznerImage {
 	type: string;
 	status: string;
 	description: string;
+	created: string;
 	labels: Record<string, string>;
 	created_from: { id: number; name: string } | null;
 }

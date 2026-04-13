@@ -27,9 +27,12 @@ export async function findBaseSnapshot(
 ): Promise<HetznerImage | null> {
 	const images = await client.listImages(SNAPSHOT_LABEL_SELECTOR);
 	const expected = snapshotDescription(userData);
-	const match = images.find(
-		(img) => img.description === expected && img.status === "available",
-	);
+	const matches = images
+		.filter(
+			(img) => img.description === expected && img.status === "available",
+		)
+		.sort((a, b) => Date.parse(b.created) - Date.parse(a.created));
+	const match = matches[0];
 	return match ?? null;
 }
 
@@ -67,9 +70,13 @@ export async function cleanupOldSnapshots(
 ): Promise<void> {
 	const images = await client.listImages(SNAPSHOT_LABEL_SELECTOR);
 	const currentDesc = snapshotDescription(userData);
+	const currentMatches = images
+		.filter((img) => img.description === currentDesc)
+		.sort((a, b) => Date.parse(b.created) - Date.parse(a.created));
+	const currentToKeep = currentMatches[0]?.id;
 
 	for (const img of images) {
-		if (img.description !== currentDesc) {
+		if (img.description !== currentDesc || img.id !== currentToKeep) {
 			await client.deleteImage(String(img.id));
 		}
 	}
