@@ -1,3 +1,5 @@
+import YAML from "yaml";
+
 export function generatePostSnapshotSSHSetup(): string {
 	return [
 		"mkdir -p /home/agent/.ssh",
@@ -15,7 +17,49 @@ const AGENT_ZSHRC_BASE64 = Buffer.from(
 	"utf8",
 ).toString("base64");
 
-export function generateCloudInit(): string {
+interface GenerateCloudInitOptions {
+	githubToken?: string;
+}
+
+function generateGitHubTokenSetup(githubToken: string): string {
+	const tokenBase64 = Buffer.from(`${githubToken}\n`, "utf8").toString(
+		"base64",
+	);
+	const profileBase64 = Buffer.from(
+		`if [ -f /home/agent/.config/sandctl/github-token ]; then
+  export GH_TOKEN="$(cat /home/agent/.config/sandctl/github-token)"
+  export GITHUB_TOKEN="$GH_TOKEN"
+fi
+`,
+		"utf8",
+	).toString("base64");
+	const ghHostsBase64 = Buffer.from(
+		`github.com:
+    oauth_token: ${githubToken}
+    git_protocol: https
+`,
+		"utf8",
+	).toString("base64");
+
+	return `  - |
+    install -d -m 700 /home/agent/.config /home/agent/.config/sandctl /home/agent/.config/gh
+    echo '${tokenBase64}' | base64 -d > /home/agent/.config/sandctl/github-token
+    echo '${ghHostsBase64}' | base64 -d > /home/agent/.config/gh/hosts.yml
+    echo '${profileBase64}' | base64 -d > /etc/profile.d/sandctl-github-token.sh
+    chown -R agent:agent /home/agent/.config
+    chmod 600 /home/agent/.config/sandctl/github-token
+    chmod 600 /home/agent/.config/gh/hosts.yml
+    chmod 600 /etc/profile.d/sandctl-github-token.sh
+`;
+}
+
+export function generateCloudInit(
+	options: GenerateCloudInitOptions = {},
+): string {
+	const githubTokenSetup = options.githubToken
+		? generateGitHubTokenSetup(options.githubToken)
+		: "";
+
 	return `#cloud-config
 packages:
   - docker.io
@@ -29,8 +73,10 @@ users:
       - sudo
       - docker
     sudo: "ALL=(ALL) NOPASSWD:ALL"
-    ssh_authorized_keys: []
 runcmd:
+  - |
+    echo 'agent ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/99-agent
+    chmod 440 /etc/sudoers.d/99-agent
   - |
     mkdir -p /home/agent/.ssh
     if [ -f /root/.ssh/authorized_keys ]; then
@@ -41,6 +87,7 @@ runcmd:
     chown -R agent:agent /home/agent/.ssh
     chmod 700 /home/agent/.ssh
     chmod 600 /home/agent/.ssh/authorized_keys
+${githubTokenSetup}
   - |
     curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
     chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
@@ -126,6 +173,64 @@ const MERGE_HOW_DIRECTIVE = `merge_how:
   - name: dict
     settings: [no_replace, recurse_list]`;
 
+const MERGE_HOW_VALUE = [
+	{ name: "list", settings: ["append"] },
+	{ name: "dict", settings: ["no_replace", "recurse_list"] },
+];
+
+export interface UserDataLayer {
+	name: string;
+	content: string;
+}
+
+function bannerLabel(name: string): string {
+	return name.trim().replace(/\s+/g, " ").toUpperCase();
+}
+
+function bannerText(name: string, phase: "BEGIN" | "END"): string {
+	return `========== SANDCTL ${phase} ${bannerLabel(name)} ==========`;
+}
+
+function annotateShellScriptLayer(content: string, name: string): string {
+	const normalized = content.endsWith("\n") ? content : `${content}\n`;
+	const lines = normalized.split("\n");
+	const hasShebang = lines[0]?.startsWith("#!");
+	const shebang = hasShebang ? lines[0] : "";
+	const body = hasShebang ? lines.slice(1).join("\n") : normalized;
+	const begin = `echo '${bannerText(name, "BEGIN")}'`;
+	const trap = `trap 'status=$?; echo "${bannerText(name, "END")} (exit \${status})"' EXIT`;
+
+	return [...(shebang ? [shebang] : []), begin, trap, body.trimStart()]
+		.filter((line) => line.length > 0)
+		.join("\n")
+		.concat("\n");
+}
+
+function annotateCloudConfigLayer(
+	content: string,
+	name: string,
+	options: { injectMergeHow: boolean },
+): string {
+	const parsed = YAML.parse(content);
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+		return content;
+	}
+
+	const doc = parsed as Record<string, unknown>;
+	if (options.injectMergeHow && !("merge_how" in doc)) {
+		doc.merge_how = MERGE_HOW_VALUE;
+	}
+
+	const existingRuncmd = Array.isArray(doc.runcmd) ? [...doc.runcmd] : [];
+	doc.runcmd = [
+		`echo '${bannerText(name, "BEGIN")}'`,
+		...existingRuncmd,
+		`echo '${bannerText(name, "END")}'`,
+	];
+
+	return `#cloud-config\n${YAML.stringify(doc)}`;
+}
+
 function ensureMergeDirective(content: string): string {
 	if (detectContentType(content) !== "text/cloud-config") {
 		return content;
@@ -139,17 +244,41 @@ function ensureMergeDirective(content: string): string {
 	);
 }
 
+function annotateLayer(
+	name: string,
+	content: string,
+	options: { injectMergeHow: boolean },
+): string {
+	if (detectContentType(content) === "text/cloud-config") {
+		return annotateCloudConfigLayer(content, name, options);
+	}
+	return annotateShellScriptLayer(content, name);
+}
+
 export function assembleUserData(
 	globalBase: string,
-	layers: string[] = [],
+	layers: Array<string | UserDataLayer> = [],
 ): string {
+	const annotatedGlobalBase = annotateLayer("global cloud-init", globalBase, {
+		injectMergeHow: false,
+	});
+
 	if (layers.length === 0) {
-		return globalBase;
+		return annotatedGlobalBase;
 	}
 
 	const boundary = "==SANDCTL==";
-	const processedLayers = layers.map(ensureMergeDirective);
-	const allLayers = [globalBase, ...processedLayers];
+	const processedLayers = layers.map((layer, index) => {
+		if (typeof layer === "string") {
+			return annotateLayer(`layer ${index + 1}`, ensureMergeDirective(layer), {
+				injectMergeHow: true,
+			});
+		}
+		return annotateLayer(layer.name, ensureMergeDirective(layer.content), {
+			injectMergeHow: true,
+		});
+	});
+	const allLayers = [annotatedGlobalBase, ...processedLayers];
 
 	const parts = allLayers.map((content) => {
 		const contentType = detectContentType(content);

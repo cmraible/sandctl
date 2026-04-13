@@ -16,6 +16,7 @@ function makeImage(overrides: Partial<HetznerImage> = {}): HetznerImage {
 		type: "snapshot",
 		status: "available",
 		description: `sandctl-base-v${snapshotVersion(TEST_USER_DATA)}`,
+		created: "2026-04-12T00:00:00Z",
 		labels: { "managed-by": "sandctl", purpose: "base-image" },
 		created_from: { id: 1, name: "test-server" },
 		...overrides,
@@ -74,6 +75,20 @@ describe("hetzner/snapshots", () => {
 			const client = makeClient([image]);
 			const result = await findBaseSnapshot(client, TEST_USER_DATA);
 			expect(result).toEqual(image);
+		});
+
+		test("prefers newest matching snapshot when duplicates exist", async () => {
+			const older = makeImage({
+				id: 100,
+				created: "2026-04-12T00:00:00Z",
+			});
+			const newer = makeImage({
+				id: 200,
+				created: "2026-04-12T01:00:00Z",
+			});
+			const client = makeClient([older, newer]);
+			const result = await findBaseSnapshot(client, TEST_USER_DATA);
+			expect(result?.id).toBe(200);
 		});
 
 		test("ignores snapshots with wrong version", async () => {
@@ -142,6 +157,22 @@ describe("hetzner/snapshots", () => {
 			});
 			const current = makeImage({ id: 300 });
 			const client = makeClient([old, current]);
+
+			await cleanupOldSnapshots(client, TEST_USER_DATA);
+			expect(client.calls).toContain("deleteImage:200");
+			expect(client.calls).not.toContain("deleteImage:300");
+		});
+
+		test("deletes older duplicates of the current version", async () => {
+			const older = makeImage({
+				id: 200,
+				created: "2026-04-12T00:00:00Z",
+			});
+			const newer = makeImage({
+				id: 300,
+				created: "2026-04-12T01:00:00Z",
+			});
+			const client = makeClient([older, newer]);
 
 			await cleanupOldSnapshots(client, TEST_USER_DATA);
 			expect(client.calls).toContain("deleteImage:200");

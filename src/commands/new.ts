@@ -19,7 +19,11 @@ import {
 	load,
 	type ProviderConfig,
 } from "@/config/config";
-import { assembleUserData, generateCloudInit } from "@/provider/cloud-init";
+import {
+	assembleUserData,
+	generateCloudInit,
+	type UserDataLayer,
+} from "@/provider/cloud-init";
 import type { SnapshotReference } from "@/provider/interface";
 import { supportsSnapshots } from "@/provider/interface";
 import { get as getProviderFromRegistry } from "@/provider/registry";
@@ -56,6 +60,7 @@ interface NewOptions {
 	bare?: boolean;
 	timings?: boolean;
 	noCache?: boolean;
+	cache?: boolean;
 }
 
 interface NewCommandSpinner {
@@ -274,7 +279,7 @@ const AGENT_TOOL_CHECKS: readonly { name: string; command: string }[] = [
 	{ name: "docker", command: "docker --version" },
 ];
 
-async function defaultWaitForCloudInit(
+export async function defaultWaitForCloudInit(
 	config: Config,
 	host: string,
 	createClient: (options: SSHClientOptions) => SSHRuntimeClient,
@@ -310,7 +315,29 @@ async function defaultWaitForCloudInit(
 		);
 	}
 
-	// Phase 2: cloud-init is done. Verify the agent-user tools installed by
+	// Phase 2: boot-finished exists, but cloud-init may still report a degraded
+	// final state (for example, a template script failed in scripts_user). Treat
+	// any non-zero cloud-init status as a provisioning failure so we do not
+	// create reusable snapshots from a broken boot.
+	const statusClient = createClient(sshOptions);
+	const statusResult = await withSSHClient(statusClient, (c) =>
+		sshExec(c, "cloud-init status --wait --long"),
+	);
+	if (statusResult.exitCode !== 0) {
+		const tailClient = createClient(sshOptions);
+		const tailResult = await withSSHClient(tailClient, (c) =>
+			sshExec(c, "tail -n 200 /var/log/cloud-init-output.log"),
+		);
+		const logTail =
+			tailResult.exitCode === 0
+				? tailResult.stdout
+				: `<unable to read cloud-init-output.log: exit ${tailResult.exitCode} ${tailResult.stderr.trim()}>`;
+		throw new Error(
+			`cloud-init reported a degraded state (exit ${statusResult.exitCode}).\nstdout:\n${statusResult.stdout.trim() || "<empty>"}\nstderr:\n${statusResult.stderr.trim() || "<empty>"}\n\nLast 200 lines of /var/log/cloud-init-output.log:\n${logTail}`,
+		);
+	}
+
+	// Phase 3: cloud-init is done and healthy. Verify the agent-user tools installed by
 	// runcmd are actually runnable. Run each check exactly once and capture
 	// exit code + stderr so a failure tells us *which* tool is broken. If
 	// anything fails, also grab the tail of cloud-init-output.log so we can
@@ -372,13 +399,6 @@ async function setupGitConfigViaSSH(
 		);
 	} else {
 		gitConfigContent = `[user]\n\tname = ${config.git_user_name}\n\temail = ${config.git_user_email}\n`;
-	}
-
-	if (
-		config.ssh_key_source === "agent" &&
-		!gitConfigContent.includes("insteadOf = https://github.com/")
-	) {
-		gitConfigContent += `\n[url "ssh://git@github.com/"]\n\tinsteadOf = https://github.com/\n`;
 	}
 
 	const encoded = Buffer.from(gitConfigContent).toString("base64");
@@ -497,11 +517,19 @@ interface TimingSummary {
 	backgroundSnapshotDeferred: boolean;
 }
 
+function normalizedNewOptions(options: NewOptions): NewOptions {
+	return {
+		...options,
+		noCache: options.noCache || options.cache === false,
+	};
+}
+
 export async function runNew(
 	options: NewOptions,
 	deps: Partial<Dependencies> = {},
 	configPath?: string,
 ): Promise<NewResult> {
+	const normalizedOptions = normalizedNewOptions(options);
 	const dependencies = {
 		...defaultDependencies,
 		...deps,
@@ -518,40 +546,43 @@ export async function runNew(
 	let claudeSetupMs: number | undefined;
 	let backgroundSnapshotDeferred = false;
 	const providerName =
-		options.provider ?? config.default_provider ?? DEFAULT_PROVIDER;
+		normalizedOptions.provider ?? config.default_provider ?? DEFAULT_PROVIDER;
 
 	let resolvedServerType: string | undefined;
-	if (options.size) {
-		const vmSize = resolveSize(options.size, providerName);
+	if (normalizedOptions.size) {
+		const vmSize = resolveSize(normalizedOptions.size, providerName);
 		if (!vmSize) {
 			throw new Error(
-				`unknown size '${options.size}'. Available sizes:\n${sizesHelpText(providerName)}`,
+				`unknown size '${normalizedOptions.size}'. Available sizes:\n${sizesHelpText(providerName)}`,
 			);
 		}
 		resolvedServerType = vmSize.serverType;
 	}
 
-	if (options.template && normalizeTemplateName(options.template) === "base") {
+	if (
+		normalizedOptions.template &&
+		normalizeTemplateName(normalizedOptions.template) === "base"
+	) {
 		throw new Error(
 			"the 'base' template is applied automatically. Use `sandctl template edit base` to modify it.",
 		);
 	}
 
-	if (options.bare && options.template) {
+	if (normalizedOptions.bare && normalizedOptions.template) {
 		throw new Error("--bare and -T cannot be used together.");
 	}
 
 	let namedTemplateContent: string | undefined;
-	if (options.template) {
+	if (normalizedOptions.template) {
 		try {
 			const template = await dependencies.templateStore.getInitScript(
-				options.template,
+				normalizedOptions.template,
 			);
 			namedTemplateContent = template.script;
 		} catch (error) {
 			if (error instanceof TemplateNotFoundError) {
 				throw new Error(
-					`template '${options.template}' not found. Use 'sandctl template list' to see available templates`,
+					`template '${normalizedOptions.template}' not found. Use 'sandctl template list' to see available templates`,
 				);
 			}
 			throw error;
@@ -559,7 +590,7 @@ export async function runNew(
 	}
 
 	let userBaseContent: string | undefined;
-	if (!options.bare) {
+	if (!normalizedOptions.bare) {
 		try {
 			const baseTemplate =
 				await dependencies.templateStore.getInitScript("base");
@@ -571,10 +602,22 @@ export async function runNew(
 		}
 	}
 
-	const globalBase = generateCloudInit();
-	const additionalLayers: string[] = [];
-	if (userBaseContent) additionalLayers.push(userBaseContent);
-	if (namedTemplateContent) additionalLayers.push(namedTemplateContent);
+	const globalBase = generateCloudInit({
+		githubToken: config.github_token,
+	});
+	const additionalLayers: UserDataLayer[] = [];
+	if (userBaseContent) {
+		additionalLayers.push({
+			name: "user cloud-init",
+			content: userBaseContent,
+		});
+	}
+	if (namedTemplateContent) {
+		additionalLayers.push({
+			name: "template",
+			content: namedTemplateContent,
+		});
+	}
 	const userData = assembleUserData(globalBase, additionalLayers);
 
 	const providerConfig = getProviderConfig(config, providerName);
@@ -615,7 +658,7 @@ export async function runNew(
 	);
 
 	let snapshot: SnapshotReference | null = null;
-	if (options.noCache) {
+	if (normalizedOptions.noCache) {
 		dependencies.log("Snapshot cache disabled (--no-cache).");
 	} else if (snapshotProvider) {
 		try {
@@ -643,7 +686,7 @@ export async function runNew(
 		if (snapshot) {
 			createdVM = await provider.create({
 				name: sessionID,
-				region: options.region,
+				region: normalizedOptions.region,
 				serverType: resolvedServerType,
 				image: String(snapshot.id),
 				sshKeyIDs: [sshKeyID],
@@ -652,9 +695,9 @@ export async function runNew(
 		} else {
 			createdVM = await provider.create({
 				name: sessionID,
-				region: options.region,
+				region: normalizedOptions.region,
 				serverType: resolvedServerType,
-				image: options.image,
+				image: normalizedOptions.image,
 				sshKeyIDs: [sshKeyID],
 				userData,
 			});
@@ -675,7 +718,10 @@ export async function runNew(
 
 		dependencies.log("Waiting for VM to be ready...");
 		const waitReadyStartedAt = dependencies.nowMs();
-		await provider.waitReady(createdVM.id, waitReadyTimeoutMs(options));
+		await provider.waitReady(
+			createdVM.id,
+			waitReadyTimeoutMs(normalizedOptions),
+		);
 		waitReadyMs = Math.max(0, dependencies.nowMs() - waitReadyStartedAt);
 		dependencies.log(`VM became reachable in ${formatElapsed(waitReadyMs)}.`);
 
@@ -712,7 +758,7 @@ export async function runNew(
 					`Cloud-init completed in ${formatElapsed(cloudInitMs)}.`,
 				);
 
-				if (snapshotProvider && !options.noCache) {
+				if (snapshotProvider && !normalizedOptions.noCache) {
 					backgroundSnapshotDeferred = true;
 					backgroundTasks = (async () => {
 						try {
@@ -838,6 +884,7 @@ export async function runNewCommand(
 	configPath?: string,
 	deps: Partial<NewCommandDependencies> = {},
 ): Promise<Session> {
+	const normalizedOptions = normalizedNewOptions(options);
 	const dependencies = {
 		...defaultNewCommandDependencies,
 		...deps,
@@ -846,7 +893,7 @@ export async function runNewCommand(
 	const spinner = dependencies.createSpinner("Creating VM...");
 	let result: NewResult;
 	try {
-		result = await dependencies.runNew(options, configPath, {
+		result = await dependencies.runNew(normalizedOptions, configPath, {
 			onProgress: (message: string) => {
 				spinner.update(message);
 			},
@@ -860,8 +907,8 @@ export async function runNewCommand(
 	const { session, backgroundTasks } = result;
 
 	const shouldConsole =
-		!options.noConsole &&
-		!options.timings &&
+		!normalizedOptions.noConsole &&
+		!normalizedOptions.timings &&
 		dependencies.isInteractive() &&
 		session.ip_address;
 
@@ -885,19 +932,19 @@ export async function runNewCommand(
 				`Session was created successfully. Use 'sandctl console ${session.id}' to connect manually.`,
 			);
 		}
-	} else if (!options.noConsole && !options.timings) {
+	} else if (!normalizedOptions.noConsole && !normalizedOptions.timings) {
 		dependencies.log(`Use 'sandctl console ${session.id}' to connect.`);
 		dependencies.log(`Use 'sandctl destroy ${session.id}' when done.`);
 	}
 
-	if (options.timings) {
+	if (normalizedOptions.timings) {
 		for (const line of formatTimingSummary(result.timingSummary)) {
 			dependencies.log(line);
 		}
 	}
 
 	// Wait for background tasks (e.g. snapshot creation) after the console exits
-	if (backgroundTasks && !options.timings) {
+	if (backgroundTasks && !normalizedOptions.timings) {
 		await backgroundTasks;
 	}
 
