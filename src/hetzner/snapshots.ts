@@ -28,9 +28,7 @@ export async function findBaseSnapshot(
 	const images = await client.listImages(SNAPSHOT_LABEL_SELECTOR);
 	const expected = snapshotDescription(userData);
 	const matches = images
-		.filter(
-			(img) => img.description === expected && img.status === "available",
-		)
+		.filter((img) => img.description === expected && img.status === "available")
 		.sort((a, b) => Date.parse(b.created) - Date.parse(a.created));
 	const match = matches[0];
 	return match ?? null;

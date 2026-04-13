@@ -718,7 +718,10 @@ export async function runNew(
 
 		dependencies.log("Waiting for VM to be ready...");
 		const waitReadyStartedAt = dependencies.nowMs();
-		await provider.waitReady(createdVM.id, waitReadyTimeoutMs(normalizedOptions));
+		await provider.waitReady(
+			createdVM.id,
+			waitReadyTimeoutMs(normalizedOptions),
+		);
 		waitReadyMs = Math.max(0, dependencies.nowMs() - waitReadyStartedAt);
 		dependencies.log(`VM became reachable in ${formatElapsed(waitReadyMs)}.`);
 

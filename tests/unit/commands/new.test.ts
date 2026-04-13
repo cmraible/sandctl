@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
-	type NewResult,
 	defaultWaitForCloudInit,
+	type NewResult,
 	runNew,
 	runNewCommand,
 } from "@/commands/new";
@@ -967,11 +967,14 @@ describe("commands/new", () => {
 				createdAt: "2026-02-22T00:00:00Z",
 			}),
 		});
-		(provider as ProviderLike & { findSnapshot?: () => Promise<{ id: string } | null> })
-			.findSnapshot = async () => {
-				findSnapshotCalled = true;
-				return { id: "123" };
-			};
+		(
+			provider as ProviderLike & {
+				findSnapshot?: () => Promise<{ id: string } | null>;
+			}
+		).findSnapshot = async () => {
+			findSnapshotCalled = true;
+			return { id: "123" };
+		};
 
 		await runNew(
 			{ cache: false },

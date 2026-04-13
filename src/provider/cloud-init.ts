@@ -22,7 +22,9 @@ interface GenerateCloudInitOptions {
 }
 
 function generateGitHubTokenSetup(githubToken: string): string {
-	const tokenBase64 = Buffer.from(`${githubToken}\n`, "utf8").toString("base64");
+	const tokenBase64 = Buffer.from(`${githubToken}\n`, "utf8").toString(
+		"base64",
+	);
 	const profileBase64 = Buffer.from(
 		`if [ -f /home/agent/.config/sandctl/github-token ]; then
   export GH_TOKEN="$(cat /home/agent/.config/sandctl/github-token)"
@@ -182,10 +184,7 @@ export interface UserDataLayer {
 }
 
 function bannerLabel(name: string): string {
-	return name
-		.trim()
-		.replace(/\s+/g, " ")
-		.toUpperCase();
+	return name.trim().replace(/\s+/g, " ").toUpperCase();
 }
 
 function bannerText(name: string, phase: "BEGIN" | "END"): string {
@@ -201,12 +200,7 @@ function annotateShellScriptLayer(content: string, name: string): string {
 	const begin = `echo '${bannerText(name, "BEGIN")}'`;
 	const trap = `trap 'status=$?; echo "${bannerText(name, "END")} (exit \${status})"' EXIT`;
 
-	return [
-		...(shebang ? [shebang] : []),
-		begin,
-		trap,
-		body.trimStart(),
-	]
+	return [...(shebang ? [shebang] : []), begin, trap, body.trimStart()]
 		.filter((line) => line.length > 0)
 		.join("\n")
 		.concat("\n");
@@ -265,11 +259,9 @@ export function assembleUserData(
 	globalBase: string,
 	layers: Array<string | UserDataLayer> = [],
 ): string {
-	const annotatedGlobalBase = annotateLayer(
-		"global cloud-init",
-		globalBase,
-		{ injectMergeHow: false },
-	);
+	const annotatedGlobalBase = annotateLayer("global cloud-init", globalBase, {
+		injectMergeHow: false,
+	});
 
 	if (layers.length === 0) {
 		return annotatedGlobalBase;

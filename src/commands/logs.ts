@@ -76,7 +76,9 @@ function buildCommand(options: LogsOptions): string {
 	return `cat ${LOG_FILE}`;
 }
 
-function parseCommand(command: string): { command: string; args: string[] } | null {
+function parseCommand(
+	command: string,
+): { command: string; args: string[] } | null {
 	const trimmed = command.trim();
 	if (!trimmed) {
 		return null;
@@ -153,12 +155,10 @@ export async function runLogs(
 	assertRunnable(session);
 
 	const config = await dependencies.loadConfig(configPath);
-	const client = dependencies.createSSHClient(
-		{
-			...buildSSHOptions(config, session.ip_address),
-			username: "root",
-		},
-	);
+	const client = dependencies.createSSHClient({
+		...buildSSHOptions(config, session.ip_address),
+		username: "root",
+	});
 
 	const command = buildCommand(options);
 
