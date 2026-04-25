@@ -40,4 +40,5 @@ export interface CreateOpts {
 	sshKeyIDs?: string[];
 	userData?: string;
 	skipUserData?: boolean;
+	debug?: (message: string) => void;
 }

@@ -22,6 +22,7 @@ const DEFAULT_NETWORK = "global/networks/default";
 const MANAGED_LABEL_KEY = "managed-by";
 const MANAGED_LABEL_VALUE = "sandctl";
 const POLL_INTERVAL_MS = 5_000;
+const OPERATION_TIMEOUT_MS = 5 * 60 * 1000;
 const SSH_PORT = 22;
 const SSH_PROBE_TIMEOUT_MS = 2_000;
 const SSH_PROBE_RETRIES = 3;
@@ -58,6 +59,7 @@ export interface GcpClientLike {
 		project: string;
 		zone: string;
 		instanceResource: Record<string, unknown>;
+		debug?: (message: string) => void;
 	}): Promise<GcpOperation>;
 	getInstance(
 		project: string,
@@ -100,6 +102,7 @@ export class GcpProvider implements Provider, SSHKeyManager {
 			timeoutMs: number,
 		) => Promise<boolean> = defaultProbeTCP,
 		private readonly now: () => number = () => performance.now(),
+		private readonly operationTimeoutMs: number = OPERATION_TIMEOUT_MS,
 	) {
 		this.client = client ?? new GcpComputeClient(config);
 	}
@@ -109,6 +112,7 @@ export class GcpProvider implements Provider, SSHKeyManager {
 	}
 
 	async create(opts: CreateOpts): Promise<VM> {
+		const debug = opts.debug ?? (() => {});
 		const project = this.projectID();
 		const zone = opts.region ?? this.config.region ?? DEFAULT_ZONE;
 		const machineType =
@@ -116,9 +120,16 @@ export class GcpProvider implements Provider, SSHKeyManager {
 		const image = opts.image ?? this.config.image ?? DEFAULT_IMAGE;
 		const metadataItems = metadataItemsForCreate(opts);
 
+		debug(
+			`gcp create: project=${project} zone=${zone} name=${opts.name} machineType=${machineType} image=${image}`,
+		);
+		debug(
+			`gcp create: metadata=${metadataItems.map((item) => item.key).join(",") || "<none>"} sshKeys=${opts.sshKeyIDs?.length ?? 0} userData=${opts.skipUserData ? "skipped" : opts.userData ? `${opts.userData.length} bytes` : "absent"}`,
+		);
 		const operation = await this.client.insertInstance({
 			project,
 			zone,
+			debug,
 			instanceResource: {
 				name: opts.name,
 				labels: {
@@ -140,7 +151,7 @@ export class GcpProvider implements Provider, SSHKeyManager {
 				machineType: `zones/${zone}/machineTypes/${machineType}`,
 				networkInterfaces: [
 					{
-						name: this.config.network ?? DEFAULT_NETWORK,
+						network: this.config.network ?? DEFAULT_NETWORK,
 						accessConfigs: [{ name: "External NAT", type: "ONE_TO_ONE_NAT" }],
 					},
 				],
@@ -149,11 +160,17 @@ export class GcpProvider implements Provider, SSHKeyManager {
 					: {}),
 			},
 		});
-		await this.waitForOperation(project, zone, operation);
-		return mapInstance(
-			await this.client.getInstance(project, zone, opts.name),
-			zone,
+		debug(
+			`gcp create: insert operation name=${operation.name ?? "<none>"} status=${operation.status ?? "<unknown>"}`,
 		);
+		await this.waitForOperation(project, zone, operation, debug);
+		debug(`gcp create: fetching instance ${zone}/${opts.name}`);
+		const instance = await this.client.getInstance(project, zone, opts.name);
+		const vm = mapInstance(instance, zone);
+		debug(
+			`gcp create: instance id=${vm.id} status=${vm.status} ip=${vm.ipAddress ?? "<none>"}`,
+		);
+		return vm;
 	}
 
 	async get(id: string): Promise<VM> {
@@ -195,11 +212,17 @@ export class GcpProvider implements Provider, SSHKeyManager {
 		return instances.map((instance) => mapInstance(instance, zone));
 	}
 
-	async waitReady(id: string, timeoutMs: number): Promise<void> {
+	async waitReady(
+		id: string,
+		timeoutMs: number,
+		debug: (message: string) => void = () => {},
+	): Promise<void> {
 		const deadline = this.now() + timeoutMs;
 		const remaining = (): number => deadline - this.now();
+		let poll = 0;
 
 		while (remaining() > 0) {
+			poll += 1;
 			let vm: VM;
 			try {
 				vm = await this.get(id);
@@ -208,6 +231,9 @@ export class GcpProvider implements Provider, SSHKeyManager {
 					throw new ErrProvisionFailed(`vm not found while waiting: ${id}`);
 				}
 
+				debug(
+					`gcp waitReady: poll=${poll} get failed (${messageFromError(error)}), retrying`,
+				);
 				const delay = Math.min(POLL_INTERVAL_MS, Math.max(0, remaining()));
 				if (delay <= 0) {
 					break;
@@ -217,15 +243,20 @@ export class GcpProvider implements Provider, SSHKeyManager {
 				continue;
 			}
 
+			debug(
+				`gcp waitReady: poll=${poll} status=${vm.status} ip=${vm.ipAddress ?? "<none>"}`,
+			);
 			if (vm.status === "failed") {
 				throw new ErrProvisionFailed(`vm entered failed state: ${id}`);
 			}
 
 			if (vm.status === "running" && vm.ipAddress) {
-				const sshReady = await this.waitForSSH(vm.ipAddress, deadline);
+				const sshReady = await this.waitForSSH(vm.ipAddress, deadline, debug);
 				if (sshReady) {
+					debug(`gcp waitReady: ssh reachable at ${vm.ipAddress}:22`);
 					return;
 				}
+				debug(`gcp waitReady: ssh not reachable yet at ${vm.ipAddress}:22`);
 			}
 
 			const delay = Math.min(POLL_INTERVAL_MS, Math.max(0, remaining()));
@@ -260,17 +291,50 @@ export class GcpProvider implements Provider, SSHKeyManager {
 		project: string,
 		zone: string,
 		operation: GcpOperation,
+		debug: (message: string) => void = () => {},
 	): Promise<void> {
 		if (!operation.name) {
+			debug("gcp operation: no operation name returned; skipping wait");
 			return;
 		}
 
+		const deadline = this.now() + this.operationTimeoutMs;
 		let current = operation;
+		let poll = 0;
 		while (current.status !== "DONE") {
-			current = await this.client.waitZoneOperation(
-				project,
-				zone,
-				operation.name,
+			poll += 1;
+			const remaining = deadline - this.now();
+			if (remaining <= 0) {
+				break;
+			}
+
+			debug(
+				`gcp operation: waiting name=${operation.name} poll=${poll} previousStatus=${current.status ?? "<unknown>"}`,
+			);
+			current = await this.withTimeout(
+				this.client.waitZoneOperation(project, zone, operation.name),
+				remaining,
+				`timed out waiting for gcp operation ${operation.name} in zone ${zone}`,
+			);
+			debug(
+				`gcp operation: response name=${operation.name} poll=${poll} status=${current.status ?? "<unknown>"}`,
+			);
+
+			if (current.status !== "DONE") {
+				const delay = Math.min(
+					POLL_INTERVAL_MS,
+					Math.max(0, deadline - this.now()),
+				);
+				if (delay <= 0) {
+					break;
+				}
+				await this.sleep(delay);
+			}
+		}
+
+		if (current.status !== "DONE") {
+			throw new ErrTimeout(
+				`timed out waiting for gcp operation ${operation.name} in zone ${zone}`,
 			);
 		}
 
@@ -283,7 +347,34 @@ export class GcpProvider implements Provider, SSHKeyManager {
 		}
 	}
 
-	private async waitForSSH(host: string, deadline: number): Promise<boolean> {
+	private async withTimeout<T>(
+		promise: Promise<T>,
+		timeoutMs: number,
+		message: string,
+	): Promise<T> {
+		if (timeoutMs <= 0) {
+			throw new ErrTimeout(message);
+		}
+
+		let timeout: ReturnType<typeof setTimeout> | undefined;
+		const timeoutPromise = new Promise<never>((_, reject) => {
+			timeout = setTimeout(() => reject(new ErrTimeout(message)), timeoutMs);
+		});
+
+		try {
+			return await Promise.race([promise, timeoutPromise]);
+		} finally {
+			if (timeout) {
+				clearTimeout(timeout);
+			}
+		}
+	}
+
+	private async waitForSSH(
+		host: string,
+		deadline: number,
+		debug: (message: string) => void = () => {},
+	): Promise<boolean> {
 		for (let attempt = 0; attempt < SSH_PROBE_RETRIES; attempt++) {
 			const probeBudget = deadline - this.now();
 			if (probeBudget <= 0) {
@@ -291,6 +382,10 @@ export class GcpProvider implements Provider, SSHKeyManager {
 			}
 
 			const timeout = Math.min(SSH_PROBE_TIMEOUT_MS, probeBudget);
+			const attemptNumber = attempt + 1;
+			debug(
+				`gcp waitReady: probing ssh ${host}:22 attempt=${attemptNumber}/${SSH_PROBE_RETRIES} timeoutMs=${Math.round(timeout)}`,
+			);
 			if (await this.probeTCP(host, SSH_PORT, timeout)) {
 				if (this.now() > deadline) {
 					return false;
@@ -319,9 +414,13 @@ class GcpComputeClient implements GcpClientLike {
 	private readonly operationsClient: ZoneOperationsClientApi;
 
 	constructor(config: ProviderConfig) {
-		const clientOptions = config.credentials_file
-			? { keyFilename: expandTilde(config.credentials_file) }
-			: undefined;
+		const clientOptions = {
+			fallback: true,
+			...(config.project_id ? { projectId: config.project_id } : {}),
+			...(config.credentials_file
+				? { keyFilename: expandTilde(config.credentials_file) }
+				: {}),
+		};
 		const computeModule = compute as unknown as {
 			InstancesClient: new (
 				opts?: Record<string, unknown>,
@@ -340,9 +439,21 @@ class GcpComputeClient implements GcpClientLike {
 		project: string;
 		zone: string;
 		instanceResource: Record<string, unknown>;
+		debug?: (message: string) => void;
 	}): Promise<GcpOperation> {
+		const debug = opts.debug ?? (() => {});
+		debug("gcp api: initializing instances client");
+		await this.call(() => this.instancesClient.initialize());
+		debug("gcp api: instances client initialized");
+		debug("gcp api: sending instances.insert request");
 		return unwrapOperation(
-			await this.call(() => this.instancesClient.insert(opts)),
+			await this.call(() =>
+				this.instancesClient.insert({
+					project: opts.project,
+					zone: opts.zone,
+					instanceResource: opts.instanceResource,
+				}),
+			),
 		);
 	}
 
@@ -430,9 +541,14 @@ function metadataItemsForCreate(
 	const items: Array<{ key: string; value: string }> = [];
 
 	if (opts.sshKeyIDs?.length) {
+		const lines: string[] = [];
+		for (const key of opts.sshKeyIDs) {
+			lines.push(`root:${key}`);
+			lines.push(`agent:${key}`);
+		}
 		items.push({
 			key: "ssh-keys",
-			value: opts.sshKeyIDs.map((key) => `agent:${key}`).join("\n"),
+			value: lines.join("\n"),
 		});
 	}
 
@@ -475,6 +591,10 @@ function mapGcpError(error: unknown): Error {
 		message,
 		error instanceof Error ? { cause: error } : undefined,
 	);
+}
+
+function messageFromError(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
 }
 
 async function defaultProbeTCP(

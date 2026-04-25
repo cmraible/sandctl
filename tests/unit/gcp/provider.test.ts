@@ -49,12 +49,72 @@ describe("gcp/provider", () => {
 		expect(created?.machineType).toBe(
 			"zones/us-central1-a/machineTypes/e2-standard-4",
 		);
+		expect(created?.networkInterfaces).toEqual([
+			{
+				network: "global/networks/default",
+				accessConfigs: [{ name: "External NAT", type: "ONE_TO_ONE_NAT" }],
+			},
+		]);
 		expect(created?.metadata).toEqual({
 			items: [
-				{ key: "ssh-keys", value: `agent:${TEST_PUBLIC_KEY}` },
+				{
+					key: "ssh-keys",
+					value: `root:${TEST_PUBLIC_KEY}\nagent:${TEST_PUBLIC_KEY}`,
+				},
 				{ key: "user-data", value: "#cloud-config\n" },
 			],
 		});
+	});
+
+	test("create times out when the Compute Engine operation wait hangs", async () => {
+		const client = makeClient({
+			insertInstance: async () => ({ name: "insert-op", status: "RUNNING" }),
+			waitZoneOperation: async () => await new Promise<never>(() => {}),
+		});
+		const provider = new GcpProvider(
+			{ project_id: "test-project" },
+			client,
+			async () => {},
+			async () => true,
+			() => 0,
+			1,
+		);
+
+		await expect(provider.create({ name: "vm" })).rejects.toBeInstanceOf(
+			ErrTimeout,
+		);
+	});
+
+	test("create polls operation waits until the insert operation is done", async () => {
+		let waitCalls = 0;
+		let sleepCalls = 0;
+		let now = 0;
+		const client = makeClient({
+			insertInstance: async () => ({ name: "insert-op", status: "RUNNING" }),
+			waitZoneOperation: async () => {
+				waitCalls += 1;
+				return {
+					name: "insert-op",
+					status: waitCalls >= 2 ? "DONE" : "RUNNING",
+				};
+			},
+		});
+		const provider = new GcpProvider(
+			{ project_id: "test-project" },
+			client,
+			async (ms) => {
+				sleepCalls += 1;
+				now += ms;
+			},
+			async () => true,
+			() => now,
+		);
+
+		const vm = await provider.create({ name: "vm" });
+
+		expect(vm.id).toBe("us-central1-a/vm");
+		expect(waitCalls).toBe(2);
+		expect(sleepCalls).toBe(1);
 	});
 
 	test("ensureSSHKey returns the public key for instance metadata injection", async () => {

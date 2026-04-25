@@ -61,6 +61,7 @@ interface NewOptions {
 	timings?: boolean;
 	noCache?: boolean;
 	cache?: boolean;
+	verbose?: boolean;
 }
 
 interface NewCommandSpinner {
@@ -75,6 +76,7 @@ interface NewCommandDependencies {
 		configPath?: string,
 		callbacks?: {
 			onProgress?: (message: string) => void;
+			onDebug?: (message: string) => void;
 		},
 	) => Promise<NewResult>;
 	createSpinner: (text: string) => NewCommandSpinner;
@@ -132,6 +134,7 @@ interface Dependencies {
 	nowMs: () => number;
 	warn: (message: string) => void;
 	log: (message: string) => void;
+	debug: (message: string) => void;
 }
 
 const defaultDependencies: Dependencies = {
@@ -152,6 +155,7 @@ const defaultDependencies: Dependencies = {
 		console.warn(message);
 	},
 	log: () => {},
+	debug: () => {},
 };
 
 const defaultNewCommandDependencies: NewCommandDependencies = {
@@ -160,6 +164,7 @@ const defaultNewCommandDependencies: NewCommandDependencies = {
 			options,
 			{
 				log: callbacks?.onProgress ?? (() => {}),
+				debug: callbacks?.onDebug ?? (() => {}),
 			},
 			configPath,
 		);
@@ -187,6 +192,9 @@ const defaultNewCommandDependencies: NewCommandDependencies = {
 	isInteractive: () => isatty(0),
 	warn: (message: string) => {
 		console.warn(message);
+	},
+	debug: (message: string) => {
+		console.error(`[debug] ${message}`);
 	},
 };
 
@@ -691,6 +699,7 @@ export async function runNew(
 				image: String(snapshot.id),
 				sshKeyIDs: [sshKeyID],
 				skipUserData: true,
+				debug: dependencies.debug,
 			});
 		} else {
 			createdVM = await provider.create({
@@ -700,6 +709,7 @@ export async function runNew(
 				image: normalizedOptions.image,
 				sshKeyIDs: [sshKeyID],
 				userData,
+				debug: dependencies.debug,
 			});
 		}
 		vmCreateMs = Math.max(0, dependencies.nowMs() - createStartedAt);
@@ -721,6 +731,7 @@ export async function runNew(
 		await provider.waitReady(
 			createdVM.id,
 			waitReadyTimeoutMs(normalizedOptions),
+			dependencies.debug,
 		);
 		waitReadyMs = Math.max(0, dependencies.nowMs() - waitReadyStartedAt);
 		dependencies.log(`VM became reachable in ${formatElapsed(waitReadyMs)}.`);
@@ -897,6 +908,9 @@ export async function runNewCommand(
 			onProgress: (message: string) => {
 				spinner.update(message);
 			},
+			onDebug: normalizedOptions.verbose
+				? (message: string) => dependencies.debug(message)
+				: undefined,
 		});
 		spinner.succeed(`Created VM '${result.session.id}'.`);
 	} catch (error) {
@@ -978,7 +992,9 @@ export function registerNewCommand(): Command {
 			const globals = command.optsWithGlobals() as {
 				config?: string;
 				json?: boolean;
+				verbose?: boolean;
 			};
+			options.verbose = globals.verbose;
 			if (globals.json) {
 				options.noConsole = true;
 				const noop = () => {};

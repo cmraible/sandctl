@@ -7,7 +7,11 @@ export interface Provider {
 	delete(id: string): Promise<void>;
 	reboot(id: string): Promise<void>;
 	list(): Promise<VM[]>;
-	waitReady(id: string, timeoutMs: number): Promise<void>;
+	waitReady(
+		id: string,
+		timeoutMs: number,
+		debug?: (message: string) => void,
+	): Promise<void>;
 }
 
 export interface SSHKeyManager {
