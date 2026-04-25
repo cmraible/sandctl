@@ -2,7 +2,7 @@
 
 A CLI tool for managing sandboxed AI web development agents.
 
-sandctl provisions isolated VM environments on pluggable cloud providers. Hetzner Cloud and DigitalOcean are currently supported.
+sandctl provisions isolated VM environments on pluggable cloud providers. Hetzner Cloud, DigitalOcean, and GCP Compute Engine are currently supported.
 
 ## Prerequisites
 
@@ -22,13 +22,17 @@ Initialize a provider config:
 ```bash
 ./sandctl init --provider hetzner --hetzner-token <token> --ssh-agent
 ./sandctl init --provider digitalocean --digitalocean-token <token> --ssh-agent
+./sandctl init --provider gcp --gcp-project <project-id> --gcp-credentials-file <service-account.json> --ssh-agent
 ```
+
+For GCP, `--gcp-credentials-file` is optional when Application Default Credentials are configured in the environment.
 
 Create a VM with the configured default provider, or override it per command:
 
 ```bash
 ./sandctl new
 ./sandctl new --provider digitalocean --size large
+./sandctl new --provider gcp --region us-central1-a --size medium
 ```
 
 ## Build

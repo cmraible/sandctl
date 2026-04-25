@@ -128,6 +128,55 @@ describe("init command (non-interactive)", () => {
 		}
 	});
 
+	test("writes GCP config when selected", async () => {
+		const tmpDir = mkdtempSync(path.join(os.tmpdir(), "sandctl-ts-init-"));
+		try {
+			const configPath = path.join(tmpDir, "config.yaml");
+
+			await runInit(
+				{
+					provider: "gcp",
+					gcpProject: "sandctl-test-project",
+					gcpCredentialsFile: "/tmp/gcp-creds.json",
+					sshAgent: true,
+					region: "us-east1-b",
+					serverType: "e2-standard-8",
+				},
+				configPath,
+			);
+
+			const config = parse(readFileSync(configPath, "utf8")) as Record<
+				string,
+				unknown
+			>;
+			const gcpConfig = (
+				config.providers as Record<
+					string,
+					{ project_id: string; credentials_file: string; token?: string }
+				>
+			).gcp;
+
+			expect(config.default_provider).toBe("gcp");
+			expect(gcpConfig.project_id).toBe("sandctl-test-project");
+			expect(gcpConfig.credentials_file).toBe("/tmp/gcp-creds.json");
+			expect(gcpConfig.token).toBeUndefined();
+		} finally {
+			rmSync(tmpDir, { recursive: true, force: true });
+		}
+	});
+
+	test("rejects GCP non-interactive init without project", async () => {
+		await expect(
+			runInit(
+				{
+					provider: "gcp",
+					sshAgent: true,
+				},
+				"/tmp/config.yaml",
+			),
+		).rejects.toThrow("--gcp-project is required in non-interactive mode");
+	});
+
 	test("preserves existing provider config when adding another provider", async () => {
 		const tmpDir = mkdtempSync(path.join(os.tmpdir(), "sandctl-ts-init-"));
 		try {

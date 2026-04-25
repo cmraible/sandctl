@@ -10,12 +10,14 @@ import { save } from "@/config/writer";
 import { isValidEmail } from "@/utils/email";
 import { expandTilde } from "@/utils/paths";
 
-type SupportedProvider = "digitalocean" | "hetzner";
+type SupportedProvider = "digitalocean" | "gcp" | "hetzner";
 
 interface InitOptions {
 	provider?: string;
 	hetznerToken?: string;
 	digitaloceanToken?: string;
+	gcpProject?: string;
+	gcpCredentialsFile?: string;
 	sshPublicKey?: string;
 	sshAgent?: boolean;
 	sshKeyFingerprint?: string;
@@ -67,6 +69,41 @@ const PROVIDER_METADATA = {
 			},
 		],
 	},
+	gcp: {
+		defaultRegion: "us-central1-a",
+		defaultServerType: "e2-standard-4",
+		defaultImage:
+			"projects/ubuntu-os-cloud/global/images/family/ubuntu-2404-lts-amd64",
+		tokenField: undefined,
+		tokenFlag: "--gcp-project",
+		tokenLabel: "GCP project ID",
+		regionChoices: [
+			{ name: "Iowa, US (us-central1-a)", value: "us-central1-a" },
+			{ name: "South Carolina, US (us-east1-b)", value: "us-east1-b" },
+			{ name: "Oregon, US (us-west1-a)", value: "us-west1-a" },
+			{ name: "London, UK (europe-west2-a)", value: "europe-west2-a" },
+			{ name: "Frankfurt, Germany (europe-west3-a)", value: "europe-west3-a" },
+			{ name: "Singapore (asia-southeast1-a)", value: "asia-southeast1-a" },
+		],
+		serverTypeChoices: [
+			{
+				name: "E2 standard 2 vCPU, 8 GB RAM (e2-standard-2)",
+				value: "e2-standard-2",
+			},
+			{
+				name: "E2 standard 4 vCPU, 16 GB RAM (e2-standard-4)",
+				value: "e2-standard-4",
+			},
+			{
+				name: "E2 standard 8 vCPU, 32 GB RAM (e2-standard-8)",
+				value: "e2-standard-8",
+			},
+			{
+				name: "E2 standard 16 vCPU, 64 GB RAM (e2-standard-16)",
+				value: "e2-standard-16",
+			},
+		],
+	},
 	hetzner: {
 		defaultRegion: "ash",
 		defaultServerType: "cpx31",
@@ -112,14 +149,23 @@ function resolveProvider(
 	provider?: string,
 	options?: InitOptions,
 ): SupportedProvider {
-	if (options?.hetznerToken && options.digitaloceanToken) {
+	const tokenProviderFlags = [
+		options?.hetznerToken ? "hetzner" : undefined,
+		options?.digitaloceanToken ? "digitalocean" : undefined,
+		options?.gcpProject ? "gcp" : undefined,
+	].filter(Boolean);
+	if (tokenProviderFlags.length > 1) {
 		throw new Error(
-			"--hetzner-token and --digitalocean-token cannot be used together",
+			"--hetzner-token, --digitalocean-token, and --gcp-project cannot be used together",
 		);
 	}
 
 	if (provider) {
-		if (provider === "hetzner" || provider === "digitalocean") {
+		if (
+			provider === "hetzner" ||
+			provider === "digitalocean" ||
+			provider === "gcp"
+		) {
 			return provider;
 		}
 		throw new Error(`unsupported provider '${provider}'`);
@@ -127,6 +173,9 @@ function resolveProvider(
 
 	if (options?.digitaloceanToken) {
 		return "digitalocean";
+	}
+	if (options?.gcpProject) {
+		return "gcp";
 	}
 
 	return "hetzner";
@@ -136,7 +185,23 @@ function providerToken(
 	provider: SupportedProvider,
 	options: InitOptions,
 ): string | undefined {
-	return options[PROVIDER_METADATA[provider].tokenField];
+	const tokenField = PROVIDER_METADATA[provider].tokenField;
+	return tokenField ? options[tokenField] : undefined;
+}
+
+function hasProviderCredential(
+	provider: SupportedProvider,
+	options: InitOptions,
+): boolean {
+	if (provider === "gcp") {
+		return Boolean(options.gcpProject);
+	}
+	return Boolean(providerToken(provider, options));
+}
+
+function optionalText(value: string | undefined): string | undefined {
+	const trimmed = value?.trim();
+	return trimmed ? trimmed : undefined;
 }
 
 export interface InitResult {
@@ -186,10 +251,9 @@ export async function runInit(
 
 	const selectedProvider = resolveProvider(options.provider, options);
 	const selectedProviderMeta = PROVIDER_METADATA[selectedProvider];
-	const selectedToken = providerToken(selectedProvider, options);
 
 	const hasNonInteractiveFlags =
-		Boolean(selectedToken) ||
+		hasProviderCredential(selectedProvider, options) ||
 		Boolean(options.sshAgent) ||
 		Boolean(options.sshPublicKey);
 
@@ -203,7 +267,7 @@ export async function runInit(
 	}
 
 	if (hasNonInteractiveFlags) {
-		if (!selectedToken) {
+		if (!hasProviderCredential(selectedProvider, options)) {
 			throw new Error(
 				`${selectedProviderMeta.tokenFlag} is required in non-interactive mode`,
 			);
@@ -229,22 +293,43 @@ export async function runInit(
 	const provider = await select<SupportedProvider>({
 		message: "Default provider",
 		default:
-			existing?.default_provider === "digitalocean"
-				? "digitalocean"
+			existing?.default_provider === "digitalocean" ||
+			existing?.default_provider === "gcp"
+				? existing.default_provider
 				: "hetzner",
 		theme: VIM_SELECT_THEME,
 		choices: [
 			{ name: "Hetzner", value: "hetzner" },
 			{ name: "DigitalOcean", value: "digitalocean" },
+			{ name: "GCP Compute Engine", value: "gcp" },
 		],
 	});
 	const providerMeta = PROVIDER_METADATA[provider];
 
-	const token =
-		(await password({
-			message: `${providerMeta.tokenLabel}${existing?.providers?.[provider]?.token ? " (leave blank to keep existing)" : ""}`,
-			mask: true,
-		})) || existing?.providers?.[provider]?.token;
+	let token: string | undefined;
+	let gcpProject: string | undefined;
+	let gcpCredentialsFile: string | undefined;
+	if (provider === "gcp") {
+		gcpProject = optionalText(
+			await input({
+				message: `${providerMeta.tokenLabel}${existing?.providers?.gcp?.project_id ? " (leave blank to keep existing)" : ""}`,
+				default: existing?.providers?.gcp?.project_id,
+			}),
+		);
+		gcpCredentialsFile = optionalText(
+			await input({
+				message:
+					"GCP service-account credentials file (optional; blank uses ADC)",
+				default: existing?.providers?.gcp?.credentials_file,
+			}),
+		);
+	} else {
+		token =
+			(await password({
+				message: `${providerMeta.tokenLabel}${existing?.providers?.[provider]?.token ? " (leave blank to keep existing)" : ""}`,
+				mask: true,
+			})) || existing?.providers?.[provider]?.token;
+	}
 
 	const sshMode = await select({
 		message: "SSH key mode",
@@ -394,8 +479,12 @@ export async function runInit(
 		githubToken,
 		claudeConfigPath,
 		claudeOauthToken,
+		gcpProject,
+		gcpCredentialsFile,
 	};
-	interactiveOptions[providerMeta.tokenField] = token;
+	if (provider !== "gcp" && providerMeta.tokenField) {
+		interactiveOptions[providerMeta.tokenField] = token;
+	}
 
 	await save(
 		resolvedConfigPath,
@@ -431,7 +520,16 @@ function buildConfig(
 			...(existing?.providers ?? {}),
 			[provider]: {
 				...(existing?.providers?.[provider] ?? {}),
-				token: token ?? "",
+				token: provider === "gcp" ? undefined : (token ?? ""),
+				project_id:
+					provider === "gcp"
+						? (options.gcpProject ?? existing?.providers?.gcp?.project_id)
+						: undefined,
+				credentials_file:
+					provider === "gcp"
+						? (options.gcpCredentialsFile ??
+							existing?.providers?.gcp?.credentials_file)
+						: undefined,
 				region:
 					options.region ??
 					existing?.providers?.[provider]?.region ??
@@ -460,10 +558,15 @@ export function registerInitCommand(): Command {
 		.description("Initialize sandctl configuration")
 		.option(
 			"--provider <provider>",
-			"Default provider (hetzner or digitalocean)",
+			"Default provider (hetzner, digitalocean, or gcp)",
 		)
 		.option("--hetzner-token <token>", "Hetzner Cloud API token")
 		.option("--digitalocean-token <token>", "DigitalOcean API token")
+		.option("--gcp-project <project>", "GCP project ID")
+		.option(
+			"--gcp-credentials-file <path>",
+			"GCP service-account credentials JSON file (optional; defaults to ADC)",
+		)
 		.option("--ssh-public-key <path>", "Path to SSH public key file")
 		.option("--ssh-agent", "Use SSH agent for key management")
 		.option("--ssh-key-fingerprint <fingerprint>", "SSH key fingerprint")
@@ -488,14 +591,15 @@ export function registerInitCommand(): Command {
 			};
 			if (globals.json) {
 				const hasNonInteractiveFlags =
-					Boolean(
-						providerToken(resolveProvider(options.provider, options), options),
+					hasProviderCredential(
+						resolveProvider(options.provider, options),
+						options,
 					) ||
 					Boolean(options.sshAgent) ||
 					Boolean(options.sshPublicKey);
 				if (!hasNonInteractiveFlags) {
 					throw new Error(
-						"--json requires non-interactive flags (provider token with --ssh-agent or --ssh-public-key)",
+						"--json requires non-interactive flags (provider credentials with --ssh-agent or --ssh-public-key)",
 					);
 				}
 			}

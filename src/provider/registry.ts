@@ -1,5 +1,6 @@
 import type { ProviderConfig } from "@/config/config";
 import { DigitalOceanProvider } from "@/digitalocean/provider";
+import { GcpProvider } from "@/gcp/provider";
 import { HetznerProvider } from "@/hetzner/provider";
 import { ErrUnknownProvider } from "@/provider/errors";
 import type { Provider, SSHKeyManager } from "@/provider/interface";
@@ -43,6 +44,7 @@ export function registerBuiltinProviders(): void {
 	}
 
 	register("digitalocean", (config) => new DigitalOceanProvider(config));
+	register("gcp", (config) => new GcpProvider(config));
 	register("hetzner", (config) => new HetznerProvider(config));
 	builtinsRegistered = true;
 }

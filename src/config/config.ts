@@ -10,11 +10,15 @@ import { isValidEmail } from "@/utils/email";
 import { expandTilde } from "@/utils/paths";
 
 export interface ProviderConfig {
-	token: string;
+	token?: string;
 	region?: string;
 	server_type?: string;
 	image?: string;
 	ssh_key_id?: number;
+	project_id?: string;
+	credentials_file?: string;
+	disk_size_gb?: number;
+	network?: string;
 }
 
 export interface Config {

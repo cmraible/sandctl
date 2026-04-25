@@ -13,6 +13,7 @@ import {
 describe("provider/registry", () => {
 	test("auto-registers builtin providers on import", () => {
 		expect(available()).toContain("digitalocean");
+		expect(available()).toContain("gcp");
 		expect(available()).toContain("hetzner");
 	});
 
@@ -22,6 +23,7 @@ describe("provider/registry", () => {
 		expect(available().filter((name) => name === "digitalocean")).toHaveLength(
 			1,
 		);
+		expect(available().filter((name) => name === "gcp")).toHaveLength(1);
 		expect(available().filter((name) => name === "hetzner")).toHaveLength(1);
 	});
 
@@ -64,7 +66,7 @@ describe("provider/registry", () => {
 		});
 
 		expect(get("hetzner", config)).toBe(provider);
-		expect(available()).toEqual(["digitalocean", "hetzner"]);
+		expect(available()).toEqual(["digitalocean", "gcp", "hetzner"]);
 	});
 
 	test("get throws typed error for unknown providers", () => {
@@ -115,7 +117,7 @@ describe("provider/registry", () => {
 		register("hetzner", () => {
 			throw new Error("not used");
 		});
-		expect(available()).toEqual(["digitalocean", "hetzner"]);
+		expect(available()).toEqual(["digitalocean", "gcp", "hetzner"]);
 
 		clearRegistry();
 

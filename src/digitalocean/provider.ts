@@ -77,7 +77,7 @@ export class DigitalOceanProvider
 		) => Promise<boolean> = defaultProbeTCP,
 		private readonly now: () => number = () => performance.now(),
 	) {
-		this.client = client ?? new DigitalOceanClient(config.token);
+		this.client = client ?? new DigitalOceanClient(config.token ?? "");
 	}
 
 	name(): string {
