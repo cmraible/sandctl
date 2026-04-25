@@ -25,6 +25,13 @@ describe("provider/sizes", () => {
 		);
 	});
 
+	test("resolves GCP sizes to machine types", () => {
+		expect(resolveSize("small", "gcp")?.serverType).toBe("e2-standard-2");
+		expect(resolveSize("medium", "gcp")?.serverType).toBe("e2-standard-4");
+		expect(resolveSize("large", "gcp")?.serverType).toBe("e2-standard-8");
+		expect(resolveSize("xlarge", "gcp")?.serverType).toBe("e2-standard-16");
+	});
+
 	test("is case-insensitive", () => {
 		expect(resolveSize("Small", "hetzner")?.serverType).toBe("cpx21");
 		expect(resolveSize("LARGE", "digitalocean")?.serverType).toBe(

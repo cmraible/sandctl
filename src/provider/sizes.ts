@@ -54,6 +54,48 @@ const sizeMaps = {
 			},
 		],
 	]),
+	gcp: new Map<string, VMSize>([
+		[
+			"small",
+			{
+				name: "small",
+				serverType: "e2-standard-2",
+				cores: 2,
+				memoryGB: 8,
+				description: "2 vCPU / 8 GB RAM",
+			},
+		],
+		[
+			"medium",
+			{
+				name: "medium",
+				serverType: "e2-standard-4",
+				cores: 4,
+				memoryGB: 16,
+				description: "4 vCPU / 16 GB RAM",
+			},
+		],
+		[
+			"large",
+			{
+				name: "large",
+				serverType: "e2-standard-8",
+				cores: 8,
+				memoryGB: 32,
+				description: "8 vCPU / 32 GB RAM",
+			},
+		],
+		[
+			"xlarge",
+			{
+				name: "xlarge",
+				serverType: "e2-standard-16",
+				cores: 16,
+				memoryGB: 64,
+				description: "16 vCPU / 64 GB RAM",
+			},
+		],
+	]),
 	hetzner: new Map<string, VMSize>([
 		[
 			"small",

@@ -83,7 +83,7 @@ export class HetznerProvider
 		) => Promise<boolean> = defaultProbeTCP,
 		private readonly now: () => number = () => performance.now(),
 	) {
-		this.client = client ?? new HetznerClient(config.token);
+		this.client = client ?? new HetznerClient(config.token ?? "");
 	}
 
 	name(): string {

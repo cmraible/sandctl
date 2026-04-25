@@ -17,6 +17,7 @@
 		"check-fmt": "biome format src/ tests/"
 	},
 	"dependencies": {
+		"@google-cloud/compute": "^4.11.0",
 		"@inquirer/prompts": "^7.8.6",
 		"async-lock": "^1.4.1",
 		"chalk": "^5.5.0",
